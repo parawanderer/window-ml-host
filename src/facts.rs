@@ -79,6 +79,15 @@ pub fn resolve_program(argv0: &str, cwd: &Path, path_dirs: &[PathBuf]) -> io::Re
     path_dirs.iter().filter(|d| d.is_absolute()).find_map(|d| executable(&d.join(argv0))).ok_or_else(not_found)
 }
 
+/// `<dev>:<ino>:<size>:<mtime_ns>` of the file at `p`, or `None` when it cannot be read. Any rewrite of the program
+/// changes it, so the extension can cache what it learned about a binary (its version) under it.
+pub fn fingerprint(p: &Path) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    let md = std::fs::metadata(p).ok()?;
+    let ns = i128::from(md.mtime()) * 1_000_000_000 + i128::from(md.mtime_nsec());
+    Some(format!("{}:{}:{}:{ns}", md.dev(), md.ino(), md.size()))
+}
+
 fn executable(p: &Path) -> Option<PathBuf> {
     let real = p.canonicalize().ok()?;
     let md = std::fs::metadata(&real).ok()?;
@@ -250,6 +259,27 @@ mod tests {
         assert!(resolve_program("no-such-program-xyz", &cwd, &[PathBuf::from("/usr/bin")]).is_err());
         assert!(resolve_program("", &cwd, &[PathBuf::from("/usr/bin")]).is_err());
         assert!(resolve_program("/tmp", &cwd, &[]).is_err());
+    }
+
+    // --- fingerprints ---
+
+    #[test]
+    fn a_fingerprint_follows_the_file_and_changes_with_any_rewrite() {
+        let d = tempfile::tempdir().unwrap();
+        let f = real(&d).join("prog");
+        std::fs::write(&f, "one").unwrap();
+        let a = fingerprint(&f).unwrap();
+        assert_eq!(fingerprint(&f).unwrap(), a);
+        assert_eq!(a.split(':').count(), 4);
+        // same size, a different modification time
+        let file = std::fs::OpenOptions::new().write(true).open(&f).unwrap();
+        file.set_modified(std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000)).unwrap();
+        let b = fingerprint(&f).unwrap();
+        assert_ne!(b, a);
+        // a different size
+        std::fs::write(&f, "longer").unwrap();
+        assert_ne!(fingerprint(&f).unwrap(), b);
+        assert_eq!(fingerprint(&f.with_file_name("missing")), None);
     }
 
     // --- secret names ---

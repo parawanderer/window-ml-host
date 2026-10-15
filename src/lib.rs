@@ -6,6 +6,7 @@ pub mod facts;
 pub mod framing;
 pub mod fsx;
 pub mod gitconfig;
+pub mod glob;
 #[cfg(feature = "hub")]
 pub mod hub;
 pub mod install;

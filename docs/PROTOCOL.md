@@ -38,7 +38,7 @@ the host answers each as it finishes, not in order. A message that is not an obj
 `args: {}` → the host's identity and what it can do. Safe to call any time.
 
 ```jsonc
-{ "host": "window-ml-host", "version": "0.1.0", "protocol": 1, "platform": "macos",
+{ "host": "window-ml-host", "version": "0.2.0", "protocol": 1, "platform": "macos",
   "sandbox": { "kind": "seatbelt", "available": true },             // kind: "seatbelt" | "bwrap" | null; "reason" when unavailable
   "modes": ["host"] }                                               // "container" appears once a runner exists
 ```
@@ -77,7 +77,8 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
 ```jsonc
 { "id": "c3",                                   // names this pending call for start / discard
   "argv": ["git", "diff", "--stat", "HEAD~1"],
-  "program": { "path": "/usr/bin/git", "inRoot": false },   // argv[0] after PATH lookup, realpath'd
+  "program": { "path": "/usr/bin/git", "inRoot": false,     // argv[0] after PATH lookup, realpath'd
+               "fingerprint": "16777234:1152921500312187:134512:1760000000123456789" },
   "cwd": { "path": "/Users/me/src/proj", "inRoot": true },  // + "containsSecret" with walkCwd
   "env": { "set": ["LC_ALL"], "secrets": [], "free": true }, // names only; free: every name is on the FREE list
   "repo": { "root": "/Users/me/src/proj", "reasons": [] },  // null outside a git repository
@@ -91,6 +92,9 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
   "expiresInMs": 1800000 }                      // after this the id is gone and start fails UnknownId
 ```
 
+- **`program.fingerprint`** is `<dev>:<ino>:<size>:<mtime_ns>` of the program file (`null` if its metadata cannot be
+  read). Any rewrite of the binary changes it, so the extension can cache what it learned about a program (its version)
+  per fingerprint.
 - **`pathArgs`** entries are `{ "arg": i }` (the whole argument is a path) or `{ "arg": i, "split": "=" }` (the part
   after the first `=`, for `--output=f`). The host resolves only the arguments it is told are paths: an argument nobody
   marked is not a path the host can vouch for, and the worker treats the call accordingly. Root F moves this list into
@@ -129,6 +133,63 @@ it unsandboxed.
 
 **The answer to `start` always comes before that call's `done`**: the host queues it before the call can end.
 
+### `pipe`: run pending calls joined by OS pipes
+
+Each stage is first `spawn`ed on its own, so each has its own facts and the extension can approve all of them on one
+card. Then, instead of `start`:
+
+```jsonc
+args:  { "ids": ["c3", "c4", "c5"] }                  // 2 to 16 distinct ids, in pipeline order
+value: { "ids": ["c3", "c4", "c5"], "pids": [4242, 4243, 4244] }
+```
+
+Stage 0 has stdin closed, as under `start`; stage *i* > 0 reads stage *i* − 1's stdout through an OS pipe. Only the last
+stage's stdout is held. Every stage's stderr is held. Each stage keeps what `start` gives a call: its own sandbox
+wrapping, scrubbed environment, `cwd`, time limit, output cap and process group. Each ends with its own `done` event, whose
+`stdout` is `{ "piped": true }` for every stage but the last. `cancel` works per id. A stage that exits early closes its
+pipe: the stage writing into it gets SIGPIPE (or fails its write), so `yes | head -n1` ends. Stages are independent
+otherwise: one failing does not kill the others, and each has its own `code` and `ok`.
+
+- **All or nothing, before anything starts.** `ids` that is not an array of 2 to 16 distinct strings is `BadRequest`. A
+  pending call that is missing, expired or already started is `UnknownId`, naming the first such id; none of the ids is
+  consumed. Fewer than `ids.length` free running slots (32 in all) is `Busy`. Only after every check passes are the ids
+  removed from the pending set.
+- **If starting a stage fails** (`SandboxFailed` or `SpawnFailed`, as for `start`), the stages already started are
+  killed with their process groups and reaped, their temp directories are removed, and the call answers the error. No
+  `done` events follow.
+- **The answer to `pipe` comes before any of its stages' `done`**, as for `start`.
+
+### `glob`: expand a pattern within the roots
+
+```jsonc
+args:  { "cwd": "/Users/me/src/proj", "pattern": "src/**/*.rs", "limit": 10000 }   // limit optional
+value: { "matches": ["src/a.rs", "src/x/b.rs"], "truncated": false }
+```
+
+`cwd` is judged as `spawn` judges it: absolute, resolved with `realpath`, a directory inside a root, else
+`CwdOutsideRoots`. Before `configure`: `NotConfigured`. The host expands the pattern itself, so the extension can show
+the person the names a command will receive instead of a pattern a shell would expand.
+
+- **`pattern`**: a non-empty string of at most 4096 bytes, no NUL, not absolute, split on `/` into components, none of
+  which is empty, `.` or `..` (so no `//`, no trailing `/`): else `BadRequest`.
+- **Syntax, per component**: `*` any run of characters (not `/`), `?` one character, `[abc]` and `[a-z]` classes,
+  `[!abc]` a negated class, `\x` the character `x` literally. A `[` that never closes is literal. A component that is
+  exactly `**` matches zero or more directories; it is not special inside a longer component (`a**b` is `a*b`). Names
+  are matched as UTF-8 characters; a name that is not UTF-8 never matches.
+- **Hidden names**: a name starting with `.` matches only a component that itself starts with a literal `.`, as in a
+  shell (`*` does not match `.env`; `.*` does). `**` never enters or matches a hidden directory.
+- **Directories and files both match**: `src/*` lists the files and directories in `src`. A trailing `**` matches the
+  directory before it and every visible directory beneath it, not files; use `**/*` for everything.
+- **The walk**: never follows a symlink (a symlink may match by name as the last component, and is never entered, even
+  one pointing at a directory; every directory is opened without following links, so one swapped for a link mid-walk is
+  skipped). Skips `.git` directories. Cannot leave `cwd`: there is no `..`, and the walk only goes down. A directory that
+  cannot be read is skipped without failing the call. At most 20 000 directory entries are looked at in total and 64
+  levels entered; past either, the walk stops with `truncated: true`.
+- **`limit`**: default 10 000, clamped to 1..=100 000. The call stops at `limit` matches with `truncated: true`; exactly
+  `limit` matches is not truncation. Which matches a truncated answer holds is by directory name order, not the sorted
+  whole.
+- **`matches`** are paths relative to `cwd`, `/`-separated, sorted bytewise, without duplicates.
+
 ### `discard`
 
 `args: { "id": "c3" }` → `{}`. The worker denied the call; forget it. (Unstarted ids also expire on their own.)
@@ -158,11 +219,12 @@ An `offset` past the end returns zero bytes with `eof: true`. Bytes, not text: o
   "code": 0, "signal": null,                  // code null when killed by a signal ("SIGKILL")
   "ok": true,                                 // code is in okCodes; okCodes is [0] until manifests (root F)
   "timedOut": false, "cancelled": false, "durationMs": 31,
-  "stdout": { "ptr": "out:…", "size": 812, "sha256": "…", "truncated": false },
+  "stdout": { "ptr": "out:…", "size": 812, "sha256": "…", "truncated": false },   // { "piped": true } for a non-last `pipe` stage
   "stderr": { "ptr": "out:…", "size": 0, "sha256": "…", "truncated": false } }
 ```
 
-A stream the host could not keep (the disk filled, say) is `{ "error": "…" }` instead of a pointer. A sandboxed call
+A non-last stage of a `pipe` has `"stdout": { "piped": true }`: its output went to the next stage and nothing of it is
+held. A stream the host could not keep (the disk filled, say) is `{ "error": "…" }` instead of a pointer. A sandboxed call
 whose sandbox refused to start the program adds `"error": { "code": "SandboxFailed", "message": "…" }` and `ok: false`.
 
 `{ code, ok, stdout, stderr }` is the result shape `ml.sh.run` returns, with `stdout`/`stderr` as pointers. `truncated`
@@ -176,25 +238,23 @@ These are the host's own; the worker maps them onto the `ml` wire's codes (`Refu
 | Code | When |
 | --- | --- |
 | `BadRequest` | malformed message, unknown call, a field of the wrong type |
-| `NotConfigured` | `spawn` before `configure` |
+| `NotConfigured` | `spawn` or `glob` before `configure` |
 | `BadRoot` | a root that is not an absolute existing directory, or is `/` |
 | `ProgramNotFound` | `argv[0]` not found on `PATH`, or not an executable file |
-| `CwdOutsideRoots` | `cwd` missing, not a directory, or resolving outside every root |
+| `CwdOutsideRoots` | `cwd` (of `spawn` or `glob`) missing, not a directory, or resolving outside every root |
 | `EnvRefused` | an `env` name on the denylist (`src/env.rs`) |
 | `SecretUnavailable` | an `env` handle the host's store does not hold |
 | `Unsupported` | `mode: "container"` this version |
-| `UnknownId` | `start`/`discard`/`cancel` of an id that never existed, expired, or already started (`start`) |
+| `UnknownId` | `start`/`discard`/`cancel`/`pipe` of an id that never existed, expired, or already started (`start`, `pipe`) |
 | `UnknownPtr` | `read`/`release` of a pointer that does not exist |
 | `SandboxFailed` | the sandbox program itself could not be started (a refusal by the sandbox shows in `done`) |
 | `SpawnFailed` | the OS refused to start the program |
-| `Busy` | 256 calls already wait for a verdict, or 32 are running |
+| `Busy` | 256 calls already wait for a verdict, or 32 are running (a `pipe` counts its stages) |
 | `Failed` | reading held output failed on disk |
 | `TooLarge` | the answer would exceed 1 MiB (an `argv` that large, echoed back in the facts) |
 
 ## Not in v1, and where it will go
 
-- `pipe` (stages joined by real OS pipes, one approval) and `glob` (host-side expansion within the roots): both are calls
-  of this protocol, answering the same facts per stage.
 - A text pipe over held output (`ml.pipe` at the host): a call taking a `ptr` and a pipe string, answering a new `ptr`.
 - Program manifests read by the host (root F): `effects`, `okCodes`, the operand terminator and the program's version
   fill in from the manifest; `pathArgs` becomes the manifest's.
