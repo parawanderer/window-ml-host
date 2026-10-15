@@ -3,7 +3,7 @@
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::Duration;
 
@@ -667,5 +667,308 @@ fn a_protected_path_created_during_the_call_is_denied_on_macos_and_a_known_gap_o
         // starts failing, the gap is closed: make the assertion the macOS one and update SANDBOX.md.
         assert!(created, "the Linux gap documented in SANDBOX.md has closed; flip this test and the doc");
     }
+    h.close();
+}
+
+// --- the program's fingerprint ---
+
+#[test]
+fn a_programs_fingerprint_is_stable_and_changes_when_the_file_does() {
+    let (_d, r) = root();
+    let prog = r.join("ls");
+    std::fs::copy("/bin/ls", &prog).unwrap();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let fp = |h: &mut Host| {
+        let f = h.ok("spawn", json!({ "argv": ["./ls"], "cwd": r }));
+        h.ok("discard", json!({ "id": f["id"] }));
+        f["program"]["fingerprint"].as_str().expect("a fingerprint string").to_string()
+    };
+    let first = fp(&mut h);
+    assert_eq!(first.split(':').count(), 4, "{first}");
+    assert_eq!(fp(&mut h), first, "the same file, the same fingerprint");
+    // same size, other modification time
+    let f = std::fs::OpenOptions::new().write(true).open(&prog).unwrap();
+    f.set_modified(std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000)).unwrap();
+    let touched = fp(&mut h);
+    assert_ne!(touched, first);
+    // rewritten
+    std::fs::OpenOptions::new().append(true).open(&prog).unwrap().write_all(b"\0").unwrap();
+    let appended = fp(&mut h);
+    assert_ne!(appended, touched);
+    assert_ne!(appended, first);
+    // a program outside the root has one too
+    let f = h.ok("spawn", json!({ "argv": ["sh", "-c", "true"], "cwd": r }));
+    assert!(f["program"]["fingerprint"].is_string(), "{f}");
+    h.close();
+}
+
+// --- glob: expansion within the roots ---
+
+fn glob(h: &mut Host, cwd: &Path, pattern: &str) -> Value {
+    h.ok("glob", json!({ "cwd": cwd, "pattern": pattern }))
+}
+
+fn names(v: &Value) -> Vec<&str> {
+    v["matches"].as_array().expect("matches").iter().map(|m| m.as_str().unwrap()).collect()
+}
+
+fn write_tree(r: &Path, files: &[&str]) {
+    for f in files {
+        let p = r.join(f);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, "").unwrap();
+    }
+}
+
+#[test]
+fn glob_expands_inside_a_root_sorted_relative_to_cwd() {
+    let (_d, r) = root();
+    write_tree(&r, &["src/b.rs", "src/a.rs", "src/x/c.rs", "src/x/d.txt", "top.rs"]);
+    let mut h = Host::start();
+    assert_eq!(h.call("glob", json!({ "cwd": r, "pattern": "*" })).unwrap_err().0, "NotConfigured");
+    h.ok("configure", json!({ "roots": [r] }));
+    let v = glob(&mut h, &r, "src/**/*.rs");
+    assert_eq!(names(&v), ["src/a.rs", "src/b.rs", "src/x/c.rs"]);
+    assert_eq!(v["truncated"], false);
+    assert_eq!(names(&glob(&mut h, &r, "src/*")), ["src/a.rs", "src/b.rs", "src/x"], "directories match too");
+    assert_eq!(names(&glob(&mut h, &r, "src/[ab].rs")), ["src/a.rs", "src/b.rs"]);
+    assert_eq!(names(&glob(&mut h, &r, "src/[!a].rs")), ["src/b.rs"]);
+    assert_eq!(names(&glob(&mut h, &r, "nothing/**")), Vec::<&str>::new());
+    // relative to the cwd given, not to the root
+    assert_eq!(names(&glob(&mut h, &r.join("src"), "x/*")), ["x/c.rs", "x/d.txt"]);
+    h.close();
+}
+
+#[test]
+fn glob_never_enters_a_symlink_that_leaves_the_root() {
+    let (_d, r) = root();
+    let (_o, outside) = root();
+    write_tree(&outside, &["leak.txt", "deep/leak2.txt"]);
+    write_tree(&r, &["real/ok.txt"]);
+    std::os::unix::fs::symlink(&outside, r.join("link")).unwrap();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let v = glob(&mut h, &r, "**/*");
+    assert_eq!(names(&v), ["link", "real", "real/ok.txt"], "the link may match by name, nothing beneath it");
+    assert_eq!(names(&glob(&mut h, &r, "link/*")), Vec::<&str>::new());
+    assert_eq!(names(&glob(&mut h, &r, "link/**/*.txt")), Vec::<&str>::new());
+    // a cwd that is the link resolves outside the root and is refused
+    let e = h.call("glob", json!({ "cwd": r.join("link"), "pattern": "*" })).unwrap_err();
+    assert_eq!(e.0, "CwdOutsideRoots");
+    h.close();
+}
+
+#[test]
+fn glob_refuses_what_could_leave_the_directory() {
+    let (_d, r) = root();
+    let (_o, outside) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    for bad in ["../*", "a/../../b", "/etc/*", "./a", "a/./b", "a//b", "a/", "", "a\0b", &"x".repeat(4097)] {
+        let e = h.call("glob", json!({ "cwd": r, "pattern": bad })).unwrap_err();
+        assert_eq!(e.0, "BadRequest", "{bad:?}");
+    }
+    for bad in [json!({ "cwd": r }), json!({ "cwd": r, "pattern": 7 }), json!({ "pattern": "*" })] {
+        assert_eq!(h.call("glob", bad).unwrap_err().0, "BadRequest");
+    }
+    assert_eq!(h.call("glob", json!({ "cwd": "relative", "pattern": "*" })).unwrap_err().0, "BadRequest");
+    for cwd in [outside.clone(), PathBuf::from("/"), r.join("missing"), r.join("..")] {
+        let e = h.call("glob", json!({ "cwd": cwd, "pattern": "*" })).unwrap_err();
+        assert_eq!(e.0, "CwdOutsideRoots", "{}", cwd.display());
+    }
+    h.close();
+}
+
+#[test]
+fn glob_truncates_at_the_limit_and_clamps_it() {
+    let (_d, r) = root();
+    for i in 0..30 {
+        std::fs::write(r.join(format!("f{i:02}")), "").unwrap();
+    }
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let v = h.ok("glob", json!({ "cwd": r, "pattern": "f*", "limit": 10 }));
+    assert_eq!((v["matches"].as_array().unwrap().len(), &v["truncated"]), (10, &json!(true)));
+    let v = h.ok("glob", json!({ "cwd": r, "pattern": "f*", "limit": 30 }));
+    assert_eq!((v["matches"].as_array().unwrap().len(), &v["truncated"]), (30, &json!(false)));
+    let v = h.ok("glob", json!({ "cwd": r, "pattern": "f*", "limit": 0 }));
+    assert_eq!(v["matches"].as_array().unwrap().len(), 1, "the minimum is 1");
+    assert_eq!(v["truncated"], true);
+    let v = h.ok("glob", json!({ "cwd": r, "pattern": "f*", "limit": 10_000_000_000u64 }));
+    assert_eq!(v["matches"].as_array().unwrap().len(), 30, "a huge limit is clamped, not refused");
+    h.close();
+}
+
+#[test]
+fn glob_stops_at_the_entry_cap() {
+    let (_d, r) = root();
+    for i in 0..20_050 {
+        std::fs::write(r.join(format!("f{i}")), "").unwrap();
+    }
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let v = h.ok("glob", json!({ "cwd": r, "pattern": "nomatch*", "limit": 100_000 }));
+    assert_eq!(v["truncated"], true, "past 20000 directory entries");
+    h.close();
+}
+
+#[test]
+fn glob_skips_git_and_keeps_hidden_names_for_patterns_that_ask() {
+    let (_d, r) = root();
+    write_tree(&r, &[".git/config", "sub/.git/config", ".env", ".hidden/x", "visible", "sub/.rc", "sub/vis"]);
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    assert_eq!(names(&glob(&mut h, &r, "*")), ["sub", "visible"], "dotfiles are not in *");
+    assert_eq!(names(&glob(&mut h, &r, ".*")), [".env", ".hidden"], "but .* has them, and not .git");
+    assert_eq!(names(&glob(&mut h, &r, "**/*")), ["sub", "sub/vis", "visible"]);
+    assert_eq!(names(&glob(&mut h, &r, "**/.*")), [".env", ".hidden", "sub/.rc"]);
+    assert_eq!(names(&glob(&mut h, &r, ".git/*")), Vec::<&str>::new());
+    assert_eq!(names(&glob(&mut h, &r, "sub/.git")), Vec::<&str>::new());
+    h.close();
+}
+
+// --- pipe: stages joined by OS pipes ---
+
+/// Spawns each argv in `cwd` and returns the facts' ids.
+fn spawn_all(h: &mut Host, cwd: &Path, stages: &[&[&str]]) -> Vec<String> {
+    stages
+        .iter()
+        .map(|argv| {
+            h.ok("spawn", json!({ "argv": argv, "cwd": cwd, "timeoutMs": 20_000 }))["id"].as_str().unwrap().into()
+        })
+        .collect()
+}
+
+#[test]
+fn a_pipeline_joins_its_stages_and_holds_only_the_last_stdout() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let ids = spawn_all(&mut h, &r, &[&["sh", "-c", "printf 'b\\na\\nb\\n'"], &["sort"], &["uniq"]]);
+    let v = h.ok("pipe", json!({ "ids": ids }));
+    assert_eq!(v["ids"], json!(ids));
+    let pids = v["pids"].as_array().unwrap();
+    assert_eq!(pids.len(), 3);
+    assert!(pids.iter().all(|p| p.as_u64().unwrap() > 0));
+    assert!(h.events.is_empty(), "the answer came before any done");
+    let dones: Vec<Value> = ids.iter().map(|id| h.done(id)).collect();
+    for (i, d) in dones.iter().enumerate() {
+        assert_eq!(d["code"], 0, "stage {i}: {d}");
+        assert_eq!(d["ok"], true);
+        assert!(d["stderr"]["ptr"].is_string(), "every stage's stderr is held: {d}");
+        if i < 2 {
+            assert_eq!(d["stdout"], json!({ "piped": true }), "stage {i}");
+        }
+    }
+    assert_eq!(text(&h.read_all(&dones[2]["stdout"])), "a\nb\n");
+    // started once: the ids are consumed
+    assert_eq!(h.call("start", json!({ "id": ids[0] })).unwrap_err().0, "UnknownId");
+    h.close();
+}
+
+#[test]
+fn a_reader_that_exits_early_ends_the_pipeline() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let ids = spawn_all(&mut h, &r, &[&["yes"], &["head", "-n1"]]);
+    h.ok("pipe", json!({ "ids": ids }));
+    let last = h.done(&ids[1]);
+    assert_eq!(last["code"], 0, "{last}");
+    assert_eq!(text(&h.read_all(&last["stdout"])), "y\n");
+    let first = h.done(&ids[0]);
+    assert_eq!(first["timedOut"], false, "the producer died of the closed pipe, not of its time limit: {first}");
+    assert_eq!(first["cancelled"], false);
+    assert_ne!(first["ok"], true, "{first}");
+    assert!(first["durationMs"].as_u64().unwrap() < 15_000, "{first}");
+    h.close();
+}
+
+#[test]
+fn cancelling_one_stage_leaves_the_others_to_end_on_their_own() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let ids = spawn_all(&mut h, &r, &[&["sleep", "30"], &["cat"]]);
+    h.ok("pipe", json!({ "ids": ids }));
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(h.ok("cancel", json!({ "id": ids[0] })), json!({ "signalled": true }));
+    let first = h.done(&ids[0]);
+    assert_eq!(first["cancelled"], true);
+    let last = h.done(&ids[1]);
+    assert_eq!((&last["cancelled"], &last["code"]), (&json!(false), &json!(0)), "cat saw end of input: {last}");
+    h.close();
+}
+
+#[test]
+fn a_bad_id_starts_nothing_and_consumes_nothing() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let ids = spawn_all(&mut h, &r, &[&["touch", "marker"], &["cat"]]);
+    let e = h.call("pipe", json!({ "ids": [ids[0], "c999", ids[1]] })).unwrap_err();
+    assert_eq!(e.0, "UnknownId");
+    assert!(e.1.contains("c999"), "names the first bad id: {}", e.1);
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!r.join("marker").exists(), "nothing started");
+    // an id used twice, too few, too many, the wrong shape
+    for bad in [json!([ids[0], ids[0]]), json!([ids[0]]), json!([]), json!("c1,c2"), json!([1, 2]), json!(null)] {
+        assert_eq!(h.call("pipe", json!({ "ids": bad })).unwrap_err().0, "BadRequest", "{bad}");
+    }
+    let many: Vec<String> = (0..17).map(|i| format!("c{i}")).collect();
+    assert_eq!(h.call("pipe", json!({ "ids": many })).unwrap_err().0, "BadRequest");
+    assert_eq!(h.call("pipe", json!({})).unwrap_err().0, "BadRequest");
+    // both ids are still pending and run alone
+    h.ok("start", json!({ "id": ids[0] }));
+    assert_eq!(h.done(&ids[0])["code"], 0);
+    assert!(r.join("marker").exists());
+    h.ok("start", json!({ "id": ids[1] }));
+    h.done(&ids[1]);
+    // a discarded id is no longer pending either
+    let again = spawn_all(&mut h, &r, &[&["true"], &["true"]]);
+    h.ok("discard", json!({ "id": again[1] }));
+    assert_eq!(h.call("pipe", json!({ "ids": again })).unwrap_err().0, "UnknownId");
+    h.close();
+}
+
+#[test]
+fn a_stage_that_fails_to_start_ends_the_ones_before_it() {
+    let (_d, r) = root();
+    let gone = r.join("gone");
+    std::fs::copy("/bin/cat", &gone).unwrap();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r], "sandbox": false }));
+    let ids = spawn_all(&mut h, &r, &[&["sh", "-c", "sleep 2; touch late"], &["./gone"]]);
+    std::fs::remove_file(&gone).unwrap();
+    let e = h.call("pipe", json!({ "ids": ids })).unwrap_err();
+    assert_eq!(e.0, "SpawnFailed", "{e:?}");
+    std::thread::sleep(Duration::from_millis(2500));
+    assert!(!r.join("late").exists(), "the first stage was killed");
+    h.ok("hello", json!({}));
+    assert!(h.events.is_empty(), "no done events for a pipe that did not start: {:?}", h.events);
+    // and the ids are gone
+    assert_eq!(h.call("start", json!({ "id": ids[0] })).unwrap_err().0, "UnknownId");
+    h.close();
+}
+
+#[test]
+fn a_sandboxed_pipeline_still_cannot_write_outside_the_roots() {
+    let (_d, r) = root();
+    let (_o, outside) = root();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    let c = h.ok("configure", json!({ "roots": [r] }));
+    assert_eq!(c["sandboxed"], true);
+    let evil = format!("cat >/dev/null; touch '{}'", outside.join("pwned").display());
+    let ids = spawn_all(&mut h, &r, &[&["echo", "hi"], &["sh", "-c", &evil], &["sh", "-c", "cat; touch inside"]]);
+    h.ok("pipe", json!({ "ids": ids }));
+    let dones: Vec<Value> = ids.iter().map(|id| h.done(id)).collect();
+    assert_ne!(dones[1]["code"], 0, "{}", dones[1]);
+    assert!(!outside.join("pwned").exists(), "a write outside the roots got through a pipeline");
+    assert_eq!(dones[2]["code"], 0, "{}", text(&h.read_all(&dones[2]["stderr"])));
+    assert!(r.join("inside").exists(), "writes inside the roots still work");
     h.close();
 }

@@ -1,6 +1,7 @@
-//! runner.rs — starting one call and seeing it to its end: argv executed directly (no shell), stdin closed, no
-//! terminal, its own process group, the given environment only, a time limit, cancellation, and both streams captured
-//! into the store. When the call ends, whatever is left of its process group is killed with it.
+//! runner.rs — starting one call and seeing it to its end: argv executed directly (no shell), stdin closed (or, in a
+//! pipeline, the previous stage's stdout), no terminal, its own process group, the given environment only, a time
+//! limit, cancellation, and both streams captured into the store. When the call ends, whatever is left of its process
+//! group is killed with it.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -44,22 +45,33 @@ pub struct Outcome {
     pub timed_out: bool,
     pub cancelled: bool,
     pub duration_ms: u64,
-    pub stdout: Captured,
+    /// `None` when the stdout went on to the next stage of a pipeline ([`Running::take_stdout`]).
+    pub stdout: Option<Captured>,
     pub stderr: Captured,
 }
 
 /// A captured stream (its pointer and what was kept), or why it could not be kept.
 pub type Captured = Result<(String, Held), String>;
 
-/// Starts the call. The process leads a new process group (its pid is the group id), so a signal reaches everything it
-/// started.
-pub fn spawn(p: Prepared) -> std::io::Result<Running> {
+impl Running {
+    /// Hands this call's stdout to the next stage of a pipeline as its stdin. The host keeps no copy of the pipe's
+    /// read end once that stage has started, so the writer gets SIGPIPE when the reader exits. [`finish`] then
+    /// captures only stderr.
+    pub fn take_stdout(&mut self) -> std::io::Result<Stdio> {
+        let out = self.child.stdout.take().ok_or_else(|| std::io::Error::other("stdout is already taken"))?;
+        out.try_into()
+    }
+}
+
+/// Starts the call with `stdin` as its standard input (`Stdio::null()` for a call alone). The process leads a new
+/// process group (its pid is the group id), so a signal reaches everything it started.
+pub fn spawn(p: Prepared, stdin: Stdio) -> std::io::Result<Running> {
     let mut c = Command::new(&p.program);
     c.args(&p.args)
         .env_clear()
         .envs(&p.env)
         .current_dir(&p.cwd)
-        .stdin(Stdio::null())
+        .stdin(stdin)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0)
@@ -78,15 +90,15 @@ fn signal_group(pgid: u32, sig: Signal) {
     }
 }
 
-/// Waits for the call to end, by itself, at `timeout`, or when `cancel` is notified; captures both streams with at
-/// most `cap` bytes kept each.
+/// Waits for the call to end, by itself, at `timeout`, or when `cancel` is notified; captures both streams (a stdout
+/// already taken for a pipeline excepted) with at most `cap` bytes kept each.
 pub async fn finish(mut r: Running, store: Arc<Store>, cancel: Arc<Notify>, timeout: Duration, cap: u64) -> Outcome {
     let started = Instant::now();
     let pgid = r.pid;
-    let out = r.child.stdout.take().expect("piped");
+    let out = r.child.stdout.take();
     let err = r.child.stderr.take().expect("piped");
     let s1 = store.clone();
-    let out_task = tokio::spawn(async move { s1.capture(out, cap).await.map_err(|e| e.to_string()) });
+    let out_task = out.map(|out| tokio::spawn(async move { s1.capture(out, cap).await.map_err(|e| e.to_string()) }));
     let s2 = store.clone();
     let err_task = tokio::spawn(async move { s2.capture(err, cap).await.map_err(|e| e.to_string()) });
 
@@ -105,7 +117,10 @@ pub async fn finish(mut r: Running, store: Arc<Store>, cancel: Arc<Notify>, time
             Err(_) => Err("output still open after the call ended (a process outside its group holds it)".into()),
         }
     };
-    let stdout = join(out_task).await;
+    let stdout = match out_task {
+        Some(t) => Some(join(t).await),
+        None => None,
+    };
     let stderr = join(err_task).await;
     use std::os::unix::process::ExitStatusExt;
     Outcome {
@@ -134,6 +149,13 @@ async fn terminate(child: &mut Child, pgid: u32) -> Option<ExitStatus> {
 /// Kills a running call's whole group at once (the session is ending).
 pub fn kill_now(pgid: u32) {
     signal_group(pgid, Signal::KILL);
+}
+
+/// Kills a call that was started but will never be supervised (a later stage of its pipeline failed to start), and
+/// reaps it.
+pub async fn abort(mut r: Running) {
+    kill_now(r.pid);
+    let _ = r.child.wait().await;
 }
 
 /// A signal's name, for the numbers POSIX fixes; others as `SIG<n>`.

@@ -1,8 +1,10 @@
 //! session.rs — one native messaging connection: the calls of docs/PROTOCOL.md and the state between them. A `spawn`
-//! only RESOLVES facts and parks the call; only an explicit `start` for its id runs it. The host never decides.
+//! only RESOLVES facts and parks the call; only an explicit `start` (or a `pipe` naming it) for its id runs it. The
+//! host never decides.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -15,6 +17,7 @@ use crate::env::{self, CallEnv, EnvError, NoSecrets, SecretStore};
 use crate::facts;
 use crate::framing::{self, FrameError, MAX_OUT};
 use crate::gitconfig;
+use crate::glob;
 use crate::runner::{self, Outcome, Prepared};
 use crate::sandbox::{self, Availability, Plan};
 use crate::store::{MAX_READ, Store};
@@ -28,6 +31,11 @@ pub const PENDING_TTL: Duration = Duration::from_secs(30 * 60);
 pub const MAX_PENDING: usize = 256;
 /// At most this many calls run at once.
 pub const MAX_RUNNING: usize = 32;
+/// At most this many stages in one `pipe`.
+pub const MAX_PIPE_STAGES: usize = 16;
+/// The default and the ceiling of a `glob`'s matches.
+pub const DEFAULT_GLOB_LIMIT: u64 = 10_000;
+pub const MAX_GLOB_LIMIT: u64 = 100_000;
 /// The default and the ceiling of a call's time limit.
 pub const DEFAULT_TIMEOUT_MS: u64 = 120_000;
 pub const MAX_TIMEOUT_MS: u64 = 3_600_000;
@@ -183,6 +191,11 @@ impl Session {
                 Ok(()) => return,
                 Err(f) => Err(f),
             },
+            "pipe" => match self.pipe(&seq, args).await {
+                Ok(()) => return,
+                Err(f) => Err(f),
+            },
+            "glob" => self.glob(args).await,
             "discard" => self.discard(args),
             "cancel" => self.cancel(args),
             "read" => self.read(args),
@@ -320,7 +333,8 @@ impl Session {
         let facts = json!({
             "id": id,
             "argv": argv,
-            "program": { "path": program, "inRoot": facts::in_roots(&program, &config.roots) },
+            "program": { "path": program, "inRoot": facts::in_roots(&program, &config.roots),
+                         "fingerprint": facts::fingerprint(&program) },
             "cwd": cwd_fact,
             "env": { "set": env.plain.keys().chain(env.secrets.keys()).collect::<Vec<_>>(),
                      "secrets": env.secrets.values().collect::<Vec<_>>(),
@@ -393,17 +407,96 @@ impl Session {
                 _ => return fail("UnknownId", format!("no pending call {id:?}")),
             }
         };
-        let store = self.host.store.clone();
+        let (running, _) = self.launch(id, &p, Stdio::null(), false)?;
+        let pid = running.pid;
+        let cancel = self.register(id, pid);
+        self.send(json!({ "seq": seq, "value": { "id": id, "pid": pid } }));
+        self.supervise(id.to_string(), running, cancel, &p);
+        Ok(())
+    }
+
+    /// Runs several pending calls joined by OS pipes: each stage's stdout is the next one's stdin, and only the last
+    /// stage's stdout is held. Validation is all or nothing and happens before anything starts; the answer comes before
+    /// any stage's `done`.
+    async fn pipe(self: &Arc<Self>, seq: &Value, a: &Map<String, Value>) -> Result<(), Fail> {
+        let bad = || Fail("BadRequest", format!("ids is an array of 2..={MAX_PIPE_STAGES} distinct strings"));
+        let ids = string_array(a.get("ids")).ok_or_else(bad)?;
+        if !(2..=MAX_PIPE_STAGES).contains(&ids.len()) || (1..ids.len()).any(|i| ids[..i].contains(&ids[i])) {
+            return Err(bad());
+        }
+        let stages: Vec<Pending> = {
+            let mut st = self.state.lock().unwrap();
+            let live = |p: &Pending| p.created.elapsed() < PENDING_TTL;
+            if let Some(id) = ids.iter().find(|id| !st.pending.get(*id).is_some_and(live)) {
+                return fail("UnknownId", format!("no pending call {id:?}"));
+            }
+            if st.running.len() + ids.len() > MAX_RUNNING {
+                return fail("Busy", format!("{MAX_RUNNING} calls at most are running at once"));
+            }
+            ids.iter().filter_map(|id| st.pending.remove(id)).collect()
+        };
+        let mut started: Vec<runner::Running> = Vec::new();
+        let mut failure = None;
+        let mut stdin = Stdio::null();
+        for (i, (id, p)) in ids.iter().zip(&stages).enumerate() {
+            match self.launch(id, p, stdin, i + 1 < stages.len()) {
+                Ok((r, next)) => {
+                    started.push(r);
+                    stdin = next.unwrap_or_else(Stdio::null);
+                }
+                Err(f) => {
+                    failure = Some(f);
+                    break;
+                }
+            }
+        }
+        if let Some(f) = failure {
+            // The stages already started never get a `done`: end them, and drop their temp directories.
+            for (r, id) in started.into_iter().zip(&ids) {
+                runner::abort(r).await;
+                self.host.store.remove_call_tmp(id);
+            }
+            return Err(f);
+        }
+        let pids: Vec<u32> = started.iter().map(|r| r.pid).collect();
+        let cancels: Vec<Arc<Notify>> = ids.iter().zip(&pids).map(|(id, pid)| self.register(id, *pid)).collect();
+        self.send(json!({ "seq": seq, "value": { "ids": ids, "pids": pids } }));
+        for (((id, r), cancel), p) in ids.into_iter().zip(started).zip(cancels).zip(&stages) {
+            self.supervise(id, r, cancel, p);
+        }
+        Ok(())
+    }
+
+    /// Builds and starts one pending call: its temp directory, scrubbed environment and sandbox wrapping, with `stdin`
+    /// as its standard input. With `pipe_out` its stdout is handed back as the next stage's stdin instead of being
+    /// held. On failure nothing of it is left behind.
+    fn launch(
+        &self,
+        id: &str,
+        p: &Pending,
+        stdin: Stdio,
+        pipe_out: bool,
+    ) -> Result<(runner::Running, Option<Stdio>), Fail> {
+        let store = &self.host.store;
         let tmp = store.call_tmp(id).map_err(|e| Fail("SpawnFailed", format!("temp dir: {e}")))?;
-        let path = std::env::join_paths(&p.config.path).map_err(|e| Fail("SpawnFailed", e.to_string()))?;
-        let envmap = env::build(
+        let failed = |f: Fail| {
+            store.remove_call_tmp(id);
+            Err(f)
+        };
+        let path = match std::env::join_paths(&p.config.path) {
+            Ok(path) => path,
+            Err(e) => return failed(Fail("SpawnFailed", e.to_string())),
+        };
+        let envmap = match env::build(
             &*self.host.host_env,
             &path.to_string_lossy(),
             &tmp.to_string_lossy(),
             &p.env,
             self.host.secrets.as_ref(),
-        )
-        .map_err(|_| Fail("SecretUnavailable", "a secret went away between spawn and start".into()))?;
+        ) {
+            Ok(m) => m,
+            Err(_) => return failed(Fail("SecretUnavailable", "a secret went away between spawn and start".into())),
+        };
         let prepared = if p.sandboxed {
             let plan = Plan {
                 roots: p.config.roots.clone(),
@@ -413,8 +506,7 @@ impl Session {
                 home: (self.host.host_env)("HOME").map(PathBuf::from),
             };
             let Some((prog, args)) = sandbox::wrap(&self.host.sandbox, &plan, &p.program, &p.argv[1..], &p.cwd) else {
-                store.remove_call_tmp(id);
-                return fail("SandboxFailed", "the sandbox is not available");
+                return failed(Fail("SandboxFailed", "the sandbox is not available".into()));
             };
             Prepared { program: prog, args, argv0: None, cwd: p.cwd.clone(), env: envmap }
         } else {
@@ -426,30 +518,69 @@ impl Session {
                 env: envmap,
             }
         };
-        let running = match runner::spawn(prepared) {
+        let code = if p.sandboxed { "SandboxFailed" } else { "SpawnFailed" };
+        let mut running = match runner::spawn(prepared, stdin) {
             Ok(r) => r,
-            Err(e) => {
-                store.remove_call_tmp(id);
-                return fail(if p.sandboxed { "SandboxFailed" } else { "SpawnFailed" }, e.to_string());
-            }
+            Err(e) => return failed(Fail(code, e.to_string())),
         };
-        let pid = running.pid;
+        let next = if pipe_out {
+            match running.take_stdout() {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    runner::kill_now(running.pid);
+                    return failed(Fail(code, format!("pipe: {e}")));
+                }
+            }
+        } else {
+            None
+        };
+        Ok((running, next))
+    }
+
+    /// Records a started call as running, and returns the handle `cancel` notifies.
+    fn register(&self, id: &str, pid: u32) -> Arc<Notify> {
         let cancel = Arc::new(Notify::new());
         self.state.lock().unwrap().running.insert(id.to_string(), (pid, cancel.clone()));
+        cancel
+    }
+
+    /// Sees a started call to its end in the background, then sends its `done`.
+    fn supervise(self: &Arc<Self>, id: String, running: runner::Running, cancel: Arc<Notify>, p: &Pending) {
         let s = self.clone();
-        let id_owned = id.to_string();
-        let timeout = Duration::from_millis(p.timeout_ms);
-        let cap = p.config.output_cap;
-        let sandboxed = p.sandboxed;
-        self.send(json!({ "seq": seq, "value": { "id": id, "pid": pid } }));
+        let store = self.host.store.clone();
+        let (timeout, cap, sandboxed) = (Duration::from_millis(p.timeout_ms), p.config.output_cap, p.sandboxed);
         tokio::spawn(async move {
             let o = runner::finish(running, store.clone(), cancel, timeout, cap).await;
-            s.state.lock().unwrap().running.remove(&id_owned);
-            store.remove_call_tmp(&id_owned);
-            let done = done_event(&id_owned, o, sandboxed, &store);
+            s.state.lock().unwrap().running.remove(&id);
+            store.remove_call_tmp(&id);
+            let done = done_event(&id, o, sandboxed, &store);
             s.send(done);
         });
-        Ok(())
+    }
+
+    /// Expands a pattern within the roots (src/glob.rs).
+    async fn glob(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
+        let config = self.state.lock().unwrap().config.clone();
+        let Some(config) = config else { return fail("NotConfigured", "configure the session first") };
+        let Some(cwd_given) = a.get("cwd").and_then(Value::as_str) else {
+            return fail("BadRequest", "cwd is an absolute path");
+        };
+        if !Path::new(cwd_given).is_absolute() {
+            return fail("BadRequest", "cwd is an absolute path");
+        }
+        let cwd = Path::new(cwd_given).canonicalize().ok().filter(|c| c.is_dir() && facts::in_roots(c, &config.roots));
+        let Some(cwd) = cwd else {
+            return fail("CwdOutsideRoots", format!("{cwd_given} is not a directory inside a root"));
+        };
+        let Some(pattern) = a.get("pattern").and_then(Value::as_str) else {
+            return fail("BadRequest", "pattern is a string");
+        };
+        let pattern = glob::Pattern::parse(pattern).map_err(|m| Fail("BadRequest", m))?;
+        let limit = opt_u64(a, "limit")?.unwrap_or(DEFAULT_GLOB_LIMIT).clamp(1, MAX_GLOB_LIMIT) as usize;
+        let found = tokio::task::spawn_blocking(move || glob::expand(&cwd, &pattern, limit, walk::WALK_CAP))
+            .await
+            .map_err(|e| Fail("Failed", e.to_string()))?;
+        Ok(json!({ "matches": found.matches, "truncated": found.truncated }))
     }
 
     fn discard(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
@@ -503,7 +634,7 @@ fn done_event(id: &str, o: Outcome, sandboxed: bool, store: &Store) -> Value {
         "code": o.code, "signal": o.signal,
         "ok": o.code == Some(0),
         "timedOut": o.timed_out, "cancelled": o.cancelled, "durationMs": o.duration_ms,
-        "stdout": stream(&o.stdout), "stderr": stream(&o.stderr),
+        "stdout": o.stdout.as_ref().map_or_else(|| json!({ "piped": true }), stream), "stderr": stream(&o.stderr),
     });
     if sandboxed && sandbox_refused(&o, store) {
         v["ok"] = json!(false);

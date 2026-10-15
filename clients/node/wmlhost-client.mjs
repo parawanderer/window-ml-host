@@ -155,6 +155,10 @@ export class HostClient {
   spawn(args) { return this.call("spawn", args); }
   /** Runs a pending call after its verdict. */
   start(id) { return this.call("start", { id }); }
+  /** Runs 2 to 16 pending calls joined by OS pipes; each stage still ends with its own `done`. Resolves `{ ids, pids }`. */
+  pipe(ids) { return this.call("pipe", { ids }); }
+  /** Expands a pattern beneath `cwd` within the roots; resolves `{ matches, truncated }`. */
+  glob(cwd, pattern, limit) { return this.call("glob", limit === undefined ? { cwd, pattern } : { cwd, pattern, limit }); }
   /** Forgets a pending call that was denied. */
   discard(id) { return this.call("discard", { id }); }
   /** Terminates a running call's process group. */
