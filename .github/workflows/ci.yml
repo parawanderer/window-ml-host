@@ -43,7 +43,7 @@ jobs:
           if bwrap --ro-bind / / --unshare-net --unshare-pid --dev /dev --proc /proc /bin/true; then
             echo "bubblewrap sandbox works on this runner"
           else
-            echo "bubblewrap sandbox does NOT work on this runner"
+            echo "::warning title=Linux sandbox enforcement untested::bubblewrap does not start on this runner (AppArmor restricts unprivileged user namespaces), so the Linux sandbox tests ran only the fail-closed path"
             exit 1
           fi
       - name: Format

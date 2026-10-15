@@ -67,6 +67,8 @@ args: { "argv": ["git", "diff", "--stat", "HEAD~1"],
         "env": { "LC_ALL": "C" },             // ADDED to the scrubbed base; a value may be { "$secret": "<name>" }
         "mode": "host",                       // "host" | "container"
         "pathArgs": [{ "arg": 3 }],           // which argv slots are paths (from the program manifest); see below
+        "walkCwd": false,                     // the call walks its cwd (a recursive reader given no path): report containsSecret
+        "repoArg": 2,                         // optional: the argv slot naming the repository (`git -C dir`); else the cwd's
         "timeoutMs": 30000 }                  // optional, at most 3600000
 ```
 
@@ -76,8 +78,10 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
 { "id": "c3",                                   // names this pending call for start / discard
   "argv": ["git", "diff", "--stat", "HEAD~1"],
   "program": { "path": "/usr/bin/git", "inRoot": false },   // argv[0] after PATH lookup, realpath'd
-  "cwd": { "path": "/Users/me/src/proj", "inRoot": true },
-  "env": { "set": ["LC_ALL"], "secrets": [] },  // names only: what the call changes from the base, and which are handles
+  "cwd": { "path": "/Users/me/src/proj", "inRoot": true },  // + "containsSecret" with walkCwd
+  "env": { "set": ["LC_ALL"], "secrets": [], "free": true }, // names only; free: every name is on the FREE list
+  "repo": { "root": "/Users/me/src/proj", "reasons": [] },  // null outside a git repository
+  "repoConfigRunsCode": false,                  // the repository's own config makes git run a program; null: no repository
   "paths": [{ "arg": 3, "given": "HEAD~1", "path": "/Users/me/src/proj/HEAD~1",
               "inRoot": true, "secret": false, "exists": false }],
   "effects": "unknown",                         // from the program manifest once one exists (root F); "unknown" until then
@@ -94,6 +98,16 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
 - **A path is resolved with `realpath` against `cwd`.** One that does not exist yet is its deepest existing ancestor's
   realpath plus the rest, and is never `inRoot` if the rest contains `..`. A symlink is followed, so one pointing out of
   a root is `inRoot: false`.
+- **`walk: true`** on a `pathArgs` entry (a recursive reader: `rg`, `find`, `ls -R`) adds `containsSecret`: `true` if
+  anything beneath the path looks like a secret, `false` if nothing does, `null` past 20 000 entries or an unreadable
+  directory. The walk never follows a symlink (a link is judged by its name) and skips `.git` directories.
+- **`repoConfigRunsCode`** comes from the host's own read of the repository-level config (`.git/config`, a worktree's
+  common config and `config.worktree`, and the `include`/`includeIf` files they pull in from inside the repository):
+  true for `core.fsmonitor`, `core.pager` other than `cat`, `core.hooksPath`, `core.sshCommand`, `core.askPass`,
+  `core.gitProxy`, `diff.external`, `diff.*.textconv`, `diff.*.command`, any `filter.*`, `credential.helper`, an
+  `alias.*` starting with `!`, `gpg.program`, `remote.*.uploadpack`/`receivepack`, and any include from outside the
+  repository; `reasons` lists each. The person's global config is not read.
+- **`env.free`**: every variable the call sets is one of `LANG`, `LC_*`, `TZ`, `NO_COLOR`, `COLUMNS`, or `TERM=dumb`.
 - **`secret`** is the host's name check (`.env`, `*.pem`, `id_*`, `.ssh/`, …; the list is `SECRET_PATTERNS` in
   `src/facts.rs`) on the resolved path and on the path as given.
 - **Refused at spawn, whatever a policy would say** (these are enforcement, not decisions): `cwd` outside every root
@@ -106,7 +120,8 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
 `args: { "id": "c3" }` → `{ "id": "c3", "pid": 4242 }`, then a `done` event when it ends. Sent by the worker only after
 its verdict. **The host spawns nothing without it.** A second `start` of the same id fails `UnknownId`.
 
-What the host enforces whatever the verdict was: argv executed directly with no shell, `program.path` executed (so a
+What the host enforces whatever the verdict was: argv executed directly with no shell, git's `core.fsmonitor` off and
+`core.pager` set to `cat` (through `GIT_CONFIG_COUNT`, over the repository's own config) and its optional locks off, `program.path` executed (so a
 `PATH` change in between cannot swap it), stdin closed, no terminal, a new process group, the scrubbed environment, the
 time limit, the output cap, and the OS sandbox when `sandboxed` was true. If the sandbox then fails to start, the
 call's `done` carries `error: { code: "SandboxFailed" }` and the program never ran; the host never falls back to running

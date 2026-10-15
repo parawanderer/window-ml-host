@@ -5,6 +5,7 @@ pub mod env;
 pub mod facts;
 pub mod framing;
 pub mod fsx;
+pub mod gitconfig;
 #[cfg(feature = "hub")]
 pub mod hub;
 pub mod install;
@@ -12,3 +13,4 @@ pub mod runner;
 pub mod sandbox;
 pub mod session;
 pub mod store;
+pub mod walk;

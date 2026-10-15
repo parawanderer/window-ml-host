@@ -14,9 +14,11 @@ use tokio::sync::{Notify, mpsc};
 use crate::env::{self, CallEnv, EnvError, NoSecrets, SecretStore};
 use crate::facts;
 use crate::framing::{self, FrameError, MAX_OUT};
+use crate::gitconfig;
 use crate::runner::{self, Outcome, Prepared};
 use crate::sandbox::{self, Availability, Plan};
 use crate::store::{MAX_READ, Store};
+use crate::walk;
 
 /// The protocol version `hello` reports.
 pub const PROTOCOL: u32 = 1;
@@ -289,6 +291,17 @@ impl Session {
         let program =
             facts::resolve_program(&argv[0], &cwd, &config.path).map_err(|e| Fail("ProgramNotFound", e.to_string()))?;
         let paths = self.path_facts(a.get("pathArgs"), &argv, &cwd, &config.roots)?;
+        let mut cwd_fact = json!({ "path": cwd, "inRoot": true });
+        if opt_bool(a, "walkCwd")?.unwrap_or(false) {
+            cwd_fact["containsSecret"] = json!(walk::contains_secret(&cwd, walk::WALK_CAP));
+        }
+        // The repository the call acts in: the cwd's, or the one a `-C dir` names (`repoArg`, from the manifest).
+        let repo_dir = match opt_u64(a, "repoArg")? {
+            None => cwd.clone(),
+            Some(i) if (1..argv.len()).contains(&(i as usize)) => facts::resolve_path(&argv[i as usize], &cwd).path,
+            Some(_) => return fail("BadRequest", "repoArg is the index of an argument after argv[0]"),
+        };
+        let repo = gitconfig::inspect(&repo_dir);
         let timeout_ms = opt_u64(a, "timeoutMs")?.unwrap_or(config.timeout_ms).clamp(1, MAX_TIMEOUT_MS);
         let sandboxed = config.sandbox && self.host.sandbox.available;
         let named_secrets: Vec<PathBuf> = paths
@@ -308,9 +321,12 @@ impl Session {
             "id": id,
             "argv": argv,
             "program": { "path": program, "inRoot": facts::in_roots(&program, &config.roots) },
-            "cwd": { "path": cwd, "inRoot": true },
+            "cwd": cwd_fact,
             "env": { "set": env.plain.keys().chain(env.secrets.keys()).collect::<Vec<_>>(),
-                     "secrets": env.secrets.values().collect::<Vec<_>>() },
+                     "secrets": env.secrets.values().collect::<Vec<_>>(),
+                     "free": env::is_free(&env) },
+            "repo": repo.as_ref().map(|r| json!({ "root": r.root, "reasons": r.reasons })),
+            "repoConfigRunsCode": repo.as_ref().map(|r| r.runs_code),
             "paths": paths,
             "effects": "unknown",
             "mode": "host",
@@ -350,11 +366,16 @@ impl Session {
             };
             let r = facts::resolve_path(given, cwd);
             let secret = facts::looks_secret(&r.path) || facts::looks_secret(Path::new(given));
-            out.push(json!({
+            let mut fact = json!({
                 "arg": i, "given": given, "path": r.path,
                 "inRoot": r.clean && facts::in_roots(&r.path, roots),
                 "secret": secret, "exists": r.exists,
-            }));
+            });
+            // A recursive reader's argument: what lies beneath it, which it reads without naming.
+            if e.get("walk") == Some(&Value::Bool(true)) {
+                fact["containsSecret"] = json!(walk::contains_secret(&r.path, walk::WALK_CAP));
+            }
+            out.push(fact);
         }
         Ok(out)
     }

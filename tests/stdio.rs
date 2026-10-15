@@ -575,3 +575,71 @@ fn git_status_does_not_write_the_index() {
     );
     h.close();
 }
+
+// --- the repository's own config, and what a recursive reader reaches (rulings of 2026-10-15) ---
+
+#[test]
+fn a_planted_fsmonitor_does_not_run_and_the_facts_say_the_config_runs_code() {
+    let (_d, r) = root();
+    let git = |args: &[&str]| assert!(Command::new("git").args(args).current_dir(&r).status().unwrap().success());
+    git(&["init", "-q"]);
+    let marker = r.join("fsmonitor-ran");
+    git(&["config", "core.fsmonitor", &format!("touch {}; false", marker.display())]);
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r], "sandbox": false }));
+    let (f, d) = h.run(json!({ "argv": ["git", "status", "--short"], "cwd": r }));
+    assert_eq!(d["code"], 0, "{}", text(&h.read_all(&d["stderr"])));
+    assert!(!marker.exists(), "the repository's fsmonitor ran");
+    assert_eq!(f["repoConfigRunsCode"], true);
+    assert_eq!(f["repo"]["root"], json!(r));
+    assert!(f["repo"]["reasons"][0].as_str().unwrap().starts_with("core.fsmonitor"), "{f}");
+    h.close();
+}
+
+#[test]
+fn a_plain_repository_runs_no_code_and_a_plain_directory_is_no_repository() {
+    let (_d, r) = root();
+    assert!(Command::new("git").args(["init", "-q"]).current_dir(&r).status().unwrap().success());
+    let (_e, plain) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r, plain] }));
+    assert_eq!(h.ok("spawn", json!({ "argv": ["true"], "cwd": r }))["repoConfigRunsCode"], false);
+    let f = h.ok("spawn", json!({ "argv": ["true"], "cwd": plain }));
+    assert_eq!(f["repoConfigRunsCode"], Value::Null);
+    assert_eq!(f["repo"], Value::Null);
+    h.close();
+}
+
+#[test]
+fn a_walked_argument_or_cwd_reports_the_secrets_beneath_it() {
+    let (_d, r) = root();
+    std::fs::create_dir_all(r.join("src/conf")).unwrap();
+    std::fs::write(r.join("src/conf/.env"), "K=V").unwrap();
+    std::fs::create_dir_all(r.join("docs")).unwrap();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let f = h.ok(
+        "spawn",
+        json!({ "argv": ["ls", "-R", "src", "docs"], "cwd": r, "walkCwd": true,
+                "pathArgs": [{ "arg": 2, "walk": true }, { "arg": 3, "walk": true }] }),
+    );
+    assert_eq!(f["paths"][0]["containsSecret"], true);
+    assert_eq!(f["paths"][1]["containsSecret"], false);
+    assert_eq!(f["cwd"]["containsSecret"], true);
+    let f = h.ok("spawn", json!({ "argv": ["cat", "docs"], "cwd": r, "pathArgs": [{ "arg": 1 }] }));
+    assert!(f["paths"][0].get("containsSecret").is_none(), "only a walked argument is walked");
+    h.close();
+}
+
+#[test]
+fn env_free_is_true_only_for_the_free_list() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let f = |h: &mut Host, env: Value| {
+        h.ok("spawn", json!({ "argv": ["true"], "cwd": r, "env": env }))["env"]["free"].clone()
+    };
+    assert_eq!(f(&mut h, json!({ "LC_ALL": "C", "TZ": "UTC" })), true);
+    assert_eq!(f(&mut h, json!({ "RUST_LOG": "debug" })), false);
+    h.close();
+}
