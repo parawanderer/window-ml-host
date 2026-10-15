@@ -9,8 +9,9 @@ use serde_json::Value;
 /// Variables copied from the host's own environment into the base, when set.
 const BASE_PASS: &[&str] = &["HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "LC_MESSAGES", "TZ"];
 
-/// Variables the base always sets: no terminal, and git never prompts (stdin is closed anyway).
-const BASE_SET: &[(&str, &str)] = &[("TERM", "dumb"), ("GIT_TERMINAL_PROMPT", "0")];
+/// Variables the base always sets: no terminal; git never prompts (stdin is closed anyway) and never takes its
+/// OPTIONAL locks, so `git status` does not refresh `.git/index` and a call its manifest calls a read stays one.
+const BASE_SET: &[(&str, &str)] = &[("TERM", "dumb"), ("GIT_TERMINAL_PROMPT", "0"), ("GIT_OPTIONAL_LOCKS", "0")];
 
 /// Names a call may never set, compared in upper case. Each makes some program run code, read a different config, or
 /// write a file it was not asked to (PROGRAM_MANIFEST.md, `env`). `PATH`, `HOME` and `TMPDIR` belong to the host.
@@ -281,7 +282,7 @@ mod tests {
         };
         let env = build(&host, "/usr/bin:/bin", "/tmp/c1", &CallEnv::default(), &NoSecrets).unwrap();
         let keys: Vec<&str> = env.keys().map(String::as_str).collect();
-        assert_eq!(keys, ["GIT_TERMINAL_PROMPT", "HOME", "PATH", "TERM", "TMPDIR"]);
+        assert_eq!(keys, ["GIT_OPTIONAL_LOCKS", "GIT_TERMINAL_PROMPT", "HOME", "PATH", "TERM", "TMPDIR"]);
         assert!(!env.values().any(|v| v == "leak"));
     }
 }
