@@ -120,7 +120,7 @@ impl Host {
             assert!(avail, "Seatbelt must be available on macOS: {h}");
         } else if !avail {
             assert!(
-                std::env::var("WMLHOST_REQUIRE_SANDBOX").is_err(),
+                std::env::var("WMLHOST_REQUIRE_SANDBOX").as_deref() != Ok("1"),
                 "WMLHOST_REQUIRE_SANDBOX set, but the sandbox is unavailable: {h}"
             );
             eprintln!("sandbox unavailable here, enforcement checks skipped: {}", h["sandbox"]);
