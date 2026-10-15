@@ -5,6 +5,8 @@ pub mod env;
 pub mod facts;
 pub mod framing;
 pub mod fsx;
+#[cfg(feature = "hub")]
+pub mod hub;
 pub mod install;
 pub mod runner;
 pub mod sandbox;

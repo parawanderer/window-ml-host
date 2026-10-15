@@ -552,3 +552,26 @@ fn held_output_is_hidden_from_children() {
     assert!(!text(&h.read_all(&d["stdout"])).contains("first-output"));
     h.close();
 }
+
+#[test]
+fn git_status_does_not_write_the_index() {
+    let (_d, r) = root();
+    let git = |args: &[&str]| assert!(Command::new("git").args(args).current_dir(&r).status().unwrap().success());
+    git(&["init", "-q"]);
+    std::fs::write(r.join("a"), "a").unwrap();
+    git(&["add", "a"]);
+    // Touch the file so its stat data is stale: a plain `git status` would refresh the index here.
+    std::thread::sleep(Duration::from_millis(1100));
+    std::fs::write(r.join("a"), "a").unwrap();
+    let before = std::fs::metadata(r.join(".git/index")).unwrap().modified().unwrap();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r], "sandbox": false }));
+    let (_, d) = h.run(json!({ "argv": ["git", "status", "--short"], "cwd": r }));
+    assert_eq!(d["code"], 0);
+    assert_eq!(
+        std::fs::metadata(r.join(".git/index")).unwrap().modified().unwrap(),
+        before,
+        "git status refreshed the index"
+    );
+    h.close();
+}
