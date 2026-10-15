@@ -1,0 +1,303 @@
+{
+  "program": "rg",
+  "version": {
+    "range": ">=13.0.0 <16",
+    "args": [
+      "--version"
+    ],
+    "pattern": "^ripgrep (\\d+\\.\\d+\\.\\d+)"
+  },
+  "okCodes": [
+    0,
+    1
+  ],
+  "echoes": false,
+  "env": [
+    "RIPGREP_CONFIG_PATH"
+  ],
+  "command": {
+    "effects": [
+      "read"
+    ],
+    "paths": {
+      "operandsFrom": 1
+    },
+    "noPaths": "cwd",
+    "terminator": "--",
+    "clusters": true,
+    "flags": {
+      "-s": {},
+      "--case-sensitive": {},
+      "--crlf": {},
+      "-F": {},
+      "--fixed-strings": {},
+      "-i": {},
+      "--ignore-case": {},
+      "-v": {},
+      "--invert-match": {},
+      "-x": {},
+      "--line-regexp": {},
+      "--mmap": {},
+      "-U": {},
+      "--multiline": {},
+      "--multiline-dotall": {},
+      "--no-unicode": {},
+      "--null-data": {},
+      "-P": {},
+      "--pcre2": {},
+      "-S": {},
+      "--smart-case": {},
+      "--stop-on-nonmatch": {},
+      "-a": {},
+      "--text": {},
+      "-w": {},
+      "--word-regexp": {},
+      "--no-pcre2-unicode": {},
+      "--binary": {},
+      "--glob-case-insensitive": {},
+      "--ignore-file-case-insensitive": {},
+      "--no-ignore": {},
+      "--no-ignore-dot": {},
+      "--no-ignore-exclude": {},
+      "--no-ignore-files": {},
+      "--no-ignore-global": {},
+      "--no-ignore-parent": {},
+      "--no-ignore-vcs": {},
+      "--no-require-git": {},
+      "--one-file-system": {},
+      "-u": {},
+      "--unrestricted": {},
+      "--hidden": {},
+      "--block-buffered": {},
+      "-b": {},
+      "--byte-offset": {},
+      "--column": {},
+      "--heading": {},
+      "--no-heading": {},
+      "-h": {},
+      "--help": {},
+      "--include-zero": {},
+      "--line-buffered": {},
+      "-n": {},
+      "--line-number": {},
+      "-N": {},
+      "--no-line-number": {},
+      "--max-columns-preview": {},
+      "-0": {},
+      "--null": {},
+      "-o": {},
+      "--only-matching": {},
+      "--passthru": {},
+      "-p": {},
+      "--pretty": {},
+      "-q": {},
+      "--quiet": {},
+      "--trim": {},
+      "--vimgrep": {},
+      "-H": {},
+      "--with-filename": {},
+      "-I": {},
+      "--no-filename": {},
+      "-c": {},
+      "--count": {},
+      "--count-matches": {},
+      "-l": {},
+      "--files-with-matches": {},
+      "--files-without-match": {},
+      "--json": {},
+      "--no-ignore-messages": {},
+      "--no-messages": {},
+      "--stats": {},
+      "--no-config": {},
+      "--pcre2-version": {},
+      "--type-list": {},
+      "-V": {},
+      "--version": {},
+      "-E": {
+        "value": true
+      },
+      "--encoding": {
+        "value": true
+      },
+      "--engine": {
+        "value": true
+      },
+      "-m": {
+        "value": true
+      },
+      "--max-count": {
+        "value": true
+      },
+      "-j": {
+        "value": true
+      },
+      "--threads": {
+        "value": true
+      },
+      "--dfa-size-limit": {
+        "value": true
+      },
+      "--regex-size-limit": {
+        "value": true
+      },
+      "-g": {
+        "value": true
+      },
+      "--glob": {
+        "value": true
+      },
+      "--iglob": {
+        "value": true
+      },
+      "-d": {
+        "value": true
+      },
+      "--max-depth": {
+        "value": true
+      },
+      "--max-filesize": {
+        "value": true
+      },
+      "-t": {
+        "value": true
+      },
+      "--type": {
+        "value": true
+      },
+      "-T": {
+        "value": true
+      },
+      "--type-not": {
+        "value": true
+      },
+      "--type-add": {
+        "value": true
+      },
+      "--type-clear": {
+        "value": true
+      },
+      "-A": {
+        "value": true
+      },
+      "--after-context": {
+        "value": true
+      },
+      "-B": {
+        "value": true
+      },
+      "--before-context": {
+        "value": true
+      },
+      "--color": {
+        "value": true
+      },
+      "--colors": {
+        "value": true
+      },
+      "-C": {
+        "value": true
+      },
+      "--context": {
+        "value": true
+      },
+      "--context-separator": {
+        "value": true
+      },
+      "--field-context-separator": {
+        "value": true
+      },
+      "--field-match-separator": {
+        "value": true
+      },
+      "--hyperlink-format": {
+        "value": true
+      },
+      "-M": {
+        "value": true
+      },
+      "--max-columns": {
+        "value": true
+      },
+      "--path-separator": {
+        "value": true
+      },
+      "-r": {
+        "value": true
+      },
+      "--replace": {
+        "value": true
+      },
+      "--sort": {
+        "value": true
+      },
+      "--sortr": {
+        "value": true
+      },
+      "--pre-glob": {
+        "value": true
+      },
+      "-e": {
+        "value": true,
+        "pathsFrom": 0
+      },
+      "--regexp": {
+        "value": true,
+        "pathsFrom": 0
+      },
+      "-f": {
+        "value": true,
+        "valueIsPath": "read",
+        "pathsFrom": 0
+      },
+      "--file": {
+        "value": true,
+        "valueIsPath": "read",
+        "pathsFrom": 0
+      },
+      "--ignore-file": {
+        "value": true,
+        "valueIsPath": "read"
+      },
+      "--pre": {
+        "value": true,
+        "effects": [
+          "runs-code"
+        ],
+        "runner": true
+      },
+      "--hostname-bin": {
+        "value": true,
+        "effects": [
+          "runs-code"
+        ],
+        "runner": true
+      },
+      "-z": {
+        "effects": [
+          "runs-code"
+        ],
+        "runner": true
+      },
+      "--search-zip": {
+        "effects": [
+          "runs-code"
+        ],
+        "runner": true
+      },
+      "-L": {
+        "effects": [
+          "unknown"
+        ]
+      },
+      "--follow": {
+        "effects": [
+          "unknown"
+        ]
+      },
+      "--files": {
+        "pathsFrom": 0
+      }
+    },
+    "recursive": true
+  }
+}

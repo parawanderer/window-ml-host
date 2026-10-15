@@ -1,0 +1,1964 @@
+{
+  "program": "git",
+  "version": "2.55.0",
+  "calls": [
+    {
+      "argv": [
+        "git",
+        "status",
+        "--short"
+      ],
+      "note": "a read of the repository",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "status",
+        "--short"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "status",
+        "--porcelain=v2",
+        "-b"
+      ],
+      "note": "optional value in the attached form",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "status",
+        "--porcelain=v2",
+        "-b"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--stat",
+        "HEAD~1"
+      ],
+      "note": "a rev operand is not a path",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--stat",
+        "HEAD~1"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--output=out.patch",
+        "HEAD"
+      ],
+      "note": "--output writes the file it names",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "write:fs:out.patch:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "split": "=",
+          "role": "write"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--output=out.patch",
+        "HEAD"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--output",
+        "out.patch"
+      ],
+      "note": "--output with its value as the next argument",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "write:fs:out.patch:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--output",
+        "out.patch"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--ext-diff"
+      ],
+      "note": "--ext-diff runs the configured external diff",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--ext-diff"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--textconv"
+      ],
+      "note": "--textconv runs the configured converter",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--textconv"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--no-index",
+        "a",
+        "b"
+      ],
+      "note": "--no-index reads any two paths: not described",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-index",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "-O",
+        "order.txt"
+      ],
+      "note": "-O reads an order file",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:order.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "-O",
+        "order.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--exit-code"
+      ],
+      "note": "--exit-code makes 1 an answer",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--exit-code"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--quiet"
+      ],
+      "note": "--quiet makes 1 an answer",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--quiet"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--",
+        "a.txt"
+      ],
+      "note": "a pathspec after -- stays inside the repository",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "--oneline",
+        "-20"
+      ],
+      "note": "a numeric flag",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "log",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--oneline",
+        "-20"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "-n",
+        "5",
+        "--format=%H"
+      ],
+      "note": "values, separate and attached",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "log",
+        "--no-ext-diff",
+        "--no-textconv",
+        "-n",
+        "5",
+        "--format=%H"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "--show-signature"
+      ],
+      "note": "--show-signature runs gpg",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "log",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--show-signature"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "--output=log.txt"
+      ],
+      "note": "the diff family flags reach log too",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "write:fs:log.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "split": "=",
+          "role": "write"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "log",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--output=log.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "--frobnicate"
+      ],
+      "note": "an unlisted flag",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "log",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--frobnicate"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "HEAD",
+        "--stat"
+      ],
+      "note": "show",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "show",
+        "--no-ext-diff",
+        "--no-textconv",
+        "HEAD",
+        "--stat"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "--ext-diff",
+        "HEAD"
+      ],
+      "note": "show with --ext-diff",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "show",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--ext-diff",
+        "HEAD"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "blame",
+        "-L",
+        "1,10",
+        "src/a.ts"
+      ],
+      "note": "blame of a file in the repository",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "blame",
+        "--no-textconv",
+        "-L",
+        "1,10",
+        "src/a.ts"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "blame",
+        "--contents",
+        "/etc/passwd",
+        "a.ts"
+      ],
+      "note": "--contents reads the path it names",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:/etc/passwd:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "blame",
+        "--no-textconv",
+        "--contents",
+        "/etc/passwd",
+        "a.ts"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "blame",
+        "--ignore-revs-file",
+        ".git-blame-ignore-revs",
+        "a.ts"
+      ],
+      "note": "--ignore-revs-file reads the path it names",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:.git-blame-ignore-revs:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "blame",
+        "--no-textconv",
+        "--ignore-revs-file",
+        ".git-blame-ignore-revs",
+        "a.ts"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "ls-files",
+        "-z",
+        "--others",
+        "--exclude-standard"
+      ],
+      "note": "ls-files",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "ls-files",
+        "-z",
+        "--others",
+        "--exclude-standard"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "ls-files",
+        "--exclude-from=ignore.txt"
+      ],
+      "note": "--exclude-from reads the path it names",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:ignore.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "split": "=",
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "ls-files",
+        "--exclude-from=ignore.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--show-toplevel"
+      ],
+      "note": "rev-parse",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rev-parse",
+        "--show-toplevel"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "branch",
+        "-vv"
+      ],
+      "note": "branch lists with no operand",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "branch",
+        "-vv"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "branch",
+        "newbranch"
+      ],
+      "note": "branch with an operand creates: not described",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "branch",
+        "newbranch"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "-C",
+        "sub",
+        "status"
+      ],
+      "note": "-C moves the repository the call reads",
+      "described": true,
+      "effects": [
+        "read:fs:sub:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "-C",
+        "sub",
+        "status"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "core.pager=sh",
+        "log"
+      ],
+      "note": "-c can set any config, a pager or an fsmonitor among them",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "-c",
+        "core.pager=sh",
+        "log",
+        "--no-ext-diff",
+        "--no-textconv"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "--git-dir=/elsewhere/.git",
+        "status"
+      ],
+      "note": "--git-dir points at another repository",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "--git-dir=/elsewhere/.git",
+        "status"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "--no-pager",
+        "log"
+      ],
+      "note": "a harmless global option",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "log",
+        "--no-ext-diff",
+        "--no-textconv"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "fetch",
+        "origin"
+      ],
+      "note": "fetch writes the repository, reads the network, and runs hooks",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:net:*",
+        "write:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "fetch",
+        "origin"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "fetch",
+        "--upload-pack=sh",
+        "origin"
+      ],
+      "note": "--upload-pack runs a program",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:net:*",
+        "write:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "fetch",
+        "--upload-pack=sh",
+        "origin"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "push",
+        "origin",
+        "main"
+      ],
+      "note": "push reads the repository and reads and writes the network",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "push",
+        "origin",
+        "main"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "push",
+        "--receive-pack",
+        "x",
+        "origin"
+      ],
+      "note": "--receive-pack runs a program",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "push",
+        "--receive-pack",
+        "x",
+        "origin"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "push",
+        "-u",
+        "origin",
+        "main"
+      ],
+      "note": "-u also writes the local config",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:fs:.:?:?",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "push",
+        "-u",
+        "origin",
+        "main"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "commit",
+        "-m",
+        "x"
+      ],
+      "note": "an unlisted subcommand",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "commit",
+        "-m",
+        "x"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "status",
+        "--end-of-options",
+        "-weird"
+      ],
+      "note": "an operand after the terminator",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "status",
+        "--end-of-options",
+        "-weird"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "status",
+        "--",
+        "-weird"
+      ],
+      "note": "-- also ends options",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "status",
+        "--",
+        "-weird"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "--config-env",
+        "x",
+        "status"
+      ],
+      "note": "--config-env changes what git does",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "--config-env",
+        "x",
+        "status"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "--work-tree",
+        "x",
+        "status"
+      ],
+      "note": "--work-tree changes what git does",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "--work-tree",
+        "x",
+        "status"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "--namespace",
+        "x",
+        "status"
+      ],
+      "note": "--namespace changes what git does",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "--namespace",
+        "x",
+        "status"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "--exec-path",
+        "x",
+        "status"
+      ],
+      "note": "--exec-path changes what git does",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "--exec-path",
+        "x",
+        "status"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "--super-prefix",
+        "x",
+        "status"
+      ],
+      "note": "--super-prefix changes what git does",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "--super-prefix",
+        "x",
+        "status"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "--list-cmds",
+        "x",
+        "status"
+      ],
+      "note": "--list-cmds changes what git does",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "--list-cmds",
+        "x",
+        "status"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "--attr-source",
+        "x",
+        "status"
+      ],
+      "note": "--attr-source changes what git does",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "--attr-source",
+        "x",
+        "status"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "--bare",
+        "status"
+      ],
+      "note": "--bare changes what git does",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "--bare",
+        "status"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "--paginate",
+        "status"
+      ],
+      "note": "--paginate changes what git does",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "--paginate",
+        "status"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "-p",
+        "status"
+      ],
+      "note": "-p changes what git does",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "-p",
+        "status"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "--exit-code"
+      ],
+      "note": "log --exit-code: makes 1 an answer",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "log",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--exit-code"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "--quiet"
+      ],
+      "note": "log --quiet: makes 1 an answer",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "log",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--quiet"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "-O",
+        "p.txt"
+      ],
+      "note": "log -O: reads the path it names",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:p.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "log",
+        "--no-ext-diff",
+        "--no-textconv",
+        "-O",
+        "p.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "--ext-diff"
+      ],
+      "note": "log --ext-diff: runs a program",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "log",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--ext-diff"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "--textconv"
+      ],
+      "note": "log --textconv: runs a program",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "log",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--textconv"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "--exit-code"
+      ],
+      "note": "show --exit-code: makes 1 an answer",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "show",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--exit-code"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "--quiet"
+      ],
+      "note": "show --quiet: makes 1 an answer",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "show",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--quiet"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "--output",
+        "p.txt"
+      ],
+      "note": "show --output: writes the path it names",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "write:fs:p.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "show",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--output",
+        "p.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "-O",
+        "p.txt"
+      ],
+      "note": "show -O: reads the path it names",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:p.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "show",
+        "--no-ext-diff",
+        "--no-textconv",
+        "-O",
+        "p.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "--textconv"
+      ],
+      "note": "show --textconv: runs a program",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "show",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--textconv"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "--show-signature"
+      ],
+      "note": "show --show-signature: runs a program",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "show",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--show-signature"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "blame",
+        "-S",
+        "p.txt"
+      ],
+      "note": "blame -S: reads the path it names",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:p.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "blame",
+        "--no-textconv",
+        "-S",
+        "p.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "ls-files",
+        "-X",
+        "p.txt"
+      ],
+      "note": "ls-files -X: reads the path it names",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:p.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "ls-files",
+        "-X",
+        "p.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "push",
+        "--set-upstream"
+      ],
+      "note": "push --set-upstream: adds [\"write\"]",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:fs:.:?:?",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "push",
+        "--set-upstream"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "push",
+        "--exec",
+        "x"
+      ],
+      "note": "push --exec: runs a program",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "push",
+        "--exec",
+        "x"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "blame",
+        "--textconv",
+        "a.ts"
+      ],
+      "note": "blame --textconv runs the configured converter",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "blame",
+        "--no-textconv",
+        "--textconv",
+        "a.ts"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "blame",
+        "--no-textconv",
+        "a.ts"
+      ],
+      "note": "blame --no-textconv, the hardening",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "blame",
+        "--no-textconv",
+        "a.ts"
+      ]
+    }
+  ]
+}

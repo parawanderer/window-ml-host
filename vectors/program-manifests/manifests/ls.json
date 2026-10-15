@@ -1,0 +1,58 @@
+{
+  "program": "ls",
+  "version": {
+    "range": "*",
+    "args": [],
+    "pattern": ""
+  },
+  "okCodes": [
+    0
+  ],
+  "echoes": false,
+  "command": {
+    "effects": [
+      "read"
+    ],
+    "paths": "operands",
+    "noPaths": "cwd",
+    "terminator": "--",
+    "clusters": true,
+    "flags": {
+      "-1": {},
+      "-A": {},
+      "-a": {},
+      "-b": {},
+      "-C": {},
+      "-c": {},
+      "-d": {},
+      "-F": {},
+      "-h": {},
+      "-i": {},
+      "-k": {},
+      "-l": {},
+      "-m": {},
+      "-n": {},
+      "-p": {},
+      "-q": {},
+      "-R": {
+        "recursive": true
+      },
+      "-r": {},
+      "-S": {},
+      "-s": {},
+      "-t": {},
+      "-u": {},
+      "-x": {},
+      "-L": {
+        "effects": [
+          "unknown"
+        ]
+      },
+      "-H": {
+        "effects": [
+          "unknown"
+        ]
+      }
+    }
+  }
+}

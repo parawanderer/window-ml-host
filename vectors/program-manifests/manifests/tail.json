@@ -1,0 +1,40 @@
+{
+  "program": "tail",
+  "version": {
+    "range": "*",
+    "args": [],
+    "pattern": ""
+  },
+  "okCodes": [
+    0
+  ],
+  "echoes": false,
+  "command": {
+    "effects": [
+      "read"
+    ],
+    "paths": "operands",
+    "noPaths": "nothing",
+    "terminator": "--",
+    "numericFlag": true,
+    "clusters": true,
+    "flags": {
+      "-n": {
+        "value": true
+      },
+      "--lines": {
+        "value": true
+      },
+      "-c": {
+        "value": true
+      },
+      "--bytes": {
+        "value": true
+      },
+      "-f": {},
+      "-F": {},
+      "-q": {},
+      "-v": {}
+    }
+  }
+}

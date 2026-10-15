@@ -1,0 +1,28 @@
+{
+  "program": "wc",
+  "version": {
+    "range": "*",
+    "args": [],
+    "pattern": ""
+  },
+  "okCodes": [
+    0
+  ],
+  "echoes": false,
+  "command": {
+    "effects": [
+      "read"
+    ],
+    "paths": "operands",
+    "noPaths": "nothing",
+    "terminator": "--",
+    "clusters": true,
+    "flags": {
+      "-c": {},
+      "-l": {},
+      "-m": {},
+      "-w": {},
+      "-L": {}
+    }
+  }
+}

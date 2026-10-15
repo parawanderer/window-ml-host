@@ -1,0 +1,114 @@
+{
+  "program": "jq",
+  "version": {
+    "range": ">=1.6 <2",
+    "args": [
+      "--version"
+    ],
+    "pattern": "^jq-(\\d+\\.\\d+(?:\\.\\d+)?)"
+  },
+  "okCodes": [
+    0
+  ],
+  "echoes": true,
+  "command": {
+    "effects": [
+      "read"
+    ],
+    "paths": {
+      "operandsFrom": 1
+    },
+    "noPaths": "nothing",
+    "terminator": "--",
+    "clusters": true,
+    "flags": {
+      "-n": {},
+      "--null-input": {},
+      "-r": {},
+      "--raw-output": {},
+      "-R": {},
+      "--raw-input": {},
+      "-s": {},
+      "--slurp": {},
+      "-c": {},
+      "--compact-output": {},
+      "-C": {},
+      "--color-output": {},
+      "-M": {},
+      "--monochrome-output": {},
+      "-S": {},
+      "--sort-keys": {},
+      "-a": {},
+      "--ascii-output": {},
+      "-j": {},
+      "--join-output": {},
+      "--tab": {},
+      "--seq": {},
+      "--stream": {},
+      "--unbuffered": {},
+      "-h": {},
+      "--help": {},
+      "-V": {},
+      "--version": {},
+      "--indent": {
+        "value": true
+      },
+      "-e": {
+        "okCodes": [
+          1,
+          4
+        ]
+      },
+      "--exit-status": {
+        "okCodes": [
+          1,
+          4
+        ]
+      },
+      "-f": {
+        "value": true,
+        "valueIsPath": "read",
+        "pathsFrom": 0
+      },
+      "--from-file": {
+        "value": true,
+        "valueIsPath": "read",
+        "pathsFrom": 0
+      },
+      "-L": {
+        "value": true,
+        "valueIsPath": "read"
+      },
+      "--rawfile": {
+        "effects": [
+          "unknown"
+        ]
+      },
+      "--slurpfile": {
+        "effects": [
+          "unknown"
+        ]
+      },
+      "--arg": {
+        "effects": [
+          "unknown"
+        ]
+      },
+      "--argjson": {
+        "effects": [
+          "unknown"
+        ]
+      },
+      "--args": {
+        "effects": [
+          "unknown"
+        ]
+      },
+      "--jsonargs": {
+        "effects": [
+          "unknown"
+        ]
+      }
+    }
+  }
+}

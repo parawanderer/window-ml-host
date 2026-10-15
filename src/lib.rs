@@ -9,6 +9,7 @@ pub mod gitconfig;
 #[cfg(feature = "hub")]
 pub mod hub;
 pub mod install;
+pub mod manifest;
 pub mod runner;
 pub mod sandbox;
 pub mod session;

@@ -1,0 +1,962 @@
+{
+  "program": "rg",
+  "version": "14.1.1",
+  "calls": [
+    {
+      "argv": [
+        "rg",
+        "TODO"
+      ],
+      "note": "a pattern, no path: reads the cwd",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "TODO"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "TODO",
+        "src",
+        "docs"
+      ],
+      "note": "the first operand is the pattern, the rest are paths",
+      "described": true,
+      "effects": [
+        "read:fs:docs:?:?",
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "TODO",
+        "src",
+        "docs"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-n",
+        "-i",
+        "foo",
+        "src"
+      ],
+      "note": "plain boolean flags",
+      "described": true,
+      "effects": [
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "-n",
+        "-i",
+        "foo",
+        "src"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-in",
+        "foo",
+        "src"
+      ],
+      "note": "a cluster of boolean flags",
+      "described": true,
+      "effects": [
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "-in",
+        "foo",
+        "src"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-A",
+        "3",
+        "foo",
+        "src"
+      ],
+      "note": "a valued flag with its value as its own argument",
+      "described": true,
+      "effects": [
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "-A",
+        "3",
+        "foo",
+        "src"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-A3",
+        "foo",
+        "src"
+      ],
+      "note": "a valued flag with an attached value",
+      "described": true,
+      "effects": [
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "-A3",
+        "foo",
+        "src"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--glob=*.ts",
+        "foo",
+        "src"
+      ],
+      "note": "a long flag with an attached value",
+      "described": true,
+      "effects": [
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "--glob=*.ts",
+        "foo",
+        "src"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-e",
+        "foo",
+        "-e",
+        "bar",
+        "src",
+        "docs"
+      ],
+      "note": "-e makes every operand a path",
+      "described": true,
+      "effects": [
+        "read:fs:docs:?:?",
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 5,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 6,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "-e",
+        "foo",
+        "-e",
+        "bar",
+        "src",
+        "docs"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--regexp=foo",
+        "src"
+      ],
+      "note": "--regexp= makes every operand a path",
+      "described": true,
+      "effects": [
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "--regexp=foo",
+        "src"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-f",
+        "patterns.txt",
+        "src"
+      ],
+      "note": "-f reads a pattern file and makes every operand a path",
+      "described": true,
+      "effects": [
+        "read:fs:patterns.txt:?:?",
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "-f",
+        "patterns.txt",
+        "src"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--file",
+        "patterns.txt",
+        "src"
+      ],
+      "note": "--file reads a pattern file",
+      "described": true,
+      "effects": [
+        "read:fs:patterns.txt:?:?",
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "--file",
+        "patterns.txt",
+        "src"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--ignore-file",
+        ".myignore",
+        "foo"
+      ],
+      "note": "--ignore-file reads a path",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:.myignore:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "--ignore-file",
+        ".myignore",
+        "foo"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--files",
+        "src"
+      ],
+      "note": "--files lists files: every operand is a path",
+      "described": true,
+      "effects": [
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "--files",
+        "src"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--files"
+      ],
+      "note": "--files with no path lists the cwd",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "--files"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--pre",
+        "cat",
+        "foo",
+        "src"
+      ],
+      "note": "--pre runs a program per file",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": true,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "--pre",
+        "cat",
+        "foo",
+        "src"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--pre=./filter.sh",
+        "foo"
+      ],
+      "note": "--pre in its attached form",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "--pre=./filter.sh",
+        "foo"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--pre-glob",
+        "*.pdf",
+        "foo"
+      ],
+      "note": "--pre-glob is only a value",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "--pre-glob",
+        "*.pdf",
+        "foo"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-z",
+        "foo",
+        "archive.gz"
+      ],
+      "note": "-z runs decompression programs",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:archive.gz:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": true,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "-z",
+        "foo",
+        "archive.gz"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-iz",
+        "foo",
+        "archive.gz"
+      ],
+      "note": "-z inside a cluster",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:archive.gz:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": true,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "-iz",
+        "foo",
+        "archive.gz"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--search-zip",
+        "foo"
+      ],
+      "note": "--search-zip runs decompression programs",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "--search-zip",
+        "foo"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--hostname-bin",
+        "hostname",
+        "--hyperlink-format",
+        "default",
+        "foo"
+      ],
+      "note": "--hostname-bin runs a program",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": true,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "--hostname-bin",
+        "hostname",
+        "--hyperlink-format",
+        "default",
+        "foo"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-L",
+        "foo",
+        "src"
+      ],
+      "note": "-L follows symlinks out of the named paths: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "-L",
+        "foo",
+        "src"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--follow",
+        "foo"
+      ],
+      "note": "--follow follows symlinks: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "--follow",
+        "foo"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--wml-made-up",
+        "foo"
+      ],
+      "note": "an unlisted flag is unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "--wml-made-up",
+        "foo"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-iX",
+        "foo"
+      ],
+      "note": "an unlisted letter in a cluster is unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "-iX",
+        "foo"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-e",
+        "foo",
+        "--",
+        "-weird-file"
+      ],
+      "note": "-- then an operand that starts with a dash is a path",
+      "described": true,
+      "effects": [
+        "read:fs:-weird-file:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "-e",
+        "foo",
+        "--",
+        "-weird-file"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--",
+        "-pattern",
+        "src"
+      ],
+      "note": "-- then a pattern that starts with a dash",
+      "described": true,
+      "effects": [
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "--",
+        "-pattern",
+        "src"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--end-of-options",
+        "foo"
+      ],
+      "note": "rg does not honour --end-of-options: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "--end-of-options",
+        "foo"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-q",
+        "foo",
+        "-"
+      ],
+      "note": "- is stdin, not a path",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "-q",
+        "foo",
+        "-"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--version"
+      ],
+      "note": "version query",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0,
+        1
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rg",
+        "--version"
+      ]
+    }
+  ]
+}

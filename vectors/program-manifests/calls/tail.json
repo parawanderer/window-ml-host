@@ -1,0 +1,597 @@
+{
+  "program": "tail",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "tail",
+        "a.txt"
+      ],
+      "note": "a file, default count",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-n",
+        "5",
+        "a.txt"
+      ],
+      "note": "-n with its value as its own argument",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "-n",
+        "5",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-n5",
+        "a.txt"
+      ],
+      "note": "-n with an attached value",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "-n5",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-c",
+        "100",
+        "a.txt",
+        "b.txt"
+      ],
+      "note": "-c with two files",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?",
+        "read:fs:b.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        },
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "-c",
+        "100",
+        "a.txt",
+        "b.txt"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "--lines=3",
+        "a.txt"
+      ],
+      "note": "--lines= attached",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "--lines=3",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "--bytes",
+        "20",
+        "a.txt"
+      ],
+      "note": "--bytes with a separate value",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "--bytes",
+        "20",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-5",
+        "a.txt"
+      ],
+      "note": "the numeric form -<n>",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "-5",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "tail"
+      ],
+      "note": "no operand reads stdin, which is closed",
+      "described": true,
+      "effects": [],
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-"
+      ],
+      "note": "- is stdin, not a path",
+      "described": true,
+      "effects": [],
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "-"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-n",
+        "-5",
+        "a.txt"
+      ],
+      "note": "a value that starts with a dash is consumed by -n",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "-n",
+        "-5",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "--wml-made-up",
+        "a.txt"
+      ],
+      "note": "an unlisted long option: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "--wml-made-up",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-x",
+        "a.txt"
+      ],
+      "note": "an unlisted flag: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "-x",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "--",
+        "-weird"
+      ],
+      "note": "-- then an operand that starts with a dash",
+      "described": true,
+      "effects": [
+        "read:fs:-weird:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "--",
+        "-weird"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-n",
+        "2",
+        "--",
+        "-n"
+      ],
+      "note": "a flag, then -- and a dash operand",
+      "described": true,
+      "effects": [
+        "read:fs:-n:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "-n",
+        "2",
+        "--",
+        "-n"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "--end-of-options",
+        "x"
+      ],
+      "note": "does not honour --end-of-options: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "--end-of-options",
+        "x"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-f",
+        "log.txt"
+      ],
+      "note": "-f follows forever; the host's time limit ends it, no effect change",
+      "described": true,
+      "effects": [
+        "read:fs:log.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "-f",
+        "log.txt"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-F",
+        "log.txt"
+      ],
+      "note": "-F follows by name",
+      "described": true,
+      "effects": [
+        "read:fs:log.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "-F",
+        "log.txt"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-fn",
+        "5",
+        "log.txt"
+      ],
+      "note": "-f then -n in a cluster",
+      "described": true,
+      "effects": [
+        "read:fs:log.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "-fn",
+        "5",
+        "log.txt"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-qv",
+        "a.txt"
+      ],
+      "note": "-q and -v in a cluster",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "-qv",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-r",
+        "a.txt"
+      ],
+      "note": "-r is BSD-only: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "tail",
+        "-r",
+        "a.txt"
+      ]
+    }
+  ]
+}
