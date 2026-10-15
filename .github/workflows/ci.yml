@@ -35,17 +35,22 @@ jobs:
       - name: Install bubblewrap
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y bubblewrap
-      # Informational: the tests handle an unavailable sandbox themselves, so nothing is changed to make it work.
-      - name: Sandbox availability
+      # Ubuntu 24.04 restricts unprivileged user namespaces for every program and lets a program opt back in through
+      # its own AppArmor profile, the way it ships Chrome's and Flatpak's. This grants that to bwrap alone, on a runner
+      # that is thrown away; the restriction stays on for everything else.
+      - name: Let bubblewrap create user namespaces
         if: runner.os == 'Linux'
-        continue-on-error: true
         run: |
-          if bwrap --ro-bind / / --unshare-net --unshare-pid --dev /dev --proc /proc /bin/true; then
-            echo "bubblewrap sandbox works on this runner"
-          else
-            echo "::warning title=Linux sandbox enforcement untested::bubblewrap does not start on this runner (AppArmor restricts unprivileged user namespaces), so the Linux sandbox tests ran only the fail-closed path"
-            exit 1
-          fi
+          sudo tee /etc/apparmor.d/bwrap >/dev/null <<'PROFILE'
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile bwrap /usr/bin/bwrap flags=(unconfined) {
+            userns,
+          }
+          PROFILE
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap
+          bwrap --ro-bind / / --unshare-net --unshare-pid --dev /dev --proc /proc /bin/true
+          echo "bubblewrap starts: the Linux sandbox tests enforce"
       - name: Format
         if: runner.os == 'Linux'
         run: cargo fmt --all --check
@@ -53,6 +58,9 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: Test
         run: cargo test --locked
+        # On Linux the sandbox must start: a test that finds it unavailable fails instead of taking the fail-closed path.
+        env:
+          WMLHOST_REQUIRE_SANDBOX: ${{ runner.os == 'Linux' && '1' || '' }}
       - name: Node client
         run: |
           node --test clients/node/*.test.mjs

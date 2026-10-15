@@ -120,7 +120,7 @@ impl Host {
             assert!(avail, "Seatbelt must be available on macOS: {h}");
         } else if !avail {
             assert!(
-                std::env::var("WMLHOST_REQUIRE_SANDBOX").is_err(),
+                std::env::var("WMLHOST_REQUIRE_SANDBOX").as_deref() != Ok("1"),
                 "WMLHOST_REQUIRE_SANDBOX set, but the sandbox is unavailable: {h}"
             );
             eprintln!("sandbox unavailable here, enforcement checks skipped: {}", h["sandbox"]);
@@ -474,8 +474,13 @@ fn the_sandbox_keeps_files_that_run_code_later_read_only() {
         return h.close();
     }
     h.ok("configure", json!({ "roots": [r] }));
+    // Each target EXISTS when the call starts: that much both sandboxes guarantee. A protected path created during the
+    // call is the next test's.
+    std::fs::create_dir_all(r.join(".vscode")).unwrap();
+    std::fs::write(r.join(".vscode/settings.json"), "{}").unwrap();
+    std::fs::write(r.join(".git/hooks/pre-commit"), "#!/bin/sh\n").unwrap();
     for target in [".git/hooks/pre-commit", ".git/config", ".vscode/settings.json"] {
-        let script = format!("mkdir -p \"$(dirname {target})\" 2>/dev/null; echo x >> {target}");
+        let script = format!("echo x >> {target}");
         let before = std::fs::read(r.join(target)).ok();
         let (_, d) = h.run(json!({ "argv": ["sh", "-c", script], "cwd": r }));
         assert_ne!(d["code"], 0, "{target} was writable");
@@ -641,5 +646,26 @@ fn env_free_is_true_only_for_the_free_list() {
     };
     assert_eq!(f(&mut h, json!({ "LC_ALL": "C", "TZ": "UTC" })), true);
     assert_eq!(f(&mut h, json!({ "RUST_LOG": "debug" })), false);
+    h.close();
+}
+
+#[test]
+fn a_protected_path_created_during_the_call_is_denied_on_macos_and_a_known_gap_on_linux() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let (_, d) = h.run(json!({ "argv": ["sh", "-c", "mkdir -p .vscode && echo x > .vscode/tasks.json"], "cwd": r }));
+    let created = r.join(".vscode/tasks.json").exists();
+    if cfg!(target_os = "macos") {
+        assert_ne!(d["code"], 0);
+        assert!(!created, "Seatbelt's regex covers a path that did not exist when the call started");
+    } else {
+        // bubblewrap re-binds read-only only what exists when the call starts (docs/SANDBOX.md, "Limits"). When this
+        // starts failing, the gap is closed: make the assertion the macOS one and update SANDBOX.md.
+        assert!(created, "the Linux gap documented in SANDBOX.md has closed; flip this test and the doc");
+    }
     h.close();
 }

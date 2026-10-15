@@ -37,7 +37,9 @@ write there runs code the NEXT time the person's own unsandboxed git or shell st
 
 ## What the tests show (tests/stdio.rs)
 
-Measured on macOS 26 (Seatbelt) on 2026-10-15; the Linux column runs in CI.
+Measured on macOS 26 (Seatbelt) and on GitHub's Ubuntu 24.04 runner (bubblewrap, with an AppArmor profile that grants
+it user namespaces, `.github/workflows/ci.yml`) on 2026-10-15. CI sets `WMLHOST_REQUIRE_SANDBOX=1` on Linux, so a
+sandbox that does not start fails the job instead of taking the fail-closed path.
 
 | Test | Denied | Allowed |
 | --- | --- | --- |
@@ -46,6 +48,7 @@ Measured on macOS 26 (Seatbelt) on 2026-10-15; the Linux column runs in CI.
 | `the_sandbox_denies_a_network_connect` | `bash` `/dev/tcp` to a listener on 127.0.0.1 (the listener sees nothing) | the same call with `sandbox: false` connects (the control) |
 | `the_sandbox_hides_credential_stores_unless_the_call_names_one` | `sh -c 'cat ~/.ssh/id_test'` (not named) | `cat ~/.ssh/id_test` with the path marked, facts showing `secret: true` |
 | `held_output_is_hidden_from_children` | `cat $TMPDIR/../../out/*` | |
+| `a_protected_path_created_during_the_call_…` | macOS: `mkdir .vscode && echo > .vscode/tasks.json` | Linux: the same call SUCCEEDS (the gap below, pinned by the test) |
 
 Each enforcement test was checked to FAIL against a weakened profile (writes and network allowed; the hooks deny
 removed; the named-secret allow removed), so none passes vacuously.
@@ -64,7 +67,8 @@ removed; the named-secret allow removed), so none passes vacuously.
 ## Limits, said plainly
 
 - **Linux protects less than macOS.** bubblewrap binds paths, it cannot match patterns, so a hook in a NESTED repository
-  inside a root (`root/vendor/x/.git/hooks`), or one created during the call, is writable there, and credential stores
+  inside a root (`root/vendor/x/.git/hooks`), or one created during the call, is writable there (the first Linux run
+  found exactly this: `.vscode/settings.json`, absent when the call started, was written), and credential stores
   are masked only under `$HOME`. Closing it needs Landlock or a seccomp-notify broker; neither is built.
 - **A secret inside a root is not hidden from a directory walk.** `rg pattern .` reads `root/.env`. The facts flag `.env`
   only when it is NAMED. Hiding every secret-looking file in the roots would break dotenv-using test suites, which the
