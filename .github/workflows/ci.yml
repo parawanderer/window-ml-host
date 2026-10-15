@@ -53,6 +53,10 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: Test
         run: cargo test --locked
+      - name: Node client
+        run: |
+          node --test clients/node/*.test.mjs
+          node clients/node/smoke.mjs target/debug/wmlhost
       - name: Docs
         run: cargo doc --no-deps --locked
 

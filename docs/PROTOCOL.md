@@ -108,8 +108,11 @@ its verdict. **The host spawns nothing without it.** A second `start` of the sam
 
 What the host enforces whatever the verdict was: argv executed directly with no shell, `program.path` executed (so a
 `PATH` change in between cannot swap it), stdin closed, no terminal, a new process group, the scrubbed environment, the
-time limit, the output cap, and the OS sandbox when `sandboxed` was true. If the sandbox then fails to start, the call
-fails (`SandboxFailed`); it never falls back to running unsandboxed.
+time limit, the output cap, and the OS sandbox when `sandboxed` was true. If the sandbox then fails to start, the
+call's `done` carries `error: { code: "SandboxFailed" }` and the program never ran; the host never falls back to running
+it unsandboxed.
+
+**The answer to `start` always comes before that call's `done`**: the host queues it before the call can end.
 
 ### `discard`
 
@@ -127,7 +130,7 @@ args:  { "ptr": "out:9f2e…", "offset": 0, "length": 524288 }       // length a
 value: { "ptr": "out:9f2e…", "offset": 0, "length": 524288, "size": 2097152, "eof": false, "data": { "$bytes": "…" } }
 ```
 
-Bytes, not text: output is whatever the program wrote. `data` is `{ "$bytes": <base64> }`, the form the `ml` wire uses for bytes. 512 KiB is 683 KiB as base64, inside the 1 MiB message limit.
+An `offset` past the end returns zero bytes with `eof: true`. Bytes, not text: output is whatever the program wrote. `data` is `{ "$bytes": <base64> }`, the form the `ml` wire uses for bytes. 512 KiB is 683 KiB as base64, inside the 1 MiB message limit.
 
 ### `release`
 
@@ -143,6 +146,9 @@ Bytes, not text: output is whatever the program wrote. `data` is `{ "$bytes": <b
   "stdout": { "ptr": "out:…", "size": 812, "sha256": "…", "truncated": false },
   "stderr": { "ptr": "out:…", "size": 0, "sha256": "…", "truncated": false } }
 ```
+
+A stream the host could not keep (the disk filled, say) is `{ "error": "…" }` instead of a pointer. A sandboxed call
+whose sandbox refused to start the program adds `"error": { "code": "SandboxFailed", "message": "…" }` and `ok: false`.
 
 `{ code, ok, stdout, stderr }` is the result shape `ml.sh.run` returns, with `stdout`/`stderr` as pointers. `truncated`
 means the stream passed the output cap: the host kept the first `outputCap` bytes and drained the rest so the program was
@@ -164,8 +170,11 @@ These are the host's own; the worker maps them onto the `ml` wire's codes (`Refu
 | `Unsupported` | `mode: "container"` this version |
 | `UnknownId` | `start`/`discard`/`cancel` of an id that never existed, expired, or already started (`start`) |
 | `UnknownPtr` | `read`/`release` of a pointer that does not exist |
-| `SandboxFailed` | `start` of a sandboxed call whose sandbox did not start |
+| `SandboxFailed` | the sandbox program itself could not be started (a refusal by the sandbox shows in `done`) |
 | `SpawnFailed` | the OS refused to start the program |
+| `Busy` | 256 calls already wait for a verdict, or 32 are running |
+| `Failed` | reading held output failed on disk |
+| `TooLarge` | the answer would exceed 1 MiB (an `argv` that large, echoed back in the facts) |
 
 ## Not in v1, and where it will go
 
