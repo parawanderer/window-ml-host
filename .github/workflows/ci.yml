@@ -1,0 +1,78 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# One run per branch; a push supersedes the run before it. main keeps every run as a record.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      # rust-toolchain.toml pins the version; this installs exactly that, with rustfmt and clippy.
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Install bubblewrap
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      # Informational: the tests handle an unavailable sandbox themselves, so nothing is changed to make it work.
+      - name: Sandbox availability
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          if bwrap --ro-bind / / --unshare-net --unshare-pid --dev /dev --proc /proc /bin/true; then
+            echo "bubblewrap sandbox works on this runner"
+          else
+            echo "bubblewrap sandbox does NOT work on this runner"
+            exit 1
+          fi
+      - name: Format
+        if: runner.os == 'Linux'
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test --locked
+      - name: Docs
+        run: cargo doc --no-deps --locked
+
+  # The default build compiles no crate from the hub (tools/check-no-hub.sh).
+  no-hub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: The default build has no wmlhub crate
+        run: tools/check-no-hub.sh
+
+  hub-feature:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Check with the hub feature
+        run: cargo check --locked --features hub --all-targets
