@@ -10,8 +10,32 @@ use serde_json::Value;
 const BASE_PASS: &[&str] = &["HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "LC_MESSAGES", "TZ"];
 
 /// Variables the base always sets: no terminal; git never prompts (stdin is closed anyway) and never takes its
-/// OPTIONAL locks, so `git status` does not refresh `.git/index` and a call its manifest calls a read stays one.
-const BASE_SET: &[(&str, &str)] = &[("TERM", "dumb"), ("GIT_TERMINAL_PROMPT", "0"), ("GIT_OPTIONAL_LOCKS", "0")];
+/// OPTIONAL locks, so `git status` does not refresh `.git/index` and a call its manifest calls a read stays one; and
+/// git's command-line config pins `core.fsmonitor` off and `core.pager` to `cat` over whatever the repository's own
+/// config says (a repository arrives with its config). `diff.external` is NOT pinned: an empty value makes every
+/// `git diff` fail (measured with git 2.55); the manifest's `--no-ext-diff` and the `repoConfigRunsCode` fact cover it.
+const BASE_SET: &[(&str, &str)] = &[
+    ("TERM", "dumb"),
+    ("GIT_TERMINAL_PROMPT", "0"),
+    ("GIT_OPTIONAL_LOCKS", "0"),
+    ("GIT_CONFIG_COUNT", "2"),
+    ("GIT_CONFIG_KEY_0", "core.fsmonitor"),
+    ("GIT_CONFIG_VALUE_0", "false"),
+    ("GIT_CONFIG_KEY_1", "core.pager"),
+    ("GIT_CONFIG_VALUE_1", "cat"),
+];
+
+/// Names a call may set and still be in the free tier (SHELL.md's whitelist): locale, time zone, colour and width.
+/// `TERM` only as `dumb`. Anything else a call sets makes it ask; the denylist above refuses outright.
+const FREE_NAMES: &[&str] = &["LANG", "TZ", "NO_COLOR", "COLUMNS", "TERM"];
+
+/// Whether every variable the call sets is on the FREE list (`env.free` in the facts).
+pub fn is_free(call: &CallEnv) -> bool {
+    call.secrets.is_empty()
+        && call.plain.iter().all(|(k, v)| {
+            (k == "TERM" && v == "dumb") || (k != "TERM" && (FREE_NAMES.contains(&k.as_str()) || k.starts_with("LC_")))
+        })
+}
 
 /// Names a call may never set, compared in upper case. Each makes some program run code, read a different config, or
 /// write a file it was not asked to (PROGRAM_MANIFEST.md, `env`). `PATH`, `HOME` and `TMPDIR` belong to the host.
@@ -282,7 +306,41 @@ mod tests {
         };
         let env = build(&host, "/usr/bin:/bin", "/tmp/c1", &CallEnv::default(), &NoSecrets).unwrap();
         let keys: Vec<&str> = env.keys().map(String::as_str).collect();
-        assert_eq!(keys, ["GIT_OPTIONAL_LOCKS", "GIT_TERMINAL_PROMPT", "HOME", "PATH", "TERM", "TMPDIR"]);
+        assert_eq!(
+            keys,
+            [
+                "GIT_CONFIG_COUNT",
+                "GIT_CONFIG_KEY_0",
+                "GIT_CONFIG_KEY_1",
+                "GIT_CONFIG_VALUE_0",
+                "GIT_CONFIG_VALUE_1",
+                "GIT_OPTIONAL_LOCKS",
+                "GIT_TERMINAL_PROMPT",
+                "HOME",
+                "PATH",
+                "TERM",
+                "TMPDIR"
+            ]
+        );
         assert!(!env.values().any(|v| v == "leak"));
+    }
+}
+
+#[cfg(test)]
+mod free_tests {
+    use super::*;
+    use serde_json::json;
+
+    // --- the FREE list ---
+
+    #[test]
+    fn only_locale_time_colour_width_and_a_dumb_terminal_are_free() {
+        let free = |v: serde_json::Value| is_free(&check_call_env(v.as_object().unwrap(), &NoSecrets).unwrap());
+        assert!(free(json!({})));
+        assert!(free(
+            json!({ "LANG": "C", "LC_ALL": "C", "TZ": "UTC", "NO_COLOR": "1", "COLUMNS": "200", "TERM": "dumb" })
+        ));
+        assert!(!free(json!({ "TERM": "xterm" })));
+        assert!(!free(json!({ "RUST_LOG": "debug" })));
     }
 }
