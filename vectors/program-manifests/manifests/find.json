@@ -1,0 +1,181 @@
+{
+  "program": "find",
+  "version": {
+    "range": "*",
+    "args": [],
+    "pattern": ""
+  },
+  "okCodes": [
+    0
+  ],
+  "echoes": false,
+  "command": {
+    "effects": [
+      "read"
+    ],
+    "paths": "operands",
+    "noPaths": "cwd",
+    "syntax": "find",
+    "flags": {
+      "-H": {},
+      "-P": {},
+      "-L": {
+        "effects": [
+          "unknown"
+        ]
+      }
+    },
+    "primaries": {
+      "(": {},
+      ")": {},
+      "!": {},
+      "-not": {},
+      "-a": {},
+      "-and": {},
+      "-o": {},
+      "-or": {},
+      ",": {},
+      "-name": {
+        "args": 1
+      },
+      "-iname": {
+        "args": 1
+      },
+      "-path": {
+        "args": 1
+      },
+      "-ipath": {
+        "args": 1
+      },
+      "-regex": {
+        "args": 1
+      },
+      "-iregex": {
+        "args": 1
+      },
+      "-type": {
+        "args": 1
+      },
+      "-maxdepth": {
+        "args": 1
+      },
+      "-mindepth": {
+        "args": 1
+      },
+      "-mtime": {
+        "args": 1
+      },
+      "-atime": {
+        "args": 1
+      },
+      "-ctime": {
+        "args": 1
+      },
+      "-mmin": {
+        "args": 1
+      },
+      "-amin": {
+        "args": 1
+      },
+      "-cmin": {
+        "args": 1
+      },
+      "-size": {
+        "args": 1
+      },
+      "-perm": {
+        "args": 1
+      },
+      "-user": {
+        "args": 1
+      },
+      "-group": {
+        "args": 1
+      },
+      "-uid": {
+        "args": 1
+      },
+      "-gid": {
+        "args": 1
+      },
+      "-links": {
+        "args": 1
+      },
+      "-inum": {
+        "args": 1
+      },
+      "-fstype": {
+        "args": 1
+      },
+      "-prune": {},
+      "-print": {},
+      "-print0": {},
+      "-empty": {},
+      "-nouser": {},
+      "-nogroup": {},
+      "-xdev": {},
+      "-ls": {},
+      "-true": {},
+      "-false": {},
+      "-newer": {
+        "args": 1,
+        "argIsPath": "read"
+      },
+      "-samefile": {
+        "args": 1,
+        "argIsPath": "read"
+      },
+      "-delete": {
+        "effects": [
+          "write"
+        ]
+      },
+      "-follow": {
+        "effects": [
+          "unknown"
+        ]
+      },
+      "-exec": {
+        "until": [
+          ";",
+          "+"
+        ],
+        "effects": [
+          "runs-code"
+        ],
+        "runner": true
+      },
+      "-execdir": {
+        "until": [
+          ";",
+          "+"
+        ],
+        "effects": [
+          "runs-code"
+        ],
+        "runner": true
+      },
+      "-ok": {
+        "until": [
+          ";",
+          "+"
+        ],
+        "effects": [
+          "runs-code"
+        ],
+        "runner": true
+      },
+      "-okdir": {
+        "until": [
+          ";",
+          "+"
+        ],
+        "effects": [
+          "runs-code"
+        ],
+        "runner": true
+      }
+    },
+    "recursive": true
+  }
+}

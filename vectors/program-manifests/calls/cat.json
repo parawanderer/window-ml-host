@@ -1,0 +1,373 @@
+{
+  "program": "cat",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "cat",
+        "README.md"
+      ],
+      "note": "a file",
+      "described": true,
+      "effects": [
+        "read:fs:README.md:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cat",
+        "README.md"
+      ]
+    },
+    {
+      "argv": [
+        "cat",
+        "a.txt",
+        "b.txt"
+      ],
+      "note": "two files",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?",
+        "read:fs:b.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        },
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cat",
+        "a.txt",
+        "b.txt"
+      ]
+    },
+    {
+      "argv": [
+        "cat"
+      ],
+      "note": "no operand reads stdin, which is closed: touches nothing",
+      "described": true,
+      "effects": [],
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cat"
+      ]
+    },
+    {
+      "argv": [
+        "cat",
+        "-"
+      ],
+      "note": "- is stdin, not a path",
+      "described": true,
+      "effects": [],
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cat",
+        "-"
+      ]
+    },
+    {
+      "argv": [
+        "cat",
+        "-n",
+        "a.txt"
+      ],
+      "note": "a flag",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cat",
+        "-n",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "cat",
+        "-bs",
+        "a.txt"
+      ],
+      "note": "a cluster",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cat",
+        "-bs",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "cat",
+        "-vet",
+        "a.txt"
+      ],
+      "note": "a cluster of three",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cat",
+        "-vet",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "cat",
+        "-A",
+        "a.txt"
+      ],
+      "note": "GNU-only -A: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cat",
+        "-A",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "cat",
+        "-l",
+        "a.txt"
+      ],
+      "note": "BSD-only -l (locks stdout): unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cat",
+        "-l",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "cat",
+        "--number",
+        "a.txt"
+      ],
+      "note": "a GNU-only long option: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cat",
+        "--number",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "cat",
+        "--",
+        "-weird"
+      ],
+      "note": "-- then an operand that starts with a dash",
+      "described": true,
+      "effects": [
+        "read:fs:-weird:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cat",
+        "--",
+        "-weird"
+      ]
+    },
+    {
+      "argv": [
+        "cat",
+        "-n",
+        "--",
+        "-n"
+      ],
+      "note": "a flag, then -- and a dash operand",
+      "described": true,
+      "effects": [
+        "read:fs:-n:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cat",
+        "-n",
+        "--",
+        "-n"
+      ]
+    },
+    {
+      "argv": [
+        "cat",
+        "--end-of-options",
+        "x"
+      ],
+      "note": "cat does not honour --end-of-options: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cat",
+        "--end-of-options",
+        "x"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,377 @@
+{
+  "program": "wc",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "wc",
+        "a.txt"
+      ],
+      "note": "a file",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "wc",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "wc",
+        "-l",
+        "a.txt",
+        "b.txt"
+      ],
+      "note": "lines of two files",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?",
+        "read:fs:b.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "wc",
+        "-l",
+        "a.txt",
+        "b.txt"
+      ]
+    },
+    {
+      "argv": [
+        "wc"
+      ],
+      "note": "no operand reads stdin, which is closed",
+      "described": true,
+      "effects": [],
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "wc"
+      ]
+    },
+    {
+      "argv": [
+        "wc",
+        "-"
+      ],
+      "note": "- is stdin, not a path",
+      "described": true,
+      "effects": [],
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "wc",
+        "-"
+      ]
+    },
+    {
+      "argv": [
+        "wc",
+        "-lw",
+        "a.txt"
+      ],
+      "note": "a cluster",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "wc",
+        "-lw",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "wc",
+        "-c",
+        "-m",
+        "a.txt"
+      ],
+      "note": "separate flags",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "wc",
+        "-c",
+        "-m",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "wc",
+        "-L",
+        "a.txt"
+      ],
+      "note": "longest line",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "wc",
+        "-L",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "wc",
+        "--lines",
+        "a.txt"
+      ],
+      "note": "a GNU-only long option: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "wc",
+        "--lines",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "wc",
+        "--libxo",
+        "a.txt"
+      ],
+      "note": "a BSD-only option: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "wc",
+        "--libxo",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "wc",
+        "--files0-from=list",
+        "a.txt"
+      ],
+      "note": "GNU --files0-from reads a list of files: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "wc",
+        "--files0-from=list",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "wc",
+        "--",
+        "-weird"
+      ],
+      "note": "-- then an operand that starts with a dash",
+      "described": true,
+      "effects": [
+        "read:fs:-weird:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "wc",
+        "--",
+        "-weird"
+      ]
+    },
+    {
+      "argv": [
+        "wc",
+        "-l",
+        "--",
+        "-l"
+      ],
+      "note": "a flag, then -- and a dash operand",
+      "described": true,
+      "effects": [
+        "read:fs:-l:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "wc",
+        "-l",
+        "--",
+        "-l"
+      ]
+    },
+    {
+      "argv": [
+        "wc",
+        "--end-of-options",
+        "x"
+      ],
+      "note": "wc does not honour --end-of-options: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "wc",
+        "--end-of-options",
+        "x"
+      ]
+    }
+  ]
+}

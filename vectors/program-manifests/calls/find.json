@@ -1,0 +1,1012 @@
+{
+  "program": "find",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "find"
+      ],
+      "note": "no operand searches the cwd (GNU; BSD asks for one, which only errors)",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        "."
+      ],
+      "note": "a directory with no expression",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        "."
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        "src",
+        "docs",
+        "-name",
+        "*.ts"
+      ],
+      "note": "two paths and a name test",
+      "described": true,
+      "effects": [
+        "read:fs:docs:?:?",
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        "src",
+        "docs",
+        "-name",
+        "*.ts"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-type",
+        "f",
+        "-name",
+        "*.md",
+        "-print"
+      ],
+      "note": "tests and -print",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-type",
+        "f",
+        "-name",
+        "*.md",
+        "-print"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-name",
+        "*.log",
+        "-o",
+        "-name",
+        "*.tmp"
+      ],
+      "note": "an or",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-name",
+        "*.log",
+        "-o",
+        "-name",
+        "*.tmp"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "(",
+        "-name",
+        "a",
+        "-o",
+        "-name",
+        "b",
+        ")",
+        "-a",
+        "!",
+        "-empty"
+      ],
+      "note": "grouping, and, not",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "(",
+        "-name",
+        "a",
+        "-o",
+        "-name",
+        "b",
+        ")",
+        "-a",
+        "!",
+        "-empty"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-not",
+        "-path",
+        "./node_modules/*",
+        "-prune",
+        "-print0"
+      ],
+      "note": "-not, -prune, -print0",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-not",
+        "-path",
+        "./node_modules/*",
+        "-prune",
+        "-print0"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-maxdepth",
+        "2",
+        "-mtime",
+        "-7",
+        "-size",
+        "+1M",
+        "-perm",
+        "644"
+      ],
+      "note": "numeric tests",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-maxdepth",
+        "2",
+        "-mtime",
+        "-7",
+        "-size",
+        "+1M",
+        "-perm",
+        "644"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-newer",
+        "ref.txt"
+      ],
+      "note": "-newer reads a path",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:ref.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        },
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-newer",
+        "ref.txt"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-samefile",
+        "ref.txt"
+      ],
+      "note": "-samefile reads a path",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:ref.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        },
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-samefile",
+        "ref.txt"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-exec",
+        "rm",
+        "{}",
+        ";"
+      ],
+      "note": "-exec runs a program",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-exec",
+        "rm",
+        "{}",
+        ";"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-exec",
+        "grep",
+        "-l",
+        "x",
+        "{}",
+        "+"
+      ],
+      "note": "-exec ... + runs a program",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-exec",
+        "grep",
+        "-l",
+        "x",
+        "{}",
+        "+"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-execdir",
+        "sh",
+        "-c",
+        "echo",
+        "{}",
+        ";"
+      ],
+      "note": "-execdir runs a program",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-execdir",
+        "sh",
+        "-c",
+        "echo",
+        "{}",
+        ";"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-ok",
+        "rm",
+        "{}",
+        ";"
+      ],
+      "note": "-ok runs a program",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-ok",
+        "rm",
+        "{}",
+        ";"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-okdir",
+        "rm",
+        "{}",
+        ";"
+      ],
+      "note": "-okdir runs a program",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-okdir",
+        "rm",
+        "{}",
+        ";"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-exec",
+        "rm",
+        "{}"
+      ],
+      "note": "an unterminated -exec: unknown (the runner flag is still set)",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": true,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-exec",
+        "rm",
+        "{}"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-delete"
+      ],
+      "note": "-delete removes files",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "write:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-delete"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-name",
+        "*.o",
+        "-delete"
+      ],
+      "note": "-delete after a test",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "write:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-name",
+        "*.o",
+        "-delete"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-follow"
+      ],
+      "note": "-follow follows symlinks: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-follow"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        "-L",
+        ".",
+        "-name",
+        "x"
+      ],
+      "note": "-L follows symlinks: left out of the manifest, so unknown (a listed -L with [unknown] would still be described:true, see report)",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        "-L",
+        ".",
+        "-name",
+        "x"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        "-H",
+        ".",
+        "-name",
+        "x"
+      ],
+      "note": "-H follows command-line symlinks only",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        "-H",
+        ".",
+        "-name",
+        "x"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        "-P",
+        ".",
+        "-name",
+        "x"
+      ],
+      "note": "-P never follows symlinks",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        "-P",
+        ".",
+        "-name",
+        "x"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-fprint",
+        "out.txt"
+      ],
+      "note": "GNU-only -fprint writes a file: unlisted, unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-fprint",
+        "out.txt"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-printf",
+        "%p"
+      ],
+      "note": "GNU-only -printf: unlisted, unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-printf",
+        "%p"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-depth"
+      ],
+      "note": "-depth takes an argument in BSD: unlisted, unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-depth"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "-newerat",
+        "2020-01-01"
+      ],
+      "note": "an unlisted -newerXY: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "-newerat",
+        "2020-01-01"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        ".",
+        "--wml-made-up"
+      ],
+      "note": "an unlisted option: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        ".",
+        "--wml-made-up"
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        "--",
+        "."
+      ],
+      "note": "find (BSD) does not honour -- as a terminator for the manifest: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        "--",
+        "."
+      ]
+    },
+    {
+      "argv": [
+        "find",
+        "-x",
+        "."
+      ],
+      "note": "BSD-only pre-option -x: unlisted, unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "find",
+        "-x",
+        "."
+      ]
+    }
+  ]
+}

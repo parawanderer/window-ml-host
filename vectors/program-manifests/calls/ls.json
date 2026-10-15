@@ -1,0 +1,440 @@
+{
+  "program": "ls",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "ls"
+      ],
+      "note": "no operand lists the cwd",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "ls"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "src"
+      ],
+      "note": "a directory operand",
+      "described": true,
+      "effects": [
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "ls",
+        "src"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "-l",
+        "src",
+        "docs"
+      ],
+      "note": "a flag and two paths",
+      "described": true,
+      "effects": [
+        "read:fs:docs:?:?",
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "ls",
+        "-l",
+        "src",
+        "docs"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "-la"
+      ],
+      "note": "a cluster",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "ls",
+        "-la"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "-lahR",
+        "src"
+      ],
+      "note": "a longer cluster including -R",
+      "described": true,
+      "effects": [
+        "read:fs:src:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "ls",
+        "-lahR",
+        "src"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "-1",
+        "-t",
+        "-r"
+      ],
+      "note": "separate flags",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "ls",
+        "-1",
+        "-t",
+        "-r"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "-d",
+        "*.md"
+      ],
+      "note": "-d names the operand itself",
+      "described": true,
+      "effects": [
+        "read:fs:*.md:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "ls",
+        "-d",
+        "*.md"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "-L",
+        "link"
+      ],
+      "note": "-L follows symlinks: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "ls",
+        "-L",
+        "link"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "-lL",
+        "link"
+      ],
+      "note": "-L in a cluster: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "ls",
+        "-lL",
+        "link"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "-H",
+        "link"
+      ],
+      "note": "-H follows command-line symlinks: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "ls",
+        "-H",
+        "link"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "--color"
+      ],
+      "note": "a long option differs between GNU and BSD: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "ls",
+        "--color"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "--all"
+      ],
+      "note": "a GNU-only long option: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "ls",
+        "--all"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "-G"
+      ],
+      "note": "-G differs between GNU and BSD: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "ls",
+        "-G"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "--",
+        "-weird"
+      ],
+      "note": "-- then an operand that starts with a dash",
+      "described": true,
+      "effects": [
+        "read:fs:-weird:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "ls",
+        "--",
+        "-weird"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "-l",
+        "--",
+        "-a"
+      ],
+      "note": "a flag, then -- and a dash operand",
+      "described": true,
+      "effects": [
+        "read:fs:-a:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "ls",
+        "-l",
+        "--",
+        "-a"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "--end-of-options",
+        "x"
+      ],
+      "note": "ls does not honour --end-of-options: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "ls",
+        "--end-of-options",
+        "x"
+      ]
+    }
+  ]
+}

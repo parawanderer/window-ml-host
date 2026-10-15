@@ -1,0 +1,1472 @@
+{
+  "program": "git",
+  "version": {
+    "range": ">=2.30.0 <3",
+    "args": [
+      "--version"
+    ],
+    "pattern": "^git version (\\d+\\.\\d+(?:\\.\\d+)?)"
+  },
+  "okCodes": [
+    0
+  ],
+  "echoes": false,
+  "env": [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_EXTERNAL_DIFF",
+    "GIT_PAGER",
+    "PAGER",
+    "GIT_EDITOR",
+    "GIT_SSH",
+    "GIT_SSH_COMMAND",
+    "GIT_ASKPASS",
+    "GIT_EXEC_PATH",
+    "GIT_CONFIG",
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_SYSTEM",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_TRACE",
+    "GIT_TEMPLATE_DIR",
+    "GIT_PROXY_COMMAND"
+  ],
+  "command": {
+    "effects": [],
+    "paths": "none",
+    "flags": {
+      "--no-pager": {},
+      "-P": {},
+      "--no-replace-objects": {},
+      "--literal-pathspecs": {},
+      "--glob-pathspecs": {},
+      "--noglob-pathspecs": {},
+      "--icase-pathspecs": {},
+      "--no-optional-locks": {},
+      "--no-lazy-fetch": {},
+      "--no-advice": {},
+      "-C": {
+        "value": true,
+        "valueIsDir": true
+      },
+      "-c": {
+        "value": true,
+        "effects": [
+          "unknown"
+        ],
+        "runner": true
+      },
+      "--config-env": {
+        "value": true,
+        "effects": [
+          "unknown"
+        ],
+        "runner": true
+      },
+      "--git-dir": {
+        "value": true,
+        "effects": [
+          "unknown"
+        ]
+      },
+      "--work-tree": {
+        "value": true,
+        "effects": [
+          "unknown"
+        ]
+      },
+      "--namespace": {
+        "value": true,
+        "effects": [
+          "unknown"
+        ]
+      },
+      "--exec-path": {
+        "value": true,
+        "effects": [
+          "unknown"
+        ]
+      },
+      "--super-prefix": {
+        "value": true,
+        "effects": [
+          "unknown"
+        ]
+      },
+      "--list-cmds": {
+        "value": true,
+        "effects": [
+          "unknown"
+        ]
+      },
+      "--attr-source": {
+        "value": true,
+        "effects": [
+          "unknown"
+        ]
+      },
+      "--bare": {
+        "effects": [
+          "unknown"
+        ]
+      },
+      "--paginate": {
+        "effects": [
+          "unknown"
+        ]
+      },
+      "-p": {
+        "effects": [
+          "unknown"
+        ]
+      }
+    },
+    "subcommands": {
+      "status": {
+        "effects": [
+          "read"
+        ],
+        "paths": "repo",
+        "terminator": "--end-of-options",
+        "flags": {
+          "-s": {},
+          "--short": {},
+          "-b": {},
+          "--branch": {},
+          "--show-stash": {},
+          "--long": {},
+          "-v": {},
+          "--verbose": {},
+          "-z": {},
+          "--no-column": {},
+          "--ahead-behind": {},
+          "--no-ahead-behind": {},
+          "--renames": {},
+          "--no-renames": {},
+          "--porcelain": {
+            "optionalValue": true
+          },
+          "-u": {
+            "optionalValue": true
+          },
+          "--untracked-files": {
+            "optionalValue": true
+          },
+          "--ignore-submodules": {
+            "optionalValue": true
+          },
+          "--ignored": {
+            "optionalValue": true
+          },
+          "--column": {
+            "optionalValue": true
+          },
+          "--find-renames": {
+            "optionalValue": true
+          }
+        }
+      },
+      "diff": {
+        "effects": [
+          "read"
+        ],
+        "paths": "repo",
+        "terminator": "--end-of-options",
+        "flags": {
+          "-p": {},
+          "-u": {},
+          "--patch": {},
+          "--no-patch": {},
+          "-s": {},
+          "--raw": {},
+          "--patch-with-stat": {},
+          "--patch-with-raw": {},
+          "--numstat": {},
+          "--shortstat": {},
+          "--name-only": {},
+          "--name-status": {},
+          "--summary": {},
+          "--compact-summary": {},
+          "--full-index": {},
+          "--binary": {},
+          "--no-renames": {},
+          "-R": {},
+          "-z": {},
+          "--text": {},
+          "-a": {},
+          "--minimal": {},
+          "--patience": {},
+          "--histogram": {},
+          "-W": {},
+          "--function-context": {},
+          "--ignore-all-space": {},
+          "-w": {},
+          "--ignore-space-change": {},
+          "-b": {},
+          "--ignore-blank-lines": {},
+          "--ignore-cr-at-eol": {},
+          "--ignore-space-at-eol": {},
+          "--no-color": {},
+          "--no-color-moved": {},
+          "--indent-heuristic": {},
+          "--no-indent-heuristic": {},
+          "--no-prefix": {},
+          "--pickaxe-all": {},
+          "--pickaxe-regex": {},
+          "--check": {},
+          "--no-ext-diff": {},
+          "--no-textconv": {},
+          "--ita-invisible-in-index": {},
+          "--irreversible-delete": {},
+          "-D": {},
+          "--stat": {
+            "optionalValue": true
+          },
+          "--dirstat": {
+            "optionalValue": true
+          },
+          "--color": {
+            "optionalValue": true
+          },
+          "--word-diff": {
+            "optionalValue": true
+          },
+          "--color-words": {
+            "optionalValue": true
+          },
+          "--abbrev": {
+            "optionalValue": true
+          },
+          "--relative": {
+            "optionalValue": true
+          },
+          "--find-renames": {
+            "optionalValue": true
+          },
+          "--find-copies": {
+            "optionalValue": true
+          },
+          "--find-copies-harder": {
+            "optionalValue": true
+          },
+          "--color-moved": {
+            "optionalValue": true
+          },
+          "--submodule": {
+            "optionalValue": true
+          },
+          "--break-rewrites": {
+            "optionalValue": true
+          },
+          "--ws-error-highlight": {
+            "optionalValue": true
+          },
+          "--diff-filter": {
+            "value": true
+          },
+          "-U": {
+            "value": true
+          },
+          "--unified": {
+            "value": true
+          },
+          "--inter-hunk-context": {
+            "value": true
+          },
+          "--diff-algorithm": {
+            "value": true
+          },
+          "-G": {
+            "value": true
+          },
+          "-S": {
+            "value": true
+          },
+          "--src-prefix": {
+            "value": true
+          },
+          "--dst-prefix": {
+            "value": true
+          },
+          "--line-prefix": {
+            "value": true
+          },
+          "--anchored": {
+            "value": true
+          },
+          "-I": {
+            "value": true
+          },
+          "--ignore-matching-lines": {
+            "value": true
+          },
+          "--stat-width": {
+            "value": true
+          },
+          "--stat-count": {
+            "value": true
+          },
+          "--stat-name-width": {
+            "value": true
+          },
+          "--word-diff-regex": {
+            "value": true
+          },
+          "-M": {},
+          "-C": {},
+          "-B": {},
+          "--exit-code": {
+            "okCodes": [
+              1
+            ]
+          },
+          "--quiet": {
+            "okCodes": [
+              1
+            ]
+          },
+          "--output": {
+            "value": true,
+            "valueIsPath": "write",
+            "effects": [
+              "write"
+            ]
+          },
+          "-O": {
+            "value": true,
+            "valueIsPath": "read"
+          },
+          "--ext-diff": {
+            "effects": [
+              "runs-code"
+            ],
+            "runner": true
+          },
+          "--textconv": {
+            "effects": [
+              "runs-code"
+            ],
+            "runner": true
+          },
+          "--cached": {},
+          "--staged": {},
+          "--merge-base": {},
+          "--no-index": {
+            "effects": [
+              "unknown"
+            ]
+          }
+        },
+        "harden": [
+          "--no-ext-diff",
+          "--no-textconv"
+        ]
+      },
+      "log": {
+        "effects": [
+          "read"
+        ],
+        "paths": "repo",
+        "terminator": "--end-of-options",
+        "numericFlag": true,
+        "flags": {
+          "-p": {},
+          "-u": {},
+          "--patch": {},
+          "--no-patch": {},
+          "-s": {},
+          "--raw": {},
+          "--patch-with-stat": {},
+          "--patch-with-raw": {},
+          "--numstat": {},
+          "--shortstat": {},
+          "--name-only": {},
+          "--name-status": {},
+          "--summary": {},
+          "--compact-summary": {},
+          "--full-index": {},
+          "--binary": {},
+          "--no-renames": {},
+          "-R": {},
+          "-z": {},
+          "--text": {},
+          "-a": {},
+          "--minimal": {},
+          "--patience": {},
+          "--histogram": {},
+          "-W": {},
+          "--function-context": {},
+          "--ignore-all-space": {},
+          "-w": {},
+          "--ignore-space-change": {},
+          "-b": {},
+          "--ignore-blank-lines": {},
+          "--ignore-cr-at-eol": {},
+          "--ignore-space-at-eol": {},
+          "--no-color": {},
+          "--no-color-moved": {},
+          "--indent-heuristic": {},
+          "--no-indent-heuristic": {},
+          "--no-prefix": {},
+          "--pickaxe-all": {},
+          "--pickaxe-regex": {},
+          "--check": {},
+          "--no-ext-diff": {},
+          "--no-textconv": {},
+          "--ita-invisible-in-index": {},
+          "--irreversible-delete": {},
+          "-D": {},
+          "--stat": {
+            "optionalValue": true
+          },
+          "--dirstat": {
+            "optionalValue": true
+          },
+          "--color": {
+            "optionalValue": true
+          },
+          "--word-diff": {
+            "optionalValue": true
+          },
+          "--color-words": {
+            "optionalValue": true
+          },
+          "--abbrev": {
+            "optionalValue": true
+          },
+          "--relative": {
+            "optionalValue": true
+          },
+          "--find-renames": {
+            "optionalValue": true
+          },
+          "--find-copies": {
+            "optionalValue": true
+          },
+          "--find-copies-harder": {
+            "optionalValue": true
+          },
+          "--color-moved": {
+            "optionalValue": true
+          },
+          "--submodule": {
+            "optionalValue": true
+          },
+          "--break-rewrites": {
+            "optionalValue": true
+          },
+          "--ws-error-highlight": {
+            "optionalValue": true
+          },
+          "--diff-filter": {
+            "value": true
+          },
+          "-U": {
+            "value": true
+          },
+          "--unified": {
+            "value": true
+          },
+          "--inter-hunk-context": {
+            "value": true
+          },
+          "--diff-algorithm": {
+            "value": true
+          },
+          "-G": {
+            "value": true
+          },
+          "-S": {
+            "value": true
+          },
+          "--src-prefix": {
+            "value": true
+          },
+          "--dst-prefix": {
+            "value": true
+          },
+          "--line-prefix": {
+            "value": true
+          },
+          "--anchored": {
+            "value": true
+          },
+          "-I": {
+            "value": true
+          },
+          "--ignore-matching-lines": {
+            "value": true
+          },
+          "--stat-width": {
+            "value": true
+          },
+          "--stat-count": {
+            "value": true
+          },
+          "--stat-name-width": {
+            "value": true
+          },
+          "--word-diff-regex": {
+            "value": true
+          },
+          "-M": {},
+          "-C": {},
+          "-B": {},
+          "--exit-code": {
+            "okCodes": [
+              1
+            ]
+          },
+          "--quiet": {
+            "okCodes": [
+              1
+            ]
+          },
+          "--output": {
+            "value": true,
+            "valueIsPath": "write",
+            "effects": [
+              "write"
+            ]
+          },
+          "-O": {
+            "value": true,
+            "valueIsPath": "read"
+          },
+          "--ext-diff": {
+            "effects": [
+              "runs-code"
+            ],
+            "runner": true
+          },
+          "--textconv": {
+            "effects": [
+              "runs-code"
+            ],
+            "runner": true
+          },
+          "--all": {},
+          "--oneline": {},
+          "--abbrev-commit": {},
+          "--no-abbrev-commit": {},
+          "--no-decorate": {},
+          "--graph": {},
+          "--reverse": {},
+          "--first-parent": {},
+          "--merges": {},
+          "--no-merges": {},
+          "--follow": {},
+          "--relative-date": {},
+          "--left-right": {},
+          "--cherry-pick": {},
+          "--cherry-mark": {},
+          "--cherry": {},
+          "--topo-order": {},
+          "--date-order": {},
+          "--author-date-order": {},
+          "--source": {},
+          "--boundary": {},
+          "--mailmap": {},
+          "--use-mailmap": {},
+          "--no-mailmap": {},
+          "--full-history": {},
+          "--simplify-by-decoration": {},
+          "--ancestry-path": {},
+          "--dense": {},
+          "--sparse": {},
+          "-m": {},
+          "--cc": {},
+          "--no-notes": {},
+          "--walk-reflogs": {},
+          "-g": {},
+          "-i": {},
+          "--regexp-ignore-case": {},
+          "-E": {},
+          "--extended-regexp": {},
+          "-F": {},
+          "--fixed-strings": {},
+          "-P": {},
+          "--perl-regexp": {},
+          "--all-match": {},
+          "--invert-grep": {},
+          "--no-walk": {},
+          "--do-walk": {},
+          "--left-only": {},
+          "--right-only": {},
+          "--show-pulls": {},
+          "--remove-empty": {},
+          "--not": {},
+          "--single-worktree": {},
+          "--log-size": {},
+          "--parents": {},
+          "--children": {},
+          "--no-expand-tabs": {},
+          "--pretty": {
+            "optionalValue": true
+          },
+          "--decorate": {
+            "optionalValue": true
+          },
+          "--branches": {
+            "optionalValue": true
+          },
+          "--tags": {
+            "optionalValue": true
+          },
+          "--remotes": {
+            "optionalValue": true
+          },
+          "--notes": {
+            "optionalValue": true
+          },
+          "--expand-tabs": {
+            "optionalValue": true
+          },
+          "--show-linear-break": {
+            "optionalValue": true
+          },
+          "-n": {
+            "value": true
+          },
+          "--max-count": {
+            "value": true
+          },
+          "--skip": {
+            "value": true
+          },
+          "--since": {
+            "value": true
+          },
+          "--after": {
+            "value": true
+          },
+          "--until": {
+            "value": true
+          },
+          "--before": {
+            "value": true
+          },
+          "--author": {
+            "value": true
+          },
+          "--committer": {
+            "value": true
+          },
+          "--grep": {
+            "value": true
+          },
+          "--format": {
+            "value": true
+          },
+          "--date": {
+            "value": true
+          },
+          "--encoding": {
+            "value": true
+          },
+          "-L": {
+            "value": true
+          },
+          "--diff-merges": {
+            "value": true
+          },
+          "--min-parents": {
+            "value": true
+          },
+          "--max-parents": {
+            "value": true
+          },
+          "--decorate-refs": {
+            "value": true
+          },
+          "--decorate-refs-exclude": {
+            "value": true
+          },
+          "--glob": {
+            "value": true
+          },
+          "--exclude": {
+            "value": true
+          },
+          "--since-as-filter": {
+            "value": true
+          },
+          "--show-signature": {
+            "effects": [
+              "runs-code"
+            ],
+            "runner": true
+          }
+        },
+        "harden": [
+          "--no-ext-diff",
+          "--no-textconv"
+        ]
+      },
+      "show": {
+        "effects": [
+          "read"
+        ],
+        "paths": "repo",
+        "terminator": "--end-of-options",
+        "numericFlag": true,
+        "flags": {
+          "-p": {},
+          "-u": {},
+          "--patch": {},
+          "--no-patch": {},
+          "-s": {},
+          "--raw": {},
+          "--patch-with-stat": {},
+          "--patch-with-raw": {},
+          "--numstat": {},
+          "--shortstat": {},
+          "--name-only": {},
+          "--name-status": {},
+          "--summary": {},
+          "--compact-summary": {},
+          "--full-index": {},
+          "--binary": {},
+          "--no-renames": {},
+          "-R": {},
+          "-z": {},
+          "--text": {},
+          "-a": {},
+          "--minimal": {},
+          "--patience": {},
+          "--histogram": {},
+          "-W": {},
+          "--function-context": {},
+          "--ignore-all-space": {},
+          "-w": {},
+          "--ignore-space-change": {},
+          "-b": {},
+          "--ignore-blank-lines": {},
+          "--ignore-cr-at-eol": {},
+          "--ignore-space-at-eol": {},
+          "--no-color": {},
+          "--no-color-moved": {},
+          "--indent-heuristic": {},
+          "--no-indent-heuristic": {},
+          "--no-prefix": {},
+          "--pickaxe-all": {},
+          "--pickaxe-regex": {},
+          "--check": {},
+          "--no-ext-diff": {},
+          "--no-textconv": {},
+          "--ita-invisible-in-index": {},
+          "--irreversible-delete": {},
+          "-D": {},
+          "--stat": {
+            "optionalValue": true
+          },
+          "--dirstat": {
+            "optionalValue": true
+          },
+          "--color": {
+            "optionalValue": true
+          },
+          "--word-diff": {
+            "optionalValue": true
+          },
+          "--color-words": {
+            "optionalValue": true
+          },
+          "--abbrev": {
+            "optionalValue": true
+          },
+          "--relative": {
+            "optionalValue": true
+          },
+          "--find-renames": {
+            "optionalValue": true
+          },
+          "--find-copies": {
+            "optionalValue": true
+          },
+          "--find-copies-harder": {
+            "optionalValue": true
+          },
+          "--color-moved": {
+            "optionalValue": true
+          },
+          "--submodule": {
+            "optionalValue": true
+          },
+          "--break-rewrites": {
+            "optionalValue": true
+          },
+          "--ws-error-highlight": {
+            "optionalValue": true
+          },
+          "--diff-filter": {
+            "value": true
+          },
+          "-U": {
+            "value": true
+          },
+          "--unified": {
+            "value": true
+          },
+          "--inter-hunk-context": {
+            "value": true
+          },
+          "--diff-algorithm": {
+            "value": true
+          },
+          "-G": {
+            "value": true
+          },
+          "-S": {
+            "value": true
+          },
+          "--src-prefix": {
+            "value": true
+          },
+          "--dst-prefix": {
+            "value": true
+          },
+          "--line-prefix": {
+            "value": true
+          },
+          "--anchored": {
+            "value": true
+          },
+          "-I": {
+            "value": true
+          },
+          "--ignore-matching-lines": {
+            "value": true
+          },
+          "--stat-width": {
+            "value": true
+          },
+          "--stat-count": {
+            "value": true
+          },
+          "--stat-name-width": {
+            "value": true
+          },
+          "--word-diff-regex": {
+            "value": true
+          },
+          "-M": {},
+          "-C": {},
+          "-B": {},
+          "--exit-code": {
+            "okCodes": [
+              1
+            ]
+          },
+          "--quiet": {
+            "okCodes": [
+              1
+            ]
+          },
+          "--output": {
+            "value": true,
+            "valueIsPath": "write",
+            "effects": [
+              "write"
+            ]
+          },
+          "-O": {
+            "value": true,
+            "valueIsPath": "read"
+          },
+          "--ext-diff": {
+            "effects": [
+              "runs-code"
+            ],
+            "runner": true
+          },
+          "--textconv": {
+            "effects": [
+              "runs-code"
+            ],
+            "runner": true
+          },
+          "--all": {},
+          "--oneline": {},
+          "--abbrev-commit": {},
+          "--no-abbrev-commit": {},
+          "--no-decorate": {},
+          "--graph": {},
+          "--reverse": {},
+          "--first-parent": {},
+          "--merges": {},
+          "--no-merges": {},
+          "--follow": {},
+          "--relative-date": {},
+          "--left-right": {},
+          "--cherry-pick": {},
+          "--cherry-mark": {},
+          "--cherry": {},
+          "--topo-order": {},
+          "--date-order": {},
+          "--author-date-order": {},
+          "--source": {},
+          "--boundary": {},
+          "--mailmap": {},
+          "--use-mailmap": {},
+          "--no-mailmap": {},
+          "--full-history": {},
+          "--simplify-by-decoration": {},
+          "--ancestry-path": {},
+          "--dense": {},
+          "--sparse": {},
+          "-m": {},
+          "--cc": {},
+          "--no-notes": {},
+          "--walk-reflogs": {},
+          "-g": {},
+          "-i": {},
+          "--regexp-ignore-case": {},
+          "-E": {},
+          "--extended-regexp": {},
+          "-F": {},
+          "--fixed-strings": {},
+          "-P": {},
+          "--perl-regexp": {},
+          "--all-match": {},
+          "--invert-grep": {},
+          "--no-walk": {},
+          "--do-walk": {},
+          "--left-only": {},
+          "--right-only": {},
+          "--show-pulls": {},
+          "--remove-empty": {},
+          "--not": {},
+          "--single-worktree": {},
+          "--log-size": {},
+          "--parents": {},
+          "--children": {},
+          "--no-expand-tabs": {},
+          "--pretty": {
+            "optionalValue": true
+          },
+          "--decorate": {
+            "optionalValue": true
+          },
+          "--branches": {
+            "optionalValue": true
+          },
+          "--tags": {
+            "optionalValue": true
+          },
+          "--remotes": {
+            "optionalValue": true
+          },
+          "--notes": {
+            "optionalValue": true
+          },
+          "--expand-tabs": {
+            "optionalValue": true
+          },
+          "--show-linear-break": {
+            "optionalValue": true
+          },
+          "-n": {
+            "value": true
+          },
+          "--max-count": {
+            "value": true
+          },
+          "--skip": {
+            "value": true
+          },
+          "--since": {
+            "value": true
+          },
+          "--after": {
+            "value": true
+          },
+          "--until": {
+            "value": true
+          },
+          "--before": {
+            "value": true
+          },
+          "--author": {
+            "value": true
+          },
+          "--committer": {
+            "value": true
+          },
+          "--grep": {
+            "value": true
+          },
+          "--format": {
+            "value": true
+          },
+          "--date": {
+            "value": true
+          },
+          "--encoding": {
+            "value": true
+          },
+          "-L": {
+            "value": true
+          },
+          "--diff-merges": {
+            "value": true
+          },
+          "--min-parents": {
+            "value": true
+          },
+          "--max-parents": {
+            "value": true
+          },
+          "--decorate-refs": {
+            "value": true
+          },
+          "--decorate-refs-exclude": {
+            "value": true
+          },
+          "--glob": {
+            "value": true
+          },
+          "--exclude": {
+            "value": true
+          },
+          "--since-as-filter": {
+            "value": true
+          },
+          "--show-signature": {
+            "effects": [
+              "runs-code"
+            ],
+            "runner": true
+          }
+        },
+        "harden": [
+          "--no-ext-diff",
+          "--no-textconv"
+        ]
+      },
+      "blame": {
+        "effects": [
+          "read"
+        ],
+        "paths": "repo",
+        "terminator": "--end-of-options",
+        "flags": {
+          "-l": {},
+          "-t": {},
+          "--reverse": {},
+          "--first-parent": {},
+          "-p": {},
+          "--porcelain": {},
+          "--line-porcelain": {},
+          "--incremental": {},
+          "-w": {},
+          "-e": {},
+          "--show-email": {},
+          "-s": {},
+          "-n": {},
+          "--show-number": {},
+          "-f": {},
+          "--show-name": {},
+          "--root": {},
+          "--show-stats": {},
+          "--score-debug": {},
+          "--color-lines": {},
+          "--color-by-age": {},
+          "--progress": {},
+          "--no-progress": {},
+          "-c": {},
+          "-M": {
+            "optionalValue": true
+          },
+          "-C": {
+            "optionalValue": true
+          },
+          "--abbrev": {
+            "optionalValue": true
+          },
+          "-L": {
+            "value": true
+          },
+          "--encoding": {
+            "value": true
+          },
+          "--date": {
+            "value": true
+          },
+          "--ignore-rev": {
+            "value": true
+          },
+          "--contents": {
+            "value": true,
+            "valueIsPath": "read"
+          },
+          "-S": {
+            "value": true,
+            "valueIsPath": "read"
+          },
+          "--ignore-revs-file": {
+            "value": true,
+            "valueIsPath": "read"
+          },
+          "--no-textconv": {},
+          "--textconv": {
+            "effects": [
+              "runs-code"
+            ],
+            "runner": true
+          }
+        },
+        "harden": [
+          "--no-textconv"
+        ]
+      },
+      "ls-files": {
+        "effects": [
+          "read"
+        ],
+        "paths": "repo",
+        "terminator": "--end-of-options",
+        "flags": {
+          "-c": {},
+          "--cached": {},
+          "-d": {},
+          "--deleted": {},
+          "-m": {},
+          "--modified": {},
+          "-o": {},
+          "--others": {},
+          "-i": {},
+          "--ignored": {},
+          "-s": {},
+          "--stage": {},
+          "-u": {},
+          "--unmerged": {},
+          "-k": {},
+          "--killed": {},
+          "--directory": {},
+          "--no-empty-directory": {},
+          "--eol": {},
+          "-z": {},
+          "--deduplicate": {},
+          "--exclude-standard": {},
+          "--error-unmatch": {},
+          "-t": {},
+          "-v": {},
+          "-f": {},
+          "--full-name": {},
+          "--recurse-submodules": {},
+          "--debug": {},
+          "--sparse": {},
+          "--abbrev": {
+            "optionalValue": true
+          },
+          "-x": {
+            "value": true
+          },
+          "--exclude": {
+            "value": true
+          },
+          "--exclude-per-directory": {
+            "value": true
+          },
+          "--with-tree": {
+            "value": true
+          },
+          "--format": {
+            "value": true
+          },
+          "-X": {
+            "value": true,
+            "valueIsPath": "read"
+          },
+          "--exclude-from": {
+            "value": true,
+            "valueIsPath": "read"
+          }
+        }
+      },
+      "rev-parse": {
+        "effects": [
+          "read"
+        ],
+        "paths": "repo",
+        "terminator": "--end-of-options",
+        "flags": {
+          "--show-toplevel": {},
+          "--show-prefix": {},
+          "--show-cdup": {},
+          "--git-dir": {},
+          "--git-common-dir": {},
+          "--absolute-git-dir": {},
+          "--is-inside-work-tree": {},
+          "--is-inside-git-dir": {},
+          "--is-bare-repository": {},
+          "--is-shallow-repository": {},
+          "--verify": {},
+          "-q": {},
+          "--quiet": {},
+          "--symbolic": {},
+          "--symbolic-full-name": {},
+          "--all": {},
+          "--local-env-vars": {},
+          "--abbrev-ref": {
+            "optionalValue": true
+          },
+          "--short": {
+            "optionalValue": true
+          },
+          "--branches": {
+            "optionalValue": true
+          },
+          "--tags": {
+            "optionalValue": true
+          },
+          "--remotes": {
+            "optionalValue": true
+          },
+          "--show-object-format": {
+            "optionalValue": true
+          }
+        }
+      },
+      "branch": {
+        "effects": [
+          "read"
+        ],
+        "paths": "repo",
+        "terminator": "--end-of-options",
+        "maxOperands": 0,
+        "clusters": true,
+        "flags": {
+          "-a": {},
+          "--all": {},
+          "-r": {},
+          "--remotes": {},
+          "-v": {},
+          "-vv": {},
+          "--verbose": {},
+          "--list": {},
+          "-l": {},
+          "--show-current": {},
+          "--no-color": {},
+          "--no-column": {},
+          "--ignore-case": {},
+          "-i": {},
+          "--color": {
+            "optionalValue": true
+          },
+          "--column": {
+            "optionalValue": true
+          },
+          "--abbrev": {
+            "optionalValue": true
+          },
+          "--contains": {
+            "value": true
+          },
+          "--no-contains": {
+            "value": true
+          },
+          "--merged": {
+            "value": true
+          },
+          "--no-merged": {
+            "value": true
+          },
+          "--sort": {
+            "value": true
+          },
+          "--format": {
+            "value": true
+          },
+          "--points-at": {
+            "value": true
+          }
+        }
+      },
+      "fetch": {
+        "effects": [
+          "write",
+          "runs-code",
+          {
+            "network": {
+              "direction": "read"
+            }
+          }
+        ],
+        "paths": "repo",
+        "terminator": "--end-of-options",
+        "flags": {
+          "-q": {},
+          "--quiet": {},
+          "-v": {},
+          "--verbose": {},
+          "--dry-run": {},
+          "--progress": {},
+          "--no-progress": {},
+          "-4": {},
+          "-6": {},
+          "--ipv4": {},
+          "--ipv6": {},
+          "--all": {},
+          "--prune": {},
+          "-p": {},
+          "--prune-tags": {},
+          "-P": {},
+          "--tags": {},
+          "-t": {},
+          "--no-tags": {},
+          "--unshallow": {},
+          "--update-shallow": {},
+          "--force": {},
+          "-f": {},
+          "--keep": {},
+          "-k": {},
+          "--multiple": {},
+          "--append": {},
+          "-a": {},
+          "--atomic": {},
+          "--no-write-fetch-head": {},
+          "--write-fetch-head": {},
+          "--set-upstream": {},
+          "--no-auto-gc": {},
+          "--auto-gc": {},
+          "--recurse-submodules": {
+            "optionalValue": true
+          },
+          "--depth": {
+            "value": true
+          },
+          "--deepen": {
+            "value": true
+          },
+          "--shallow-since": {
+            "value": true
+          },
+          "--shallow-exclude": {
+            "value": true
+          },
+          "--jobs": {
+            "value": true
+          },
+          "-j": {
+            "value": true
+          },
+          "--refmap": {
+            "value": true
+          },
+          "--negotiation-tip": {
+            "value": true
+          },
+          "--server-option": {
+            "value": true
+          },
+          "-o": {
+            "value": true
+          },
+          "--upload-pack": {
+            "effects": [
+              "runs-code"
+            ],
+            "runner": true,
+            "value": true
+          }
+        }
+      },
+      "push": {
+        "effects": [
+          "read",
+          "runs-code",
+          {
+            "network": {}
+          }
+        ],
+        "paths": "repo",
+        "terminator": "--end-of-options",
+        "flags": {
+          "-q": {},
+          "--quiet": {},
+          "-v": {},
+          "--verbose": {},
+          "--dry-run": {},
+          "--progress": {},
+          "--no-progress": {},
+          "-4": {},
+          "-6": {},
+          "--ipv4": {},
+          "--ipv6": {},
+          "--tags": {},
+          "--follow-tags": {},
+          "--no-follow-tags": {},
+          "--force": {},
+          "-f": {},
+          "--delete": {},
+          "-d": {},
+          "--all": {},
+          "--branches": {},
+          "--mirror": {},
+          "--atomic": {},
+          "--no-atomic": {},
+          "--prune": {},
+          "--porcelain": {},
+          "-n": {},
+          "--no-verify": {},
+          "--verify": {},
+          "--no-force-with-lease": {},
+          "--no-thin": {},
+          "--thin": {},
+          "--force-with-lease": {
+            "optionalValue": true
+          },
+          "--force-if-includes": {
+            "optionalValue": true
+          },
+          "--recurse-submodules": {
+            "optionalValue": true
+          },
+          "--signed": {
+            "optionalValue": true
+          },
+          "--push-option": {
+            "value": true
+          },
+          "-o": {
+            "value": true
+          },
+          "--repo": {
+            "value": true
+          },
+          "--set-upstream": {
+            "effects": [
+              "write"
+            ]
+          },
+          "-u": {
+            "effects": [
+              "write"
+            ]
+          },
+          "--receive-pack": {
+            "effects": [
+              "runs-code"
+            ],
+            "runner": true,
+            "value": true
+          },
+          "--exec": {
+            "effects": [
+              "runs-code"
+            ],
+            "runner": true,
+            "value": true
+          }
+        }
+      }
+    },
+    "harden": [
+      "--no-pager"
+    ]
+  }
+}
