@@ -275,7 +275,7 @@ pub fn wrap(
 /// Top-level names in a root that are never writable: they run code later. Under `write: "roots"` the
 /// whole top level is name-immutable anyway; these are also the names bubblewrap re-binds read-only,
 /// and the ones the Landlock enumeration refuses to grant beneath `.git`.
-const PROTECTED_TOP: &[&str] = &[
+pub(crate) const PROTECTED_TOP: &[&str] = &[
     ".gitmodules",
     ".vscode",
     ".idea",
@@ -292,7 +292,7 @@ const PROTECTED_TOP: &[&str] = &[
 ];
 
 /// Names under `.git` that are never writable.
-const PROTECTED_GIT: &[&str] = &["hooks", "config"];
+pub(crate) const PROTECTED_GIT: &[&str] = &["hooks", "config"];
 
 /// What `wmlhost exec-under` enforces. The host computes this; the shim only applies it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

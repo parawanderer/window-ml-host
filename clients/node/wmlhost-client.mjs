@@ -157,6 +157,9 @@ export class HostClient {
    * Runs a pending call after its verdict. `envelope` optionally narrows the sandbox to
    * `{ write: "roots"|"none", exec: "any"|"program-only" }` (both keys required; absent = today's floor).
    * `done` reports `write: "today"` for an absent envelope; a worker may not SEND `"today"` (malformed).
+   * `done.protectedChanged` lists what changed among the roots' protected names during the call
+   * (`[{ root, name, change: "created"|"modified"|"removed" }]`, `[]` when nothing; absent from an older host, or
+   * dropped from a `done` past the 1 MiB limit: unknown). `protectedChangedTruncated: true` when cut at 256.
    * @param {string} id
    * @param {{ write: "roots"|"none", exec: "any"|"program-only" }} [envelope]
    */

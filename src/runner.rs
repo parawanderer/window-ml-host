@@ -123,13 +123,30 @@ fn signal_group(pgid: u32, sig: Signal) {
     }
 }
 
-/// Kills a call's group and any descendant a wrapper moved out of it (a new session), at once.
-fn kill_tree(pgid: u32) {
+/// Kills a call's group and any descendant a wrapper moved out of it (a new session), at once; whether anything was
+/// there to kill. The members are read BEFORE anything is signalled: once the group's leader dies its children are
+/// reparented, and a descendant in a session of its own (bubblewrap's `--new-session`) could no longer be found.
+///
+/// A pid is never trusted alone: each member is recorded with its start time, and is signalled only while that is
+/// still its start time, so a member that exits after the read and whose pid is reused is not the one killed.
+fn kill_tree(pgid: u32) -> bool {
+    let members: Vec<(u32, u64)> =
+        procs::members(pgid).into_iter().filter_map(|p| procs::start_time(p).map(|t| (p, t))).collect();
     signal_group(pgid, Signal::KILL);
-    for p in procs::members(pgid) {
-        if let Some(pid) = i32::try_from(p).ok().and_then(Pid::from_raw) {
-            let _ = rustix::process::kill_process(pid, Signal::KILL);
-        }
+    for &(p, started) in &members {
+        kill_if_same(p, started);
+    }
+    !members.is_empty()
+}
+
+/// SIGKILLs `pid` only while it is still the process that started at `started`; true when it signalled.
+fn kill_if_same(pid: u32, started: u64) -> bool {
+    if procs::start_time(pid) != Some(started) {
+        return false;
+    }
+    match i32::try_from(pid).ok().and_then(Pid::from_raw) {
+        Some(p) => rustix::process::kill_process(p, Signal::KILL).is_ok(),
+        None => false,
     }
 }
 
@@ -220,6 +237,11 @@ pub fn kill_now(pgid: u32) {
     kill_tree(pgid);
 }
 
+/// [`kill_now`], saying whether the call had anything left to kill.
+pub fn kill_call(pgid: u32) -> bool {
+    kill_tree(pgid)
+}
+
 /// Kills a call that was started but will never be supervised (a later stage of its pipeline failed to start), and
 /// reaps it.
 pub async fn abort(mut r: Running) {
@@ -242,5 +264,26 @@ fn signal_name(n: i32) -> String {
         14 => "SIGALRM".into(),
         15 => "SIGTERM".into(),
         _ => format!("SIG{n}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- killing a call's tree: a pid is never trusted alone ---
+
+    #[test]
+    fn a_member_whose_start_time_changed_is_not_killed_and_one_whose_did_not_is() {
+        let mut child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+        let pid = child.id();
+        let started = procs::start_time(pid).expect("a live child has a start time");
+        // The same pid with another start time stands for a reused pid: it is left alone.
+        assert!(!kill_if_same(pid, started.wrapping_add(1)), "a reused pid is never signalled");
+        assert!(child.try_wait().unwrap().is_none(), "the process behind it is still running");
+        // Its own start time: it is the process that was recorded, and it dies.
+        assert!(kill_if_same(pid, started));
+        let status = child.wait().unwrap();
+        assert!(!status.success(), "killed, not exited");
     }
 }
