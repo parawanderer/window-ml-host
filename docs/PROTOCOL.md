@@ -45,6 +45,10 @@ the host answers each as it finishes, not in order. A message that is not an obj
   "memory": { "metric": "phys_footprint", "enforcer": "watchdog", "everyMs": 100 } }
 ```
 
+Over the hub (`docs/HUB.md`) `hello` adds `"transport": "hub"` and `"hub": { "roots": [...], "callers": 2, "revocationsAgeMs": 3600000 }`:
+the roots the person at the machine granted (`hub-roots`), within which a `configure` may narrow, how many principals
+may call, and how old the account's revocation list is (`null` while there is none to go stale).
+
 `memory.metric` names what a memory bound is measured on: `phys_footprint` on macOS (what Activity Monitor and Jetsam
 use), `rss_anon+rss_shmem+swap` on Linux. Never the address space.
 
@@ -67,6 +71,10 @@ value: { "roots": [{ "given": "…", "path": "<realpath>" }], "sandboxed": true,
 ```
 
 Every bound is clamped to at least 16 MiB.
+
+Over the hub, a `configure` may only narrow what the person at the machine granted: a root not within one of `hub-roots`
+is `BadRequest` naming it, no `hub-roots` (or an empty one) is `NotConfigured`, `sandbox: false` is `BadRequest`, and a
+machine with no working sandbox answers `SandboxFailed`. A refused `configure` changes nothing.
 
 `sandboxed` in the answer is whether calls will run under the OS sandbox: `sandbox` asked for it AND it is available.
 Reconfiguring drops every pending spawn (their facts were judged against the old roots); running processes continue.
@@ -316,6 +324,7 @@ These are the host's own; the worker maps them onto the `ml` wire's codes (`Refu
 | `PinChanged` | `start`/`pipe` of a call whose hashed path argument changed since its facts were read |
 | `Busy` | 256 calls already wait for a verdict, or 32 are running (a `pipe` counts its stages) |
 | `Failed` | reading held output failed on disk |
+| `Refused` | over the hub only: the host's own checks refused the caller before the call was looked at; `reason` is `scope`, `revoked`, `stale` or `notACaller` (`docs/HUB.md`) |
 | `TooLarge` | the answer would exceed 1 MiB (an `argv` that large, echoed back in the facts) |
 
 ## Not in v1, and where it will go

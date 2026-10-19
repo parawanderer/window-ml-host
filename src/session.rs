@@ -172,6 +172,25 @@ pub struct Host {
     /// The program started as this host's warden (`wmlhost warden …`): it reaps the calls of a host that was killed
     /// outright. `None` starts none.
     pub warden: Option<PathBuf>,
+    /// Where the session's calls come from, and what that bounds.
+    pub transport: Transport,
+}
+
+/// Where a session's calls come from. Over native messaging the extension is the person's own and `configure` sets
+/// the roots; over the hub (src/hub/) the caller is a remote principal, and the person at this machine set the ceiling.
+#[derive(Clone, Debug, Default)]
+pub enum Transport {
+    #[default]
+    Native,
+    Hub {
+        /// `hub-roots`: what a `configure` may narrow within. `None` (no file) or empty refuses every `configure`.
+        roots: Option<Vec<PathBuf>>,
+        /// how many principals `hub-callers` lists, for `hello`
+        callers: usize,
+        /// Epoch ms the account's revocation list is fresh from (its version, or when a revoker was first seen and
+        /// no list has come yet); 0 while no revoker has been seen, so nothing can go stale. The hub loop updates it.
+        revocations_since: Arc<std::sync::atomic::AtomicU64>,
+    },
 }
 
 impl Host {
@@ -184,6 +203,7 @@ impl Host {
             host_env: Box::new(|k| std::env::var(k).ok()),
             owners_dir: Some(owners::default_dir(std::env::var("WMLHOST_STATE_DIR").ok())),
             warden: std::env::current_exe().ok(),
+            transport: Transport::Native,
         })
     }
 }
@@ -324,7 +344,7 @@ impl Session {
         if let Some(r) = &sb.reason {
             sandbox["reason"] = json!(r);
         }
-        json!({
+        let mut v = json!({
             "host": "window-ml-host",
             "version": env!("CARGO_PKG_VERSION"),
             "protocol": PROTOCOL,
@@ -333,7 +353,16 @@ impl Session {
             "modes": ["host"],
             "owners": { "ledger": self.ledger.is_some() },
             "memory": { "metric": procs::metric(), "enforcer": "watchdog", "everyMs": runner::WATCH_EVERY.as_millis() as u64 },
-        })
+        });
+        if let Transport::Hub { roots, callers, revocations_since } = &self.host.transport {
+            // A list older than the floor refuses every call, so a caller can see that coming, and why.
+            let since = revocations_since.load(std::sync::atomic::Ordering::Relaxed);
+            let age = (since > 0).then(|| owners::now_ms().saturating_sub(since));
+            v["transport"] = json!("hub");
+            v["hub"] = json!({ "roots": roots.as_deref().unwrap_or_default(), "callers": callers,
+                               "revocationsAgeMs": age });
+        }
+        v
     }
 
     /// The owner table: every running call with its owner and footprint, and the orphans other host processes left.
@@ -375,6 +404,9 @@ impl Session {
             return fail("BadRoot", "at least one root");
         }
         let sandbox = opt_bool(a, "sandbox")?.unwrap_or(true);
+        if let Transport::Hub { roots: ceiling, .. } = &self.host.transport {
+            self.within_hub_ceiling(ceiling.as_deref(), &roots, sandbox)?;
+        }
         let path = match a.get("path") {
             None => self.default_path(),
             Some(Value::Array(xs)) => {
@@ -395,6 +427,28 @@ impl Session {
         st.config = Some(Config { roots, sandbox, path, timeout_ms, output_cap, memory_bound, memory_max, owner_loss });
         Ok(json!({ "roots": shown, "sandboxed": sandboxed, "memoryBound": memory_bound, "memoryMax": memory_max,
                    "onOwnerLoss": owner_loss.json() }))
+    }
+
+    /// A caller over the hub may only NARROW what the person at this machine granted: every root under one of
+    /// `hub-roots`, and the sandbox on. Plain host mode is the person's choice, and the person is not the caller.
+    fn within_hub_ceiling(&self, ceiling: Option<&[PathBuf]>, roots: &[PathBuf], sandbox: bool) -> Result<(), Fail> {
+        let ceiling = ceiling.filter(|c| !c.is_empty()).ok_or_else(|| {
+            Fail("NotConfigured", "this host grants no roots over the hub (`wmlhost hub roots add <dir>`)".into())
+        })?;
+        if let Some(wider) = roots.iter().find(|r| !facts::in_roots(r, ceiling)) {
+            return fail("BadRequest", format!("root {} is not within this host's hub roots", wider.display()));
+        }
+        if !sandbox {
+            return fail("BadRequest", "over the hub the sandbox cannot be turned off");
+        }
+        if !self.host.sandbox.available {
+            let why = self.host.sandbox.reason.as_deref().unwrap_or("not found");
+            return fail(
+                "SandboxFailed",
+                format!("a caller over the hub runs only sandboxed, and there is no sandbox: {why}"),
+            );
+        }
+        Ok(())
     }
 
     fn default_path(&self) -> Vec<PathBuf> {

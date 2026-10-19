@@ -23,13 +23,16 @@ default = ["native"]
 native = []
 # The hub transport (later): pulls the hub's client crates in. OFF by default, and the default build must not compile
 # any of them (tools/check-no-hub.sh, in CI).
-hub = ["dep:wmlhub-client", "dep:wmlhub-seal", "dep:wmlhub-keys", "dep:wmlhub-proto"]
+hub = ["dep:wmlhub-client", "dep:wmlhub-seal", "dep:wmlhub-keys", "dep:wmlhub-proto", "dep:wmlhub-connector"]
 
 [dependencies]
 wmlhub-client = { git = "https://github.com/parawanderer/window-ml-hub", tag = "v0.4.3", optional = true }
 wmlhub-proto = { git = "https://github.com/parawanderer/window-ml-hub", tag = "v0.4.3", optional = true }
 wmlhub-seal = { git = "https://github.com/parawanderer/window-ml-hub", tag = "v0.4.3", optional = true }
 wmlhub-keys = { git = "https://github.com/parawanderer/window-ml-hub", tag = "v0.4.3", optional = true }
+# For its revocation logic (`revoked::Revocations`) and the files it keeps it in, so a desktop runtime and a box
+# connector refuse the same callers on the same freshness floor.
+wmlhub-connector = { git = "https://github.com/parawanderer/window-ml-hub", tag = "v0.4.3", optional = true }
 tokio = { version = "1.53.3", features = ["fs", "io-util", "io-std", "macros", "process", "rt", "rt-multi-thread", "sync", "time", "signal"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

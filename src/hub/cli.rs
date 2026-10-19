@@ -7,8 +7,15 @@ use std::time::Duration;
 use clap::{Parser, Subcommand};
 use wmlhub_keys::{hex, principal_id, verify_chain};
 
-use super::pair::{Offer, PAIRING_WINDOW};
+use std::sync::Arc;
+
+use wmlhub_client::{Client, Config};
+use wmlhub_seal::ChannelKey;
+
+use super::pair::{Offer, PAIRING_WINDOW, ROLE, check};
+use super::serve::{MakeHost, Serving};
 use super::state::{State, unhex};
+use crate::session::Host;
 
 #[derive(Parser)]
 #[command(name = "wmlhost hub", about = "This host on a window.ml hub, as a desktop runtime")]
@@ -33,6 +40,15 @@ enum Command {
         /// Replace an existing pairing (the keys, and so the principal, stay the same).
         #[arg(long)]
         again: bool,
+    },
+    /// Serve calls over the hub until the connection ends.
+    Serve {
+        /// The hub's websocket URL.
+        #[arg(long)]
+        hub: String,
+        /// The name the hub gives itself in its challenge.
+        #[arg(long)]
+        hub_name: String,
     },
     /// Allow a principal (64 hex) to call this host. Nobody may until one is allowed.
     Allow { principal: String },
@@ -75,6 +91,10 @@ pub fn main(args: &[String]) -> i32 {
         Command::Pair { hub, label, again } => {
             let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("tokio runtime");
             rt.block_on(pair(&state, &hub, &label, again))
+        }
+        Command::Serve { hub, hub_name } => {
+            let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("tokio runtime");
+            rt.block_on(serve(&state, hub, hub_name))
         }
         Command::Allow { principal } => match unhex(principal.trim()) {
             None => fail("a principal is 64 hex characters (the caller's `Principal` line)"),
@@ -156,6 +176,49 @@ async fn pair(state: &State, hub: &str, label: &str, again: bool) -> i32 {
     println!("Paired. Nobody may call this host until `wmlhost hub allow <principal>`, and no directory is");
     println!("reachable until `wmlhost hub roots add <dir>`.");
     status(state)
+}
+
+async fn serve(state: &State, url: String, hub_name: String) -> i32 {
+    let (keys, paired) = match (state.keys(), state.paired()) {
+        (Ok(Some(keys)), Ok(Some(paired))) => (keys, paired),
+        (Err(e), _) | (_, Err(e)) => return fail(&e.to_string()),
+        _ => return fail("not paired: `wmlhost hub pair --hub <url>` first"),
+    };
+    if let Err(e) = check(&keys, &paired, now_ms()) {
+        return fail(&format!("{e}; `wmlhost hub pair --hub <url> --again`"));
+    }
+    let (Ok(account_root), Ok(channel_key)) =
+        (<[u8; 32]>::try_from(paired.account_root.as_slice()), <[u8; 32]>::try_from(paired.channel_key.as_slice()))
+    else {
+        return fail("what pairing stored is not a key; pair it again");
+    };
+    let mut client = match Client::connect(Config {
+        url,
+        hub_name,
+        identity: keys.identity,
+        agreement: keys.agreement,
+        chain: paired.chain,
+        account_root,
+        role: ROLE,
+        invite: Vec::new(),
+    })
+    .await
+    {
+        Ok(client) => client,
+        Err(e) => return fail(&format!("cannot log in to the hub: {e:?}")),
+    };
+    let make_host: Arc<MakeHost> = Arc::new(|transport| {
+        let mut host = Host::from_system()?;
+        host.transport = transport;
+        Ok(host)
+    });
+    let mut serving = match Serving::new(state, account_root, ChannelKey::from_bytes(channel_key), make_host) {
+        Ok(s) => s,
+        Err(e) => return fail(&e.to_string()),
+    };
+    println!("Serving as {}", hex(&client.principal()));
+    let e = serving.run(&mut client, &now_ms).await;
+    fail(&format!("stopped serving: {e:?}"))
 }
 
 fn status(state: &State) -> i32 {
