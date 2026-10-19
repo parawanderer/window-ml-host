@@ -123,14 +123,18 @@ fn signal_group(pgid: u32, sig: Signal) {
     }
 }
 
-/// Kills a call's group and any descendant a wrapper moved out of it (a new session), at once.
-fn kill_tree(pgid: u32) {
+/// Kills a call's group and any descendant a wrapper moved out of it (a new session), at once; whether anything was
+/// there to kill. The members are read BEFORE anything is signalled: once the group's leader dies its children are
+/// reparented, and a descendant in a session of its own (bubblewrap's `--new-session`) could no longer be found.
+fn kill_tree(pgid: u32) -> bool {
+    let members = procs::members(pgid);
     signal_group(pgid, Signal::KILL);
-    for p in procs::members(pgid) {
-        if let Some(pid) = i32::try_from(p).ok().and_then(Pid::from_raw) {
+    for p in &members {
+        if let Some(pid) = i32::try_from(*p).ok().and_then(Pid::from_raw) {
             let _ = rustix::process::kill_process(pid, Signal::KILL);
         }
     }
+    !members.is_empty()
 }
 
 /// Measures the call's footprint every [`WATCH_EVERY`] into `meter`; returns once it passes `bound`.
@@ -218,6 +222,11 @@ async fn terminate(child: &mut Child, pgid: u32) -> Option<ExitStatus> {
 /// Kills a running call's whole group, and what it started outside it, at once (the session is ending).
 pub fn kill_now(pgid: u32) {
     kill_tree(pgid);
+}
+
+/// [`kill_now`], saying whether the call had anything left to kill.
+pub fn kill_call(pgid: u32) -> bool {
+    kill_tree(pgid)
 }
 
 /// Kills a call that was started but will never be supervised (a later stage of its pipeline failed to start), and

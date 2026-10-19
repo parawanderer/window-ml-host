@@ -12,10 +12,11 @@ use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rustix::process::{Pid, Signal};
+use rustix::process::Pid;
 use serde_json::{Value, json};
 
 use crate::procs;
+use crate::runner;
 use crate::tripwire::{self, Snapshot};
 
 /// Milliseconds since the epoch, the ledger's clock (it must mean the same thing to the next host process).
@@ -78,12 +79,13 @@ fn group_alive(pgid: u32) -> bool {
     pid(pgid).is_some_and(|p| rustix::process::test_kill_process_group(p).is_ok())
 }
 
-/// SIGKILL to a recorded group, only if it is still ours ([`still_ours`]).
+/// SIGKILL to a recorded call, only if it is still ours ([`still_ours`]): its group and every descendant, as the host
+/// kills it ([`runner::kill_call`]). The group alone misses a program a sandbox wrapper put in a session of its own.
 pub fn kill_if_ours(e: &Entry) -> bool {
     if !still_ours(e) {
         return false;
     }
-    pid(e.pgid).is_some_and(|p| rustix::process::kill_process_group(p, Signal::KILL).is_ok())
+    runner::kill_call(e.pgid)
 }
 
 /// One host process's ledger file. Writes are whole-file and atomic (a temp file renamed over), so a host killed
@@ -322,6 +324,36 @@ mod tests {
         assert!(s.orphans.is_empty());
         assert!(c.wait().unwrap().code().is_none(), "killed by a signal");
         assert!(!p.exists());
+    }
+
+    #[test]
+    fn a_descendant_a_wrapper_moved_into_a_session_of_its_own_dies_with_the_entry() {
+        // What bubblewrap's --new-session does: the program runs in a session, so a process group, of its own,
+        // a child of the group the entry names. The group signal alone misses it, and once the group's leader is
+        // gone its children are reparented, so the descendants must be found before anything is signalled.
+        let dir = tempfile::tempdir().unwrap();
+        let pidfile = dir.path().join("pid");
+        let script = format!(
+            "perl -e 'use POSIX; POSIX::setsid(); open(F, \">{}\"); print F $$; close F; sleep 30' & wait",
+            pidfile.display()
+        );
+        let mut c = std::process::Command::new("sh").arg("-c").arg(script).process_group(0).spawn().unwrap();
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let moved: u32 = loop {
+            if let Some(p) = std::fs::read_to_string(&pidfile).ok().and_then(|s| s.trim().parse().ok()) {
+                break p;
+            }
+            assert!(std::time::Instant::now() < end, "the session leader never started");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        assert!(procs::start_time(moved).is_some());
+        assert!(kill_if_ours(&entry(&c, None)));
+        let _ = c.wait();
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while procs::start_time(moved).is_some() && std::time::Instant::now() < end {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(procs::start_time(moved).is_none(), "the process in its own session outlived its entry's kill");
     }
 
     #[test]
