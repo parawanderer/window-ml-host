@@ -123,6 +123,10 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
 - **`walk: true`** on a `pathArgs` entry (a recursive reader: `rg`, `find`, `ls -R`) adds `containsSecret`: `true` if
   anything beneath the path looks like a secret, `false` if nothing does, `null` past 20 000 entries or an unreadable
   directory. The walk never follows a symlink (a link is judged by its name) and skips `.git` directories.
+- **`hash: true`** on a `pathArgs` entry (an interpreted script's entrypoint: `node scripts/index.mjs`, PROGRAM_MANIFEST.md
+  "Interpreted script tools") adds `sha256`: the hex sha256 of the resolved file, after symlinks, so `given` and `path`
+  name both. `null` for anything but a regular file, or one over 16 MiB. The host compares it with nothing: whether it
+  matches a manifest's pin is the worker's decision. `start` hashes the file again (below).
 - **`repoConfigRunsCode`** comes from the host's own read of the repository-level config (`.git/config`, a worktree's
   common config and `config.worktree`, and the `include`/`includeIf` files they pull in from inside the repository):
   true for `core.fsmonitor`, `core.pager` other than `cat`, `core.hooksPath`, `core.sshCommand`, `core.askPass`,
@@ -148,6 +152,10 @@ What the host enforces whatever the verdict was: argv executed directly with no 
 time limit, the output cap, and the OS sandbox when `sandboxed` was true. If the sandbox then fails to start, the
 call's `done` carries `error: { code: "SandboxFailed" }` and the program never ran; the host never falls back to running
 it unsandboxed.
+
+**A hashed path argument that changed since `spawn`** (its `sha256` is not the one the facts reported) refuses the call
+with `PinChanged`, and the call is gone: it is a different program than the one judged, and nothing of it ran. The same
+holds for any stage of a `pipe`. The worker treats it as a call with no manifest, never as a hash to re-approve.
 
 **The answer to `start` always comes before that call's `done`**: the host queues it before the call can end.
 
@@ -305,6 +313,7 @@ These are the host's own; the worker maps them onto the `ml` wire's codes (`Refu
 | `UnknownPtr` | `read`/`release` of a pointer that does not exist |
 | `SandboxFailed` | the sandbox program itself could not be started (a refusal by the sandbox shows in `done`) |
 | `SpawnFailed` | the OS refused to start the program |
+| `PinChanged` | `start`/`pipe` of a call whose hashed path argument changed since its facts were read |
 | `Busy` | 256 calls already wait for a verdict, or 32 are running (a `pipe` counts its stages) |
 | `Failed` | reading held output failed on disk |
 | `TooLarge` | the answer would exceed 1 MiB (an `argv` that large, echoed back in the facts) |

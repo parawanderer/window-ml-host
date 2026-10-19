@@ -64,6 +64,24 @@ pub fn resolve_path(given: &str, cwd: &Path) -> Resolved {
     Resolved { path: joined, exists: false, clean: false }
 }
 
+/// A pinned file is hashed only up to this size; a larger one has no hash, so no pin can match it.
+pub const MAX_PIN_BYTES: u64 = 16 << 20;
+
+/// The sha256 of the regular file at `p` (a realpath), hex; `None` for anything else or a file past `MAX_PIN_BYTES`.
+/// What an interpreted script's manifest is pinned by (PROGRAM_MANIFEST.md, "Interpreted script tools").
+pub fn file_sha256(p: &Path) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let f = std::fs::File::open(p).ok()?;
+    let md = f.metadata().ok()?;
+    if !md.is_file() || md.len() > MAX_PIN_BYTES {
+        return None;
+    }
+    let mut buf = Vec::with_capacity(md.len() as usize);
+    f.take(MAX_PIN_BYTES + 1).read_to_end(&mut buf).ok()?;
+    (buf.len() as u64 <= MAX_PIN_BYTES).then(|| hex::encode(Sha256::digest(&buf)))
+}
+
 /// `argv[0]` resolved to the file that will run. A name with a `/` is taken relative to `cwd`; a bare name is looked
 /// up in `path_dirs` in order, skipping relative entries, so a program named `git` in the cwd is never picked by
 /// accident. The result is a realpath to an executable regular file.

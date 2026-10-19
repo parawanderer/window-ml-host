@@ -122,6 +122,8 @@ struct Pending {
     sandboxed: bool,
     /// Secret-flagged paths the call names: the sandbox lets the call read exactly these.
     named_secrets: Vec<PathBuf>,
+    /// Each hashed path argument and the hash its fact reported: `start` hashes it again and refuses on a change.
+    pins: Vec<(PathBuf, Option<String>)>,
     /// Who the call is for, as the extension named it (`{ session, run, step }`): opaque to the host.
     owner: Value,
     memory_bound: u64,
@@ -468,6 +470,11 @@ impl Session {
             .filter(|p| p["secret"] == true)
             .filter_map(|p| p["path"].as_str().map(PathBuf::from))
             .collect();
+        let pins: Vec<(PathBuf, Option<String>)> = paths
+            .iter()
+            .filter(|p| p.get("sha256").is_some())
+            .filter_map(|p| Some((PathBuf::from(p["path"].as_str()?), p["sha256"].as_str().map(String::from))))
+            .collect();
 
         let mut st = self.state.lock().unwrap();
         st.pending.retain(|_, p| p.created.elapsed() < PENDING_TTL);
@@ -508,6 +515,7 @@ impl Session {
                 timeout_ms,
                 sandboxed,
                 named_secrets,
+                pins,
                 owner,
                 memory_bound,
                 owner_loss,
@@ -550,6 +558,12 @@ impl Session {
             // A recursive reader's argument: what lies beneath it, which it reads without naming.
             if e.get("walk") == Some(&Value::Bool(true)) {
                 fact["containsSecret"] = json!(walk::contains_secret(&r.path, walk::WALK_CAP));
+            }
+            // An interpreted script's entrypoint: the hash its manifest is pinned by, of the file after symlinks.
+            match e.get("hash") {
+                None | Some(Value::Bool(false)) => {}
+                Some(Value::Bool(true)) => fact["sha256"] = json!(facts::file_sha256(&r.path)),
+                Some(_) => return fail("BadRequest", "pathArgs[].hash is a boolean"),
             }
             out.push(fact);
         }
@@ -640,6 +654,10 @@ impl Session {
         stdin: Stdio,
         pipe_out: bool,
     ) -> Result<(runner::Running, Option<Stdio>), Fail> {
+        // A pinned file that changed since its facts were read is a different program than the one judged.
+        if let Some((path, _)) = p.pins.iter().find(|(path, h)| facts::file_sha256(path) != *h) {
+            return fail("PinChanged", format!("{} changed after its facts were read", path.display()));
+        }
         let store = &self.host.store;
         let tmp = store.call_tmp(id).map_err(|e| Fail("SpawnFailed", format!("temp dir: {e}")))?;
         let failed = |f: Fail| {
