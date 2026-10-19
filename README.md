@@ -32,4 +32,6 @@ The extension does not use the host yet: its side waits on the `ml` wire protoco
 
 A hub is not an execution environment, and an execution environment is not a hub. `cargo build` with default
 features compiles no crate from [window-ml-hub](https://github.com/parawanderer/window-ml-hub)
-(`tools/check-no-hub.sh`, in CI); the hub transport will be the optional `hub` feature.
+(`tools/check-no-hub.sh`, in CI); the hub transport is the optional `hub` feature, and its end-to-end tests are their
+own crate (`hub-tests/`, `cargo test -p wmlhost-hub-tests`) so the default `cargo test` does not build a hub either.
+How the host lives on a hub, and what only the person at this machine decides: [`docs/HUB.md`](docs/HUB.md).

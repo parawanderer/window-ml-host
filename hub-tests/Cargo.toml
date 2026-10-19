@@ -1,0 +1,23 @@
+[package]
+name = "wmlhost-hub-tests"
+version = "0.0.0"
+description = "End-to-end tests of wmlhost's hub transport against an in-process hub. Its own crate so that neither the default build nor the default `cargo test` compiles the hub."
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+window-ml-host = { path = "..", default-features = false, features = ["native", "hub"] }
+wmlhub = { git = "https://github.com/parawanderer/window-ml-hub", tag = "v0.4.3" }
+wmlhub-client = { git = "https://github.com/parawanderer/window-ml-hub", tag = "v0.4.3" }
+wmlhub-keys = { git = "https://github.com/parawanderer/window-ml-hub", tag = "v0.4.3" }
+wmlhub-proto = { git = "https://github.com/parawanderer/window-ml-hub", tag = "v0.4.3" }
+wmlhub-seal = { git = "https://github.com/parawanderer/window-ml-hub", tag = "v0.4.3" }
+tokio = { version = "1.53.3", features = ["macros", "net", "rt-multi-thread", "time"] }
+tempfile = "3.27.0"
+
+[lints.rust]
+unsafe_code = "forbid"
