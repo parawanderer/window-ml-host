@@ -156,6 +156,7 @@ export class HostClient {
   /**
    * Runs a pending call after its verdict. `envelope` optionally narrows the sandbox to
    * `{ write: "roots"|"none", exec: "any"|"program-only" }` (both keys required; absent = today's floor).
+   * `done` reports `write: "today"` for an absent envelope; a worker may not SEND `"today"` (malformed).
    * @param {string} id
    * @param {{ write: "roots"|"none", exec: "any"|"program-only" }} [envelope]
    */

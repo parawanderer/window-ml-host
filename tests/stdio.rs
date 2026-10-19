@@ -669,16 +669,17 @@ fn a_protected_path_created_during_the_call_is_denied_on_macos_and_a_known_gap_o
         return h.close();
     }
     h.ok("configure", json!({ "roots": [r] }));
+    // NO envelope: today's floor. On Linux that is bubblewrap alone, whose read-only binds cover only
+    // what exists when the call starts — the gap this test pins stays open by design (see the sibling
+    // under write: "roots", and docs/SANDBOX.md).
     let (_, d) = h.run(json!({ "argv": ["sh", "-c", "mkdir -p .vscode && echo x > .vscode/tasks.json"], "cwd": r }));
     let created = r.join(".vscode/tasks.json").exists();
-    let landlock = h.ok("hello", json!({}))["sandbox"]["landlockAbi"].clone();
-    if cfg!(target_os = "macos") || !landlock.is_null() {
-        // Seatbelt's regex covers a path that did not exist when the call started; Landlock's
-        // gap-closing write grants do the same on Linux (a new top-level dir cannot be made).
+    if cfg!(target_os = "macos") {
+        // Seatbelt's regex covers a path that did not exist when the call started.
         assert_ne!(d["code"], 0, "{d}");
-        assert!(!created, "a protected path created during the call must not appear: {landlock}");
+        assert!(!created, "a protected path created during the call must not appear");
     } else {
-        // bubblewrap re-binds read-only only what exists when the call starts (docs/SANDBOX.md, "Limits").
+        assert_eq!(d["code"], 0, "{d}");
         assert!(created, "the Linux gap documented in SANDBOX.md has closed; flip this test and the doc");
     }
     h.close();
@@ -693,6 +694,12 @@ fn run_envelope(h: &mut Host, args: Value, envelope: Value) -> (Value, Value) {
     h.ok("start", json!({ "id": id, "envelope": envelope }));
     let d = h.done(&id);
     (facts, d)
+}
+
+/// `hello.sandbox.landlockAbi`, as a number (Some) or null (None).
+fn landlock_abi(h: &mut Host) -> Option<i64> {
+    let v = h.ok("hello", json!({}))["sandbox"]["landlockAbi"].clone();
+    v.as_i64()
 }
 
 #[test]
@@ -728,14 +735,16 @@ fn exec_program_only_lets_the_call_run_only_its_program() {
         return h.close();
     }
     h.ok("configure", json!({ "roots": [r] }));
-    // `sh` runs; `ls` is not in the exec set, so `sh -c ls` cannot exec it.
+    std::fs::create_dir(r.join("work")).unwrap();
+    // `sh` runs; `ls` is not in the exec set, so `sh -c ls` cannot exec it. Writes go in an EXISTING
+    // directory, because write: "roots" is name-immutable at the top level.
     let (_, d) = run_envelope(
         &mut h,
-        json!({ "argv": ["sh", "-c", "echo ran > out.txt"], "cwd": r }),
+        json!({ "argv": ["sh", "-c", "echo ran > work/out.txt"], "cwd": r }),
         json!({ "write": "roots", "exec": "program-only" }),
     );
     assert_eq!(d["code"], 0, "{}", text(&h.read_all(&d["stderr"])));
-    assert!(r.join("out.txt").exists());
+    assert!(r.join("work/out.txt").exists());
     let (_, d) = run_envelope(
         &mut h,
         json!({ "argv": ["sh", "-c", "ls >/dev/null"], "cwd": r }),
@@ -760,8 +769,8 @@ fn an_absent_envelope_is_todays_floor_and_done_says_so() {
     assert!(r.join("inside").exists(), "no envelope keeps today's write");
     assert_eq!(
         d["envelope"],
-        json!({ "write": "roots", "exec": "any" }),
-        "done reports the floor when the worker sent none"
+        json!({ "write": "today", "exec": "any" }),
+        "done reports the floor as \"today\" when the worker sent none, never \"roots\""
     );
     h.close();
 }
@@ -773,6 +782,7 @@ fn a_malformed_envelope_is_bad_request_and_never_todays_floor() {
     h.ok("configure", json!({ "roots": [r] }));
     for bad in [
         json!({ "write": "all", "exec": "any" }),
+        json!({ "write": "today", "exec": "any" }), // "today" is the host's name for the floor, not a worker's
         json!({ "write": "roots", "exec": 7 }),
         json!({ "write": "roots", "exec": "any", "extra": 1 }),
         json!({ "write": "roots" }),
@@ -801,10 +811,221 @@ fn hello_reports_the_landlock_abi_or_null() {
     let abi = &v["sandbox"]["landlockAbi"];
     assert!(abi.is_null() || abi.as_i64().is_some_and(|n| n > 0), "landlockAbi is a positive number or null: {v}");
     if cfg!(target_os = "linux") {
-        // A null here is the documented "no Landlock / not fully enforced" answer, not a defect.
-        eprintln!("linux landlockAbi: {abi}");
+        if std::env::var("WMLHOST_REQUIRE_SANDBOX").as_deref() == Ok("1") {
+            assert!(
+                abi.as_i64().is_some_and(|n| n > 0),
+                "CI requires Landlock, so landlockAbi must be a number (a dead ABI probe reports null): {v}"
+            );
+        } else {
+            eprintln!("linux landlockAbi: {abi}");
+        }
     }
     h.close();
+}
+
+// --- write: "roots" is NAME-IMMUTABLE at the top level of every root ---
+
+/// Runs `script` under `write: "roots"` and returns the `done`.
+fn roots_envelope(h: &mut Host, r: &Path, script: &str) -> Value {
+    run_envelope(h, json!({ "argv": ["sh", "-c", script], "cwd": r }), json!({ "write": "roots", "exec": "any" })).1
+}
+
+#[test]
+fn write_roots_starts_in_a_root_that_holds_files_and_symlinks() {
+    let (_d, r) = root();
+    std::fs::write(r.join("README.md"), "x").unwrap();
+    std::fs::write(r.join(".mcp.json"), "{}").unwrap();
+    std::fs::create_dir(r.join(".git")).unwrap();
+    std::fs::write(r.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    std::os::unix::fs::symlink(r.join("README.md"), r.join("link")).unwrap();
+    std::os::unix::fs::symlink(r.join("nowhere"), r.join("stale")).unwrap();
+    std::fs::create_dir(r.join("work")).unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    if cfg!(target_os = "linux") && landlock_abi(&mut h).is_none() {
+        let d = roots_envelope(&mut h, &r, "true");
+        assert_eq!(d["error"]["code"], "SandboxFailed", "without Landlock, write: roots is refused, not run wide: {d}");
+        return h.close();
+    }
+    // A file child, a .git file child and two symlinks must not break the ruleset (a directory-only
+    // right on a file is a hard Landlock error; a symlink is never granted).
+    let d = roots_envelope(&mut h, &r, "echo x > work/out && echo y >> README.md");
+    assert_eq!(d["code"], 0, "{}", text(&h.read_all(&d["stderr"])));
+    assert!(r.join("work/out").exists());
+    assert_eq!(
+        std::fs::read_to_string(r.join("README.md")).unwrap(),
+        "xy\n",
+        "an existing top-level file stays editable"
+    );
+    h.close();
+}
+
+#[test]
+fn write_roots_withholds_make_reg_so_envrc_and_mcp_json_cannot_appear() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    if cfg!(target_os = "linux") && landlock_abi(&mut h).is_none() {
+        return h.close();
+    }
+    for name in [".envrc", ".mcp.json"] {
+        let d = roots_envelope(&mut h, &r, &format!("echo x > {name}"));
+        assert_ne!(d["code"], 0, "write: roots created {name}: {d}");
+        assert!(!r.join(name).exists(), "{name} appeared");
+    }
+    h.close();
+}
+
+#[test]
+fn write_roots_withholds_make_dir_so_envrc_cannot_appear_as_a_directory() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    if cfg!(target_os = "linux") && landlock_abi(&mut h).is_none() {
+        return h.close();
+    }
+    for name in [".envrc", ".vscode", ".mcp.json"] {
+        let d = roots_envelope(&mut h, &r, &format!("mkdir {name}"));
+        assert_ne!(d["code"], 0, "write: roots made a top-level directory {name}: {d}");
+        assert!(!r.join(name).exists(), "{name} appeared");
+    }
+    h.close();
+}
+
+#[test]
+fn write_roots_withholds_make_sym_so_mcp_json_cannot_be_planted() {
+    let (_d, r) = root();
+    std::fs::create_dir(r.join("elsewhere")).unwrap();
+    std::fs::write(r.join("elsewhere/x"), "x").unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    if cfg!(target_os = "linux") && landlock_abi(&mut h).is_none() {
+        return h.close();
+    }
+    for name in [".mcp.json", ".envrc"] {
+        let d = roots_envelope(&mut h, &r, &format!("ln -s elsewhere/x {name}"));
+        assert_ne!(d["code"], 0, "write: roots planted a symlink at {name}: {d}");
+        assert!(!r.join(name).exists(), "{name} appeared");
+    }
+    h.close();
+}
+
+#[test]
+fn write_roots_withholds_remove_file_so_a_top_level_file_cannot_be_replaced() {
+    let (_d, r) = root();
+    std::fs::write(r.join("scratch"), "x").unwrap();
+    std::fs::write(r.join(".mcp.json"), "{}").unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    if cfg!(target_os = "linux") && landlock_abi(&mut h).is_none() {
+        return h.close();
+    }
+    // `scratch` is not one of the protected names bubblewrap re-binds, so this fails only because
+    // RemoveFile is withheld from the root — re-grant it and the test goes red.
+    let d = roots_envelope(&mut h, &r, "rm scratch");
+    assert_ne!(d["code"], 0, "write: roots removed a top-level file: {d}");
+    assert!(r.join("scratch").exists(), "scratch was removed");
+    let d = roots_envelope(&mut h, &r, "rm .mcp.json");
+    assert_ne!(d["code"], 0, "write: roots removed .mcp.json: {d}");
+    assert!(r.join(".mcp.json").exists(), ".mcp.json was removed");
+    h.close();
+}
+
+#[test]
+fn write_roots_withholds_remove_dir_so_a_top_level_dir_cannot_be_dropped() {
+    let (_d, r) = root();
+    std::fs::create_dir(r.join("scratchdir")).unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    if cfg!(target_os = "linux") && landlock_abi(&mut h).is_none() {
+        return h.close();
+    }
+    let d = roots_envelope(&mut h, &r, "rmdir scratchdir");
+    assert_ne!(d["code"], 0, "write: roots dropped a top-level directory: {d}");
+    assert!(r.join("scratchdir").exists(), "scratchdir was dropped");
+    h.close();
+}
+
+#[test]
+fn write_roots_withholds_refer_so_mcp_json_cannot_be_moved_in() {
+    let (_d, r) = root();
+    std::fs::create_dir(r.join("elsewhere")).unwrap();
+    std::fs::write(r.join("elsewhere/x"), "x").unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    if cfg!(target_os = "linux") && landlock_abi(&mut h).is_none() {
+        return h.close();
+    }
+    // A cross-directory rename needs REFER on both directories; the root has none, so a new name
+    // cannot be moved in (and `elsewhere` cannot hand one out of the top level either).
+    let d = roots_envelope(&mut h, &r, "mv elsewhere/x .mcp.json");
+    assert_ne!(d["code"], 0, "write: roots moved a file in as .mcp.json: {d}");
+    assert!(!r.join(".mcp.json").exists(), ".mcp.json appeared");
+    h.close();
+}
+
+#[test]
+fn an_envelope_on_an_unsandboxed_call_is_refused_not_misreported() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r], "sandbox": false }));
+    let facts = h.ok("spawn", json!({ "argv": ["touch", "inside"], "cwd": r }));
+    assert_eq!(facts["sandboxed"], false);
+    let id = facts["id"].as_str().unwrap().to_string();
+    // An unsandboxed call holds no bound. A narrower-than-today envelope must be refused, never run
+    // wide while done claims it was applied.
+    let e = h.call("start", json!({ "id": id, "envelope": { "write": "roots", "exec": "any" } })).unwrap_err();
+    assert_eq!(e.0, "SandboxFailed", "{e:?}");
+    assert!(!r.join("inside").exists(), "the refused call never ran");
+    // Without an envelope the call runs, and done reports the floor as "today" (unknown to the
+    // extension, never a claim that a bound was held).
+    let (facts, d) = h.run(json!({ "argv": ["touch", "inside"], "cwd": r }));
+    assert_eq!(facts["sandboxed"], false);
+    assert_eq!(d["code"], 0, "{d}");
+    assert_eq!(
+        d["envelope"],
+        json!({ "write": "today", "exec": "any" }),
+        "done never says \"roots\" for an absent one"
+    );
+    h.close();
+}
+
+#[test]
+fn exec_unders_failure_is_spoken_in_the_shape_sandbox_failed_listens_for() {
+    // The shape pairing behind the end-to-end report: `wmlhost exec-under` exits 2 with its name
+    // first on stderr when it cannot fully enforce the ruleset, and session.rs reads exactly that as
+    // SandboxFailed (unit-tested there). This pins the speaking side.
+    let out = Command::new(env!("CARGO_BIN_EXE_wmlhost"))
+        .args(["exec-under", r#"{"abi":99,"exec":[],"writeEdit":[],"writeFiles":[],"writeTrees":[]}"#, "--", "true"])
+        .output()
+        .expect("wmlhost exec-under runs");
+    assert_eq!(out.status.code(), Some(2), "a ruleset it cannot enforce exits 2: {out:?}");
+    assert!(
+        out.stderr.starts_with(b"wmlhost exec-under:"),
+        "the stderr head is the one sandbox_refusal matches: {:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 // --- the program's fingerprint ---

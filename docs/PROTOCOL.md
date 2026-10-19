@@ -174,18 +174,20 @@ description allows; it can only ever NARROW what the host does today, never wide
 args: { "id": "c3", "envelope": { "write": "roots" | "none", "exec": "any" | "program-only" } }
 ```
 
-- `write: "roots"` is today's floor (the roots minus the protected names, and `$TMPDIR`); `write: "none"` is `$TMPDIR`
-  alone.
+- `write: "roots"` is narrower than today's floor: the roots and `$TMPDIR`, with a NAME-IMMUTABLE top level (no
+  create, remove or rename of any name directly under a root; `docs/SANDBOX.md`). `write: "none"` is `$TMPDIR` alone.
 - `exec: "any"` is today's floor; `exec: "program-only"` allows only the resolved program, its `#!` interpreters (and
   `env`'s target), each hashed path argument's own chain, and on Linux each ELF's `PT_INTERP` (plus macOS's `sh`→`bash`
   variant).
-- **Absent** means today's behaviour (an older worker). **Malformed** (`write: "all"`, `exec: 7`, an unknown key, a
-  missing key) is `BadRequest` and the call is gone — never a silent fallback to today.
-- The envelope carries two enums and nothing else. `write: "roots"` means the roots the HOST configured minus the
-  protected names, never a path list the worker sends; `exec: "program-only"` means the set the HOST resolved, never a
-  list from the worker.
-- On Linux, anything narrower than the bwrap floor needs Landlock (`hello.sandbox.landlockAbi`). Without it the call
-  fails `SandboxFailed` rather than running unrestricted.
+- **Absent** means today's behaviour (an older worker). **Malformed** (`write: "all"`, `write: "today"`, `exec: 7`, an
+  unknown key, a missing key) is `BadRequest` and the call is gone — never a silent fallback to today. `"today"` is
+  the host's name for the floor on `done`; a worker may never SEND it.
+- The envelope carries two enums and nothing else. `write: "roots"` means the roots the HOST configured under the
+  name-immutable universal, never a path list the worker sends; `exec: "program-only"` means the set the HOST
+  resolved, never a list from the worker.
+- On Linux, anything narrower than the bwrap floor (including every `write: "roots"`) needs Landlock
+  (`hello.sandbox.landlockAbi`). Without it the call fails `SandboxFailed` rather than running unrestricted. On
+  macOS, Seatbelt holds every envelope in-profile.
 
 **A hashed path argument that changed since `spawn`** (its `sha256` is not the one the facts reported) refuses the call
 with `PinChanged`, and the call is gone: it is a different program than the one judged, and nothing of it ran. The same
@@ -301,7 +303,7 @@ An `offset` past the end returns zero bytes with `eof: true`. Bytes, not text: o
   "timedOut": false, "cancelled": false, "durationMs": 31,
   "killed": null,                             // "oom": past its memory bound, the whole call was killed (SIGKILL, no grace)
   "peakFootprint": 61865984, "memoryBound": 4294967296,      // bytes; the peak the watchdog measured
-  "envelope": { "write": "roots", "exec": "any" },            // the scope the host APPLIED (today's floor when the worker sent none)
+  "envelope": { "write": "today", "exec": "any" },           // the scope the host APPLIED ("today" when the worker sent none)
   "stdout": { "ptr": "out:…", "size": 812, "sha256": "…", "truncated": false },   // { "piped": true } for a non-last `pipe` stage
   "stderr": { "ptr": "out:…", "size": 0, "sha256": "…", "truncated": false } }
 ```
@@ -310,8 +312,9 @@ A non-last stage of a `pipe` has `"stdout": { "piped": true }`: its output went 
 held. A stream the host could not keep (the disk filled, say) is `{ "error": "…" }` instead of a pointer. A sandboxed call
 whose sandbox refused to start the program adds `"error": { "code": "SandboxFailed", "message": "…" }` and `ok: false`.
 
-`envelope` is the scope the host APPLIED, including when it fell back to today's floor because the worker sent none. An
-ABSENT `envelope` on `done` means an older host; the extension treats that as unknown, never as narrow.
+`envelope` is the scope the host APPLIED. `write: "today"` is the host's name for today's floor: what an ABSENT
+envelope means, and what `done` reports for one — never `"roots"`. A worker may not SEND `"today"`; that is
+malformed. An ABSENT `envelope` on `done` means an older host; the extension treats that as unknown, never as narrow.
 
 `{ code, ok, stdout, stderr }` is the result shape `ml.sh.run` returns, with `stdout`/`stderr` as pointers. `truncated`
 means the stream passed the output cap: the host kept the first `outputCap` bytes and drained the rest so the program was
@@ -356,7 +359,7 @@ These are the host's own; the worker maps them onto the `ml` wire's codes (`Refu
 | `Unsupported` | `mode: "container"` this version |
 | `UnknownId` | `start`/`discard`/`cancel`/`pipe` of an id that never existed, expired, or already started (`start`, `pipe`) |
 | `UnknownPtr` | `read`/`release` of a pointer that does not exist |
-| `SandboxFailed` | the sandbox program itself could not be started (a refusal by the sandbox shows in `done`) |
+| `SandboxFailed` | the sandbox program itself could not be started (a refusal by the sandbox shows in `done`); a `start`/`pipe` with an `envelope` on a call that is not sandboxed (an envelope is a request for a bound; an unsandboxed call holds none); a `write: "roots"` or `exec: "program-only"` on Linux without Landlock |
 | `SpawnFailed` | the OS refused to start the program |
 | `PinChanged` | `start`/`pipe` of a call whose hashed path argument changed since its facts were read |
 | `Busy` | 256 calls already wait for a verdict, or 32 are running (a `pipe` counts its stages) |

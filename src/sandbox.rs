@@ -45,22 +45,26 @@ pub struct Availability {
 
 impl Availability {
     /// Whether this platform can hold every bound `plan` names. Seatbelt always can; Linux needs
-    /// Landlock for anything narrower than the bwrap floor (and for the gap-closing write rules).
+    /// Landlock for anything narrower than the bwrap floor (and for the name-immutable top level).
     pub fn can_hold(&self, plan: &Plan) -> bool {
         match self.kind {
             Some(Kind::Seatbelt) => true,
             Some(Kind::Bwrap) => {
-                self.landlock_abi.is_some() || (plan.write == WriteScope::Roots && matches!(plan.exec, ExecScope::Any))
+                self.landlock_abi.is_some() || (plan.write == WriteScope::Today && matches!(plan.exec, ExecScope::Any))
             }
             None => false,
         }
     }
 }
 
-/// What a call may write. Both values are NARROWER than or equal to today's floor (`Roots`), never wider.
+/// What a call may write. `Roots` and `None` are NARROWER than today's floor (`Today`), never wider.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WriteScope {
-    /// Today's floor: the roots minus the protected names, and the call's temp dir.
+    /// The host's default floor for this call: bubblewrap's binds on Linux, the Seatbelt profile on
+    /// macOS. What an ABSENT envelope means and what `done` reports then ("today", never "roots").
+    Today,
+    /// The roots with a NAME-IMMUTABLE top level (no create, remove or rename of any top-level name)
+    /// and the protected names kept out of the grants beneath it. Needs Landlock on Linux.
     Roots,
     /// Only the call's temp dir.
     None,
@@ -76,10 +80,12 @@ pub enum ExecScope {
     ProgramOnly(Vec<PathBuf>),
 }
 
-/// The wire names of the two scopes. `done` reports these; `start`/`pipe` accept these.
+/// The wire names of the scopes. `done` reports `wire`; `start`/`pipe` accept `parse`, which has no
+/// "today": a worker names a bound or sends nothing.
 impl WriteScope {
     pub fn wire(self) -> &'static str {
         match self {
+            WriteScope::Today => "today",
             WriteScope::Roots => "roots",
             WriteScope::None => "none",
         }
@@ -121,9 +127,9 @@ impl Envelope {
     pub fn json(self) -> serde_json::Value {
         serde_json::json!({ "write": self.write.wire(), "exec": if self.program_only { "program-only" } else { "any" } })
     }
-    /// Today's floor, what an absent envelope means and what `done` reports then.
+    /// Today's floor, what an absent envelope means and what `done` reports then (`write: "today"`).
     pub fn today() -> Self {
-        Envelope { write: WriteScope::Roots, program_only: false }
+        Envelope { write: WriteScope::Today, program_only: false }
     }
 }
 
@@ -244,12 +250,15 @@ pub fn wrap(
         Kind::Bwrap => {
             let mut a: Vec<OsString> = bwrap_args(plan, cwd);
             a.push("--".into());
-            // With Landlock the write/exec narrowing (and the protected-name gap-closing) rides an
-            // `exec-under` shim inside bwrap; without it, bwrap's own binds are the floor and the
-            // caller must have checked `can_hold` (a narrower plan is refused, never run wide).
-            if av.landlock_abi.is_some() {
+            // An envelope narrower than today's floor rides an `exec-under` shim inside bwrap, which
+            // applies the Landlock ruleset the host computed. An ABSENT envelope is today's floor and
+            // gets plain bwrap (the documented gap stays). Without Landlock a narrow plan is refused
+            // (`can_hold`), never run wide.
+            let narrow = plan.write != WriteScope::Today || !matches!(plan.exec, ExecScope::Any);
+            if narrow {
+                let abi = av.landlock_abi?;
                 let exe = std::env::current_exe().ok()?;
-                let rules = landlock_rules(plan, av.landlock_abi?);
+                let rules = landlock_rules(plan, abi);
                 let json = serde_json::to_string(&rules).ok()?;
                 a.push(exe.into());
                 a.push("exec-under".into());
@@ -263,8 +272,9 @@ pub fn wrap(
     }
 }
 
-/// Top-level names in a root that are never writable: they run code later. The Linux write grants skip
-/// them when enumerating a root's children (Landlock only grants, so the skip IS the deny).
+/// Top-level names in a root that are never writable: they run code later. Under `write: "roots"` the
+/// whole top level is name-immutable anyway; these are also the names bubblewrap re-binds read-only,
+/// and the ones the Landlock enumeration refuses to grant beneath `.git`.
 const PROTECTED_TOP: &[&str] = &[
     ".gitmodules",
     ".vscode",
@@ -292,53 +302,82 @@ pub struct LandlockRules {
     pub abi: i32,
     /// EXECUTE grants. Empty means do not handle EXECUTE at all (`exec: "any"`).
     pub exec: Vec<PathBuf>,
+    /// Edit-only grants (`WriteFile`/`Truncate`): a name-immutable top level. No create, remove or
+    /// rename of any name under these paths.
+    pub write_edit: Vec<PathBuf>,
     /// File-level write grants (create/remove/truncate a file inside; never a directory or symlink).
     pub write_files: Vec<PathBuf>,
-    /// Full write grants (a tree that may take new directories).
+    /// Full write grants (a tree that may take new directories). Directories only.
     pub write_trees: Vec<PathBuf>,
 }
 
-/// The Landlock ruleset for one call. `write: Roots` is the gap-closing shape: file ops on each root
-/// (so `touch inside` works and `mkdir .vscode` does not), full write on each existing non-protected
-/// child and on tmp. `write: None` is tmp alone. The exec list is the set for `program-only`, empty
-/// for `any`.
+/// The Landlock ruleset for one call.
+///
+/// `write: Roots` is the name-immutable shape: `WriteFile`/`Truncate` on each root (so an existing
+/// top-level file stays editable and `touch inside` / `mkdir .vscode` / `rm x` / `ln -s` / `mv` at the
+/// top level do not), file-level ops on each `.git` (so `git add` can create `.git/index`), full write
+/// on each existing non-protected top-level DIRECTORY and each existing non-protected child of `.git`,
+/// and full write on tmp. `write: Today` is the bwrap floor approximated under Landlock (used only when
+/// the exec scope alone is narrowed): full write on the roots and tmp, gap included. `write: None` is
+/// tmp alone. The exec list is the set for `program-only`, empty for `any`.
 pub fn landlock_rules(plan: &Plan, abi: i32) -> LandlockRules {
     let exec = match &plan.exec {
         ExecScope::Any => vec![],
         ExecScope::ProgramOnly(s) => s.clone(),
     };
+    let mut write_edit = Vec::new();
     let mut write_files = Vec::new();
     let mut write_trees = vec![plan.tmp.clone()];
-    if plan.write == WriteScope::Roots {
-        for root in &plan.roots {
-            write_files.push(root.clone());
-            if let Ok(rd) = std::fs::read_dir(root) {
-                for ent in rd.flatten() {
-                    let name = ent.file_name().to_string_lossy().into_owned();
-                    if PROTECTED_TOP.contains(&name.as_str()) {
-                        continue;
-                    }
-                    if name == ".git" {
-                        write_files.push(ent.path());
-                        // one level down: full write on each existing child except hooks/config,
-                        // so `git add` works and absent `.git/hooks` cannot be created.
-                        if let Ok(gd) = std::fs::read_dir(ent.path()) {
-                            for g in gd.flatten() {
-                                let gn = g.file_name().to_string_lossy().into_owned();
-                                if PROTECTED_GIT.contains(&gn.as_str()) {
-                                    continue;
-                                }
-                                write_trees.push(g.path());
-                            }
+    match plan.write {
+        WriteScope::Today => {
+            for root in &plan.roots {
+                write_trees.push(root.clone());
+            }
+        }
+        WriteScope::Roots => {
+            for root in &plan.roots {
+                write_edit.push(root.clone());
+                if let Ok(rd) = std::fs::read_dir(root) {
+                    for ent in rd.flatten() {
+                        let name = ent.file_name().to_string_lossy().into_owned();
+                        if PROTECTED_TOP.contains(&name.as_str()) {
+                            continue;
                         }
-                        continue;
+                        // Symlinks are never granted: a dangling one breaks the ruleset, a live one
+                        // grants write on a path the enumeration never judged.
+                        if ent.file_type().is_ok_and(|t| t.is_symlink()) {
+                            continue;
+                        }
+                        if name == ".git" {
+                            write_files.push(ent.path());
+                            // one level down: full write on each existing DIRECTORY except
+                            // hooks/config, so `git add` works and absent `.git/hooks` cannot be
+                            // created. Files need no extra grant: `.git`'s file-level ops cover them.
+                            if let Ok(gd) = std::fs::read_dir(ent.path()) {
+                                for g in gd.flatten() {
+                                    let gn = g.file_name().to_string_lossy().into_owned();
+                                    if PROTECTED_GIT.contains(&gn.as_str()) {
+                                        continue;
+                                    }
+                                    if g.file_type().is_ok_and(|t| t.is_dir()) {
+                                        write_trees.push(g.path());
+                                    }
+                                }
+                            }
+                            continue;
+                        }
+                        // Only directories: a file child is already covered by the root's edit grant,
+                        // and a full-write rule on a file is a hard Landlock error.
+                        if ent.file_type().is_ok_and(|t| t.is_dir()) {
+                            write_trees.push(ent.path());
+                        }
                     }
-                    write_trees.push(ent.path());
                 }
             }
         }
+        WriteScope::None => {}
     }
-    LandlockRules { abi, exec, write_files, write_trees }
+    LandlockRules { abi, exec, write_edit, write_files, write_trees }
 }
 
 /// The exec set of one call: `program` plus its `#!` chain (including `env`'s target, resolved
@@ -591,7 +630,7 @@ pub fn seatbelt_profile(plan: &Plan) -> String {
     }
     p.push("; writes: the roots and the call's temp dir, never what would run code later".into());
     let mut write: Vec<String> = Vec::new();
-    if plan.write == WriteScope::Roots {
+    if plan.write != WriteScope::None {
         write.extend(plan.roots.iter().map(|r| format!("(subpath {})", lit(r))));
     }
     write.push(format!("(subpath {})", lit(&plan.tmp)));
@@ -604,6 +643,19 @@ pub fn seatbelt_profile(plan: &Plan) -> String {
     p.push(format!("(deny file-write* {})", deny_write.join(" ")));
     // Renaming `.git` itself is an unlink of that path; with this, a hook cannot be planted by moving the directory.
     p.push(format!("(deny file-write-unlink {})", re(&format!("/{}$", ci(".git")))));
+    // Name-immutable top level under `write: "roots"`: the root inode is edit-only (WriteFile/Truncate),
+    // so no name directly under a root may be created, removed or renamed. `file-write-create` is
+    // checked on the name being made and `file-write-unlink` on the name going away (or the rename's
+    // dest), which together are MakeReg|MakeDir|MakeSym|RemoveFile|RemoveDir|Refer withheld. An edit
+    // of an existing top-level file and anything below an existing subdirectory still work. The
+    // universal, and what it costs a call: docs/SANDBOX.md.
+    if plan.write == WriteScope::Roots {
+        for r in &plan.roots {
+            let top = format!("^{}/[^/]+$", ci(&r.to_string_lossy()));
+            p.push(format!("(deny file-write-create {})", re(&top)));
+            p.push(format!("(deny file-write-unlink {})", re(&top)));
+        }
+    }
     if !plan.hidden.is_empty() {
         let hidden: Vec<String> = plan.hidden.iter().map(|h| format!("(subpath {})", lit(h))).collect();
         p.push(format!("(deny file-write* {})", hidden.join(" ")));
@@ -699,7 +751,7 @@ mod tests {
             allow_read: vec![],
             home: Some(PathBuf::from("/home/u")),
             outlives_host: false,
-            write: WriteScope::Roots,
+            write: WriteScope::Today,
             exec: ExecScope::Any,
         }
     }
@@ -720,10 +772,17 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("inside"), "x").unwrap();
+        std::fs::write(root.path().join("README.md"), "x").unwrap();
         std::fs::create_dir(root.path().join("src")).unwrap();
         std::fs::create_dir(root.path().join(".git")).unwrap();
+        std::fs::write(root.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
         std::fs::create_dir(root.path().join(".git/objects")).unwrap();
         std::fs::create_dir(root.path().join(".vscode")).unwrap();
+        std::fs::create_dir(root.path().join("dangling")).unwrap();
+        std::fs::remove_dir(root.path().join("dangling")).unwrap();
+        // a live symlink and a dangling one: neither may be granted
+        std::os::unix::fs::symlink(root.path().join("src"), root.path().join("link")).unwrap();
+        std::os::unix::fs::symlink(root.path().join("nowhere"), root.path().join("stale")).unwrap();
 
         let today = Plan {
             roots: vec![root.path().to_path_buf()],
@@ -732,13 +791,14 @@ mod tests {
             allow_read: vec![],
             home: None,
             outlives_host: false,
-            write: WriteScope::Roots,
+            write: WriteScope::Today,
             exec: ExecScope::Any,
         };
 
         // write: none drops every root write, keeps tmp
         let none = Plan { write: WriteScope::None, ..today.clone() };
         let rules = landlock_rules(&none, 3);
+        assert!(rules.write_edit.is_empty(), "write: none grants no root: {:?}", rules.write_edit);
         assert!(rules.write_files.is_empty(), "write: none grants no root file ops: {:?}", rules.write_files);
         assert_eq!(rules.write_trees, vec![tmp.path().to_path_buf()]);
         let p = seatbelt_profile(&none);
@@ -754,20 +814,42 @@ mod tests {
         assert!(p.contains("(deny process-exec)"));
         assert!(p.contains(&format!("(allow process-exec (literal {}))", lit(&sh))));
 
-        // today's values keep writing the roots and any exec, minus the protected names
+        // today's floor (an absent envelope) writes the roots in full: the gap stays
         let rules = landlock_rules(&today, 3);
         assert!(rules.exec.is_empty(), "exec: any does not handle EXECUTE");
-        assert!(rules.write_files.contains(&root.path().to_path_buf()));
+        assert!(rules.write_edit.is_empty());
+        assert!(rules.write_files.is_empty());
+        assert!(rules.write_trees.contains(&root.path().to_path_buf()), "today writes the root itself");
         assert!(rules.write_trees.contains(&tmp.path().to_path_buf()));
-        assert!(rules.write_trees.contains(&root.path().join("src")), "an existing child is writable");
+        let p = seatbelt_profile(&today);
+        assert!(
+            !p.contains("file-write-create"),
+            "today's Seatbelt profile does not withhold create at the top level: {p}"
+        );
+
+        // write: roots is a SUBSET of today: name-immutable top level, directories only below it
+        let roots = Plan { write: WriteScope::Roots, ..today.clone() };
+        let rules = landlock_rules(&roots, 3);
+        assert_eq!(rules.write_edit, vec![root.path().to_path_buf()], "the root is edit-only");
+        assert_eq!(rules.write_files, vec![root.path().join(".git")], "only .git gets file-level ops");
+        assert!(rules.write_trees.contains(&tmp.path().to_path_buf()));
+        assert!(rules.write_trees.contains(&root.path().join("src")), "an existing directory is writable");
+        assert!(rules.write_trees.contains(&root.path().join(".git").join("objects")));
         assert!(
             !rules.write_trees.iter().any(|p| p.ends_with(".vscode")),
             "protected names are not granted: {:?}",
             rules.write_trees
         );
         assert!(!rules.write_trees.iter().any(|p| p.ends_with(".git")), ".git is file-ops only, not a write tree");
-        assert!(rules.write_files.contains(&root.path().join(".git")));
-        assert!(rules.write_trees.contains(&root.path().join(".git").join("objects")));
+        assert!(!rules.write_trees.iter().any(|p| p.ends_with("README.md")), "a file child needs no grant");
+        assert!(!rules.write_trees.iter().any(|p| p.ends_with("HEAD")), "a .git file child needs no grant");
+        assert!(!rules.write_trees.iter().any(|p| p.ends_with("link")), "a symlink is never granted");
+        assert!(!rules.write_trees.iter().any(|p| p.ends_with("stale")), "a dangling symlink is never granted");
+        // the same universal on Seatbelt: create and unlink of a name directly under a root are denied
+        let p = seatbelt_profile(&roots);
+        let top = re(&format!("^{}/[^/]+$", ci(&root.path().to_string_lossy())));
+        assert!(p.contains(&format!("(deny file-write-create {top})")), "missing create deny: {p}");
+        assert!(p.contains(&format!("(deny file-write-unlink {top})")), "missing unlink deny: {p}");
     }
 
     #[test]

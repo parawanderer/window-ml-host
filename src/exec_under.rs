@@ -75,18 +75,35 @@ fn probe_abi() -> Result<i32, String> {
         ABI, AccessFs, CompatLevel, Compatible, LandlockStatus, PathBeneath, PathFd, Ruleset, RulesetAttr,
         RulesetCreatedAttr, RulesetStatus,
     };
-    // A ruleset that asks for every write right and EXECUTE, at the highest ABI this crate knows,
-    // with HardRequirement: if the kernel cannot fully enforce that, we report no ABI at all.
-    let abi = ABI::V9;
-    let access = AccessFs::from_write(abi) | AccessFs::Execute;
+    // Step 1: learn the kernel's own ABI with a BestEffort ruleset at the highest ABI this crate
+    // knows. HardRequirement at V9 would be a CompatError on every kernel below ABI 9 and would
+    // report "no Landlock" everywhere.
+    let high = ABI::V9;
+    let high_access = AccessFs::from_write(high) | AccessFs::Execute;
+    let best = Ruleset::default()
+        .set_compatibility(CompatLevel::BestEffort)
+        .handle_access(high_access)
+        .map_err(|e| format!("handle_access: {e}"))?
+        .create()
+        .map_err(|e| format!("create: {e}"))?;
+    let status = best
+        .add_rule(PathBeneath::new(PathFd::new("/").map_err(|e| format!("PathFd: {e}"))?, high_access))
+        .map_err(|e| format!("add_rule: {e}"))?
+        .restrict_self()
+        .map_err(|e| format!("restrict_self: {e}"))?;
+    let effective = match status.landlock {
+        LandlockStatus::Available { effective_abi, .. } => effective_abi,
+        _ => return Err("landlock not available".into()),
+    };
+    // Step 2: require HardRequirement at that ABI, so the ABI we report is one a call's ruleset can
+    // be fully enforced at. This restriction stacks on the best-effort one; the probe then exits.
+    let access = AccessFs::from_write(effective) | AccessFs::Execute;
     let ruleset = Ruleset::default()
         .set_compatibility(CompatLevel::HardRequirement)
         .handle_access(access)
         .map_err(|e| format!("handle_access: {e}"))?
         .create()
         .map_err(|e| format!("create: {e}"))?;
-    // One real rule so create+restrict is exercised the way a call's would be.
-    let _ = PathFd::new("/").map_err(|e| format!("PathFd: {e}"))?;
     let status = ruleset
         .add_rule(PathBeneath::new(PathFd::new("/").map_err(|e| format!("PathFd: {e}"))?, access))
         .map_err(|e| format!("add_rule: {e}"))?
@@ -95,10 +112,7 @@ fn probe_abi() -> Result<i32, String> {
     if status.ruleset != RulesetStatus::FullyEnforced {
         return Err(format!("ruleset only {:?}, not fully enforced", status.ruleset));
     }
-    match status.landlock {
-        LandlockStatus::Available { effective_abi, .. } => Ok(effective_abi as i32),
-        _ => Err("landlock not available".into()),
-    }
+    Ok(effective as i32)
 }
 
 #[cfg(target_os = "linux")]
@@ -115,7 +129,9 @@ fn apply_and_exec(rules: &LandlockRules, program: &std::path::Path, args: &[Stri
         return Err(format!("unsupported Landlock ABI {}", rules.abi));
     }
     let write = AccessFs::from_write(abi);
-    // File-level ops only on a root inode: create/remove/truncate a file, never mkdir/symlink.
+    // Name-immutable top level: edit the contents of what is there, create/remove/rename nothing.
+    let edit = AccessFs::WriteFile | AccessFs::Truncate;
+    // File-level ops inside `.git`: create/remove/truncate a file, never mkdir/symlink.
     let file_ops = write & (AccessFs::WriteFile | AccessFs::MakeReg | AccessFs::RemoveFile | AccessFs::Truncate);
     let handle = if rules.exec.is_empty() { write } else { write | AccessFs::Execute };
     let ruleset = Ruleset::default()
@@ -125,11 +141,21 @@ fn apply_and_exec(rules: &LandlockRules, program: &std::path::Path, args: &[Stri
         .create()
         .map_err(|e| format!("create: {e}"))?;
     let mut created = ruleset;
+    for p in rules.write_edit.iter() {
+        created = add(created, p, edit)?;
+    }
     for p in rules.write_files.iter() {
         created = add(created, p, file_ops)?;
     }
     for p in rules.write_trees.iter() {
-        created = add(created, p, write)?;
+        // A regular file never gets directory-only rights (HardRequirement would refuse the
+        // whole ruleset); the host sends directories here, this is TOCTOU insurance.
+        let acc = if std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_file()) {
+            write & AccessFs::from_file(abi)
+        } else {
+            write
+        };
+        created = add(created, p, acc)?;
     }
     for p in rules.exec.iter() {
         created = add(created, p, AccessFs::Execute)?;
@@ -142,6 +168,9 @@ fn apply_and_exec(rules: &LandlockRules, program: &std::path::Path, args: &[Stri
     Err(format!("exec {}: {err}", program.display()))
 }
 
+/// Adds one path rule. A missing or dangling path is "no grant" (dropping a grant only narrows); a
+/// symlink is never granted (a dangling one would break the ruleset, a live one would grant a path
+/// the enumeration never judged).
 #[cfg(target_os = "linux")]
 fn add(
     created: landlock::RulesetCreated,
@@ -149,6 +178,12 @@ fn add(
     access: landlock::BitFlags<landlock::AccessFs>,
 ) -> Result<landlock::RulesetCreated, String> {
     use landlock::{Compatible, PathBeneath, PathFd, RulesetCreatedAttr};
+    match std::fs::symlink_metadata(path) {
+        Ok(m) if m.file_type().is_symlink() => return Ok(created),
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(created),
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    }
     let fd = PathFd::new(path).map_err(|e| format!("{}: {e}", path.display()))?;
     created.add_rule(PathBeneath::new(fd, access)).map_err(|e| format!("{}: {e}", path.display()))
 }

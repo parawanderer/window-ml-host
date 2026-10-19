@@ -724,6 +724,11 @@ impl Session {
         if let Some((path, _)) = p.pins.iter().find(|(path, h)| facts::file_sha256(path) != *h) {
             return fail("PinChanged", format!("{} changed after its facts were read", path.display()));
         }
+        // An envelope is a request for a bound. An unsandboxed call holds no bound, so it may not
+        // claim one: refuse, never run wide while `done` says otherwise.
+        if !p.sandboxed && p.envelope.is_some() {
+            return fail("SandboxFailed", "this call is not sandboxed, so it cannot hold an envelope");
+        }
         let store = &self.host.store;
         let tmp = store.call_tmp(id).map_err(|e| Fail("SpawnFailed", format!("temp dir: {e}")))?;
         let failed = |f: Fail| {
@@ -1003,13 +1008,21 @@ fn parse_envelopes(v: Option<&Value>, n: usize) -> Result<Vec<Option<Envelope>>,
 }
 
 /// The wrapper's own failure: `sandbox-exec` exits 65 or 71 with `sandbox-exec:` first on stderr; `bwrap` exits 1 with
-/// `bwrap:`. A program could print the same to fake its own failure, which costs it nothing it did not have.
+/// `bwrap:`; the Landlock shim `wmlhost exec-under` exits 2 with `wmlhost exec-under:` (a ruleset it cannot fully
+/// enforce). A program could print the same to fake its own failure, which costs it nothing it did not have.
 fn sandbox_refused(o: &Outcome, store: &Store) -> bool {
     let Ok((ptr, _)) = &o.stderr else { return false };
     let Some(Ok((head, _, _))) = store.read(ptr, 0, 32) else { return false };
-    match o.code {
+    sandbox_refusal(o.code, &head)
+}
+
+/// The (exit code, stderr head) pairs that mean the sandbox refused to start the program. Kept pure so
+/// the shape `exec-under` speaks is pinned by a test that does not need a whole call.
+fn sandbox_refusal(code: Option<i32>, head: &[u8]) -> bool {
+    match code {
         Some(65) | Some(71) => head.starts_with(b"sandbox-exec:"),
         Some(1) => head.starts_with(b"bwrap:"),
+        Some(2) => head.starts_with(b"wmlhost exec-under:"),
         _ => false,
     }
 }
@@ -1038,5 +1051,22 @@ fn opt_bool(a: &Map<String, Value>, k: &str) -> Result<Option<bool>, Fail> {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Bool(b)) => Ok(Some(*b)),
         Some(_) => fail("BadRequest", format!("{k} is a boolean")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sandbox_refusal;
+
+    // --- what counts as the sandbox refusing to start the program ---
+
+    #[test]
+    fn an_exec_under_failure_is_a_sandbox_refusal() {
+        assert!(sandbox_refusal(Some(2), b"wmlhost exec-under: bad ruleset: ..."));
+        assert!(!sandbox_refusal(Some(2), b"ls: cannot access 'x'"), "the program's own exit 2 is not a refusal");
+        assert!(!sandbox_refusal(Some(2), b""), "no stderr is not a refusal");
+        assert!(sandbox_refusal(Some(1), b"bwrap: ..."));
+        assert!(sandbox_refusal(Some(65), b"sandbox-exec: ..."));
+        assert!(!sandbox_refusal(Some(0), b"wmlhost exec-under: ..."), "exit 0 is the program finishing");
     }
 }
