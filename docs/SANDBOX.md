@@ -164,7 +164,10 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
   Landlock rights are inherited below the inode they are granted on: the root's `WriteFile` reaches every existing
   file beneath it, `.git`'s `MakeReg`/`RemoveFile` reach an existing `.git/hooks/`. What keeps `.envrc`, `.vscode/`,
   `.git/config` and the existing hooks read-only is bubblewrap's read-only re-binds of those names. Do not drop a bind
-  as redundant with Landlock.
+  as redundant with Landlock. The binds, the Landlock enumeration and the tripwire all read `PROTECTED_TOP` and
+  `PROTECTED_GIT`, never a copy: until 2026-10-19 the bind list was a copy missing `.bash_profile`, `.zprofile`,
+  `.gitconfig` and `.ripgreprc`, which stayed writable in place while `done` reported `write: "roots"`. A test per layer
+  enumerates both lists.
 - **`write: "roots"` refuses the named casualties above.** That is the cost of asking for a name-immutable top level,
   not a defect: the worker sends it only when the claims permit no new top-level name.
 - **A secret inside a root is not hidden from a directory walk.** `rg pattern .` reads `root/.env`. The facts flag `.env`

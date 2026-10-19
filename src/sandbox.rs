@@ -294,6 +294,12 @@ pub(crate) const PROTECTED_TOP: &[&str] = &[
 /// Names under `.git` that are never writable.
 pub(crate) const PROTECTED_GIT: &[&str] = &["hooks", "config"];
 
+/// Every protected name of a root, relative to it: `PROTECTED_GIT` under `.git`, then `PROTECTED_TOP`. Public so the
+/// integration tests enumerate the same list the sandbox binds.
+pub fn protected_rels() -> impl Iterator<Item = String> {
+    PROTECTED_GIT.iter().map(|n| format!(".git/{n}")).chain(PROTECTED_TOP.iter().map(|n| n.to_string()))
+}
+
 /// What `wmlhost exec-under` enforces. The host computes this; the shim only applies it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -699,19 +705,8 @@ pub fn bwrap_args(plan: &Plan, cwd: &Path) -> Vec<OsString> {
         push(&[&s("--bind"), &r.clone().into(), &r.clone().into()]);
     }
     for r in &plan.roots {
-        for rel in [
-            ".git/hooks",
-            ".git/config",
-            ".gitmodules",
-            ".vscode",
-            ".idea",
-            ".claude",
-            ".mcp.json",
-            ".envrc",
-            ".bashrc",
-            ".zshrc",
-            ".profile",
-        ] {
+        // Every protected name, from the lists the grants and the tripwire read, so a name added there is bound here.
+        for rel in protected_rels() {
             let p = r.join(rel);
             if std::fs::symlink_metadata(&p).is_ok_and(|m| !m.file_type().is_symlink()) {
                 push(&[&s("--ro-bind"), &p.clone().into(), &p.into()]);
@@ -896,5 +891,80 @@ mod tests {
         let hooks = root.path().join(".git/hooks").display().to_string();
         assert!(joined.contains(&format!("--ro-bind {hooks} {hooks}")));
         assert!(joined.find("--ro-bind / /").unwrap() < joined.find("--bind ").unwrap());
+    }
+
+    #[test]
+    fn bwrap_re_binds_every_protected_name_that_exists() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join(".git/hooks")).unwrap();
+        let rels: Vec<String> = protected_rels().collect();
+        assert_eq!(rels.len(), PROTECTED_TOP.len() + PROTECTED_GIT.len());
+        for rel in &rels {
+            let p = root.path().join(rel);
+            if !p.exists() {
+                std::fs::write(&p, "").unwrap();
+            }
+        }
+        let pl = Plan {
+            roots: vec![root.path().to_path_buf()],
+            tmp: PathBuf::from("/tmp"),
+            hidden: vec![],
+            allow_read: vec![],
+            home: None,
+            outlives_host: false,
+            write: WriteScope::Roots,
+            exec: ExecScope::Any,
+        };
+        let a: Vec<String> = bwrap_args(&pl, root.path()).iter().map(|s| s.to_string_lossy().into_owned()).collect();
+        for rel in &rels {
+            let p = root.path().join(rel).display().to_string();
+            assert!(
+                a.windows(3).any(|w| w[0] == "--ro-bind" && w[1] == p && w[2] == p),
+                "{rel} is not re-bound read-only"
+            );
+        }
+        // An absent name is not bound (bwrap fails on a missing source), and a symlink is never followed into a bind.
+        let bare = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink("/etc/hostname", bare.path().join(".gitconfig")).unwrap();
+        let pl = Plan { roots: vec![bare.path().to_path_buf()], ..pl };
+        let a: Vec<String> = bwrap_args(&pl, bare.path()).iter().map(|s| s.to_string_lossy().into_owned()).collect();
+        let bare_s = bare.path().display().to_string();
+        assert!(!a.iter().any(|x| x.starts_with(&bare_s) && x != &bare_s), "{a:?}");
+    }
+
+    #[test]
+    fn landlock_grants_no_protected_name_and_leaves_the_files_to_the_re_bind() {
+        // Each name as a DIRECTORY, the shape that would earn a full-write grant if the enumeration missed it.
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join(".git")).unwrap();
+        for rel in protected_rels() {
+            std::fs::create_dir_all(root.path().join(rel)).unwrap();
+        }
+        let pl = Plan { roots: vec![root.path().to_path_buf()], write: WriteScope::Roots, ..plan() };
+        let rules = landlock_rules(&pl, 4);
+        for rel in protected_rels() {
+            let p = root.path().join(&rel);
+            assert!(!rules.write_trees.contains(&p) && !rules.write_files.contains(&p), "{rel} is granted write");
+        }
+        // The root's WriteFile|Truncate still reaches an existing protected FILE: the read-only re-bind is what holds
+        // it (`bwrap_re_binds_every_protected_name_that_exists`), the second layer docs/SANDBOX.md names.
+        assert_eq!(rules.write_edit, vec![root.path().to_path_buf()]);
+    }
+
+    #[test]
+    fn seatbelt_denies_writing_every_protected_name() {
+        let rx = deny_write_regexes();
+        for rel in protected_rels() {
+            // `.claude` is denied by its parts (commands, agents, settings), so the rest of it stays writable on macOS.
+            if rel == ".claude" {
+                assert!(rx.iter().any(|r| r.starts_with(&format!("/{}/", ci(".claude")))));
+                continue;
+            }
+            let c = ci(&rel);
+            assert!(
+                rx.iter().any(|r| *r == format!("/{c}$") || *r == format!("/{c}(/|$)")),
+                "{rel} has no deny-write regex"
+            );
+        }
     }
 }

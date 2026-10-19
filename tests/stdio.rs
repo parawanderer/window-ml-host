@@ -883,6 +883,44 @@ fn write_roots_withholds_make_reg_so_envrc_and_mcp_json_cannot_appear() {
 }
 
 #[test]
+fn write_roots_holds_every_existing_protected_name_read_only() {
+    // Enumerates the sandbox's own list. Each name exists as a file (`.git/hooks` as a directory); appending to it in
+    // place is what the root's Landlock WriteFile|Truncate allows, so on Linux only the read-only re-bind stops it.
+    let (_d, r) = root();
+    std::fs::create_dir_all(r.join(".git/hooks")).unwrap();
+    let rels: Vec<String> = window_ml_host::sandbox::protected_rels().collect();
+    for rel in &rels {
+        if rel != ".git/hooks" {
+            std::fs::write(r.join(rel), "kept\n").unwrap();
+        }
+    }
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    if cfg!(target_os = "linux") && landlock_abi(&mut h).is_none() {
+        return h.close();
+    }
+    for rel in &rels {
+        // macOS denies only `.claude`'s commands, agents and settings, not the name itself: a known gap, its own PR.
+        if cfg!(target_os = "macos") && rel == ".claude" {
+            continue;
+        }
+        if rel == ".git/hooks" {
+            let d = roots_envelope(&mut h, &r, "echo x > .git/hooks/pre-commit");
+            assert_ne!(d["code"], 0, "write: roots created a hook: {d}");
+            assert!(!r.join(".git/hooks/pre-commit").exists(), "a hook appeared");
+            continue;
+        }
+        let d = roots_envelope(&mut h, &r, &format!("echo x >> {rel}"));
+        assert_ne!(d["code"], 0, "write: roots appended to {rel}: {d}");
+        assert_eq!(std::fs::read_to_string(r.join(rel)).unwrap(), "kept\n", "{rel} was written in place");
+    }
+    h.close();
+}
+
+#[test]
 fn write_roots_withholds_make_dir_so_envrc_cannot_appear_as_a_directory() {
     let (_d, r) = root();
     let mut h = Host::start();

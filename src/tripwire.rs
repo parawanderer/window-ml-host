@@ -207,6 +207,31 @@ mod tests {
     }
 
     #[test]
+    fn every_protected_name_is_read_created_and_modified() {
+        // Enumerates `protected_rels()`, the list the bwrap binds read, so a name added there is watched here too.
+        let r = tempfile::tempdir().unwrap();
+        fs::create_dir(r.path().join(".git")).unwrap();
+        let roots = vec![r.path().to_path_buf()];
+        let rels: Vec<String> = crate::sandbox::protected_rels().collect();
+        let s = snapshot(&roots);
+        for rel in &rels {
+            fs::write(r.path().join(rel), "x").unwrap();
+        }
+        let created = changed(&s, &roots);
+        for rel in &rels {
+            assert!(created.iter().any(|c| &c.name == rel && c.change == "created"), "{rel} not reported created");
+        }
+        let s = snapshot(&roots);
+        for rel in &rels {
+            fs::write(r.path().join(rel), "a longer edit").unwrap();
+        }
+        let modified = changed(&s, &roots);
+        for rel in &rels {
+            assert!(modified.iter().any(|c| &c.name == rel && c.change == "modified"), "{rel} not reported modified");
+        }
+    }
+
+    #[test]
     fn a_created_top_level_name_is_created_whether_file_or_directory() {
         let r = root();
         let roots = vec![r.path().to_path_buf()];
