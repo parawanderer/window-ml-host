@@ -101,7 +101,7 @@ from the account's channel key with the caller's principal as subject:
 
 | Channel | Carries |
 | --- | --- |
-| `ChannelKey::channel("host.events", <caller>)` | each event, the JSON a native session would write, sealed as a stream frame |
+| `ChannelKey::channel("host.events", <caller>)` | each event, the JSON a native session would write plus `v` (the protocol version `hello` reports), sealed as a stream frame |
 | `ChannelKey::channel("host.keys", <caller>)` | the stream's key, wrapped to the caller's agreement key (retained) |
 
 The key is granted only to the caller whose session it is, and only if its leaf holds `view`: another device of the
@@ -109,8 +109,15 @@ account can name the channels (it holds the channel key) and cannot open the gra
 by `hello` (`events: false`) and its events go to nobody. Reading held output stays a call (`read`), answered to its
 nonce.
 
-One key per caller per `wmlhost hub serve` process, kept across that caller's sessions. The counter starts at the
-clock in microseconds, so a restarted host's new key never repeats a counter a reader passed.
+One key per caller per `wmlhost hub serve` process, kept across that caller's sessions. A stream's counter starts at
+the clock in microseconds or at the mark in `stream-counter` (state directory, 0600), whichever is higher, so a
+restarted host's new key never repeats a counter a reader passed, even with its clock stepped back. The mark is
+written 1000 ahead before any frame passes it, so a host that crashed between writes still left it above every counter
+it used; a mark that does not parse stops serving rather than restarting the count.
+
+Who receives a caller's events is that caller alone. A second device watching a desktop's calls, as every `view` device
+watches a browser runtime's sessions, would be a widening, and is the person's decision (window-ml's coordinator,
+2026-10-19); it is one change in `serve.rs`.
 
 ### A caller going away
 

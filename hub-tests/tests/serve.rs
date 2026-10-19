@@ -730,6 +730,7 @@ async fn a_caller_holding_view_is_granted_its_own_stream_and_reads_done_from_it(
         assert_eq!(done["id"], id, "{done}");
         assert_eq!(done["ok"], true, "{done}");
         assert!(done.get("seq").is_none(), "an event answers no call: {done}");
+        assert_eq!(done["v"], h["value"]["protocol"], "a session event says which protocol it is: {done}");
         let ptr = done["stdout"]["ptr"].clone();
         let r = call_keeping(&mut a_client, &to, scope::DESKTOP, 5, "read", json!({ "ptr": ptr }), &mut kept).await;
         use base64::Engine;
@@ -873,4 +874,73 @@ async fn a_caller_back_within_the_grace_keeps_its_calls() {
         _ = script => {}
         e = serving.run(&mut host, &now_ms) => panic!("serving stopped: {e:?}"),
     }
+}
+
+/// One `done` read from a caller's stream on a fresh serving whose clock is `clock`: the frame's counter and the key it
+/// was sealed under. A frame under a key in `old` is an earlier serving's, still in the hub's ring, and is passed over.
+async fn one_done_counter(
+    desk: &Desktop,
+    caller: &Device,
+    stores: &Path,
+    clock: impl Fn() -> u64,
+    old: &[[u8; 8]],
+) -> Option<(u64, [u8; 8])> {
+    let mut host = desk.client().await;
+    let mut serving = desk.serving(stores);
+    let mut client = caller.connect(&desk.url, &desk.root).await;
+    let to = desk.recipient();
+    let (events, keys) = host_channels(&caller.id());
+    let script = async {
+        client.subscribe(&to.principal, &keys, None).await.unwrap();
+        client.subscribe(&to.principal, &events, None).await.unwrap();
+        let mut kept = Vec::new();
+        let h = call_keeping(&mut client, &to, scope::DESKTOP, 1, "hello", json!({}), &mut kept).await;
+        if no_sandbox(&h) {
+            return None;
+        }
+        let cwd = desk.workspace.join("sub");
+        call_keeping(&mut client, &to, scope::DESKTOP, 2, "configure", json!({ "roots": [cwd] }), &mut kept).await;
+        let s = call_keeping(
+            &mut client,
+            &to,
+            scope::DESKTOP,
+            3,
+            "spawn",
+            json!({ "argv": ["true"], "cwd": cwd }),
+            &mut kept,
+        )
+        .await;
+        call_keeping(&mut client, &to, scope::DESKTOP, 4, "start", json!({ "id": s["value"]["id"] }), &mut kept).await;
+        let mut grants = Vec::new();
+        loop {
+            let (sender, payload) = published_on(&mut client, &mut kept, &keys).await;
+            grants.push(client.open_grant(&sender, &payload).expect("a grant to this caller"));
+            let (_, frame) = published_on(&mut client, &mut kept, &events).await;
+            for grant in grants.iter().filter(|g| !old.contains(&g.key_id)) {
+                if let Ok(opened) = StreamReader::new(grant).open(&frame) {
+                    return Some((opened.counter, grant.key_id));
+                }
+            }
+        }
+    };
+    tokio::select! {
+        c = script => c,
+        e = serving.run(&mut host, &clock) => panic!("serving stopped: {e:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_host_restarted_with_its_clock_stepped_back_still_counts_up() {
+    let desk = Desktop::new().await;
+    let caller = desk.caller(46, &[scope::DESKTOP, scope::VIEW]);
+    desk.state.allow(&caller.id()).unwrap();
+    let stores = tempfile::tempdir().unwrap();
+    let Some((first, key)) = one_done_counter(&desk, &caller, stores.path(), now_ms, &[]).await else { return };
+    let mark = desk.state.counter_mark().unwrap();
+    assert!(mark >= first, "the mark covers the counter used: {mark} < {first}");
+    // Back by less than the seal's clock window, so the caller still opens the new grant; by more than this test has
+    // taken, so the clock alone would start the new key below the counter already used.
+    let stepped_back = || now_ms() - 50_000;
+    let (second, _) = one_done_counter(&desk, &caller, stores.path(), stepped_back, &[key]).await.unwrap();
+    assert!(second > first, "a clock stepped back did not repeat a counter: {second} <= {first}");
 }

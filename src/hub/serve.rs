@@ -55,6 +55,9 @@ pub const EVENTS_PURPOSE: &str = "host.events";
 /// The purpose of the retained channel that carries a caller's wrapped key for [`EVENTS_PURPOSE`], same subject.
 pub const KEYS_PURPOSE: &str = "host.keys";
 
+/// How many counters a write of the mark reserves ahead of the one about to be used (`Serving::lease`).
+const COUNTER_LEASE: u64 = 1000;
+
 /// How long a caller's presence may be gone before its session is closed. Chosen, not derived (window-ml's
 /// coordinator, 2026-10-19, Q2): long enough for a phone changing networks, short enough that a laptop lid closed on
 /// a run does not leave its calls running for long.
@@ -202,6 +205,10 @@ pub struct Serving<'a> {
     /// callers whose presence went away, and when their session is closed unless it comes back
     gone: HashMap<[u8; 32], Instant>,
     grace: Duration,
+    /// the counter mark as this process found it: every stream starts above it
+    floor: u64,
+    /// the mark as last written: no frame is sealed with a counter above it
+    leased: u64,
     asked: HashMap<u64, Asked>,
     next_seq: u64,
     answers_tx: mpsc::UnboundedSender<([u8; 32], Vec<u8>)>,
@@ -222,6 +229,7 @@ impl<'a> Serving<'a> {
     ) -> std::io::Result<Self> {
         let revocation_files = wmlhub_connector::State::at(state.dir());
         let revocations = revocation_files.revocations(&account_root)?;
+        let floor = state.counter_mark()?;
         let (answers_tx, answers_rx) = mpsc::unbounded_channel();
         let serving = Self {
             state,
@@ -234,6 +242,8 @@ impl<'a> Serving<'a> {
             streams: HashMap::new(),
             gone: HashMap::new(),
             grace: PRESENCE_GRACE,
+            floor,
+            leased: floor,
             asked: HashMap::new(),
             next_seq: 1,
             answers_tx,
@@ -389,7 +399,8 @@ impl<'a> Serving<'a> {
                     Ok(mut host) => {
                         host.owners_dir = Some(owners_dir);
                         if events && !self.streams.contains_key(&opened.from) {
-                            let stream = grant(&self.publisher, &self.channel_key, &to, now_ms)
+                            let start = now_ms.saturating_mul(1_000).max(self.floor);
+                            let stream = grant(&self.publisher, &self.channel_key, &to, start, now_ms)
                                 .map_err(|e| ServeError::State(std::io::Error::other(format!("{e:?}"))))?;
                             client
                                 .publish(&stream.1, Kind::SessionEvents, Bytes::from(stream.2))
@@ -424,7 +435,8 @@ impl<'a> Serving<'a> {
     async fn answer(&mut self, client: &mut Client, from: [u8; 32], body: &[u8]) -> Result<(), ServeError> {
         let Ok(mut msg) = serde_json::from_slice::<serde_json::Map<String, Value>>(body) else { return Ok(()) };
         let Some(ours) = msg.get("seq").and_then(Value::as_u64) else {
-            return self.publish(client, &from, body).await;
+            msg.insert("v".into(), json!(session::PROTOCOL));
+            return self.publish(client, &from, &serde_json::to_vec(&msg).expect("JSON values serialize")).await;
         };
         let Some(asked) = self.asked.remove(&ours) else { return Ok(()) };
         msg.insert("seq".into(), asked.seq);
@@ -434,11 +446,18 @@ impl<'a> Serving<'a> {
 
     /// One session event, as the session wrote it, sealed under the caller's key and published on its channel.
     async fn publish(&mut self, client: &mut Client, from: &[u8; 32], event: &[u8]) -> Result<(), ServeError> {
-        let Some(stream) = self.streams.get_mut(from) else {
+        let Some(counter) = self.streams.get(from).map(|s| s.counter + 1) else {
             self.counts.unpublished.fetch_add(1, Ordering::Relaxed);
             return Ok(());
         };
-        stream.counter += 1;
+        // The mark moves ahead BEFORE a frame passes it, so a crash between frames leaves it above every counter used.
+        if counter > self.leased {
+            let mark = counter + COUNTER_LEASE;
+            self.state.write_counter_mark(mark).map_err(ServeError::State)?;
+            self.leased = mark;
+        }
+        let stream = self.streams.get_mut(from).expect("looked up above");
+        stream.counter = counter;
         let sender = Sender { identity: &self.publisher.identity, chain: &self.publisher.chain };
         let frame = match seal_frame(&sender, &stream.channel, &stream.key, stream.counter, event) {
             Ok(frame) if frame.len() <= MAX_STREAM_FRAME_BYTES => frame,
@@ -521,22 +540,23 @@ impl<'a> Serving<'a> {
 
 /// A caller's event stream, and its key wrapped to it for the keys channel: `(stream, keys channel, wrapped)`.
 ///
-/// The counter starts from the clock in microseconds, so a host restarted with a new key never repeats one a reader
-/// has passed on the same channel (wmlhub-seal: a counter "never repeats across key rotations"); the grant covers the
-/// stream from its first frame.
+/// `start` is the counter before the first frame: the clock in microseconds, or the persisted mark if that is higher,
+/// so a host restarted with a new key never repeats a counter a reader passed on the same channel (wmlhub-seal: a
+/// counter "never repeats across key rotations"), even with its clock stepped back. The grant covers the stream from
+/// its first frame.
 fn grant(
     publisher: &Publisher,
     channels: &ChannelKey,
     to: &Recipient,
+    start: u64,
     now_ms: u64,
 ) -> Result<(Stream, Vec<u8>, Vec<u8>), String> {
     let key = StreamKey::generate().map_err(|e| e.to_string())?;
     let channel = channels.channel(EVENTS_PURPOSE, &to.principal).to_vec();
     let keys = channels.channel(KEYS_PURPOSE, &to.principal).to_vec();
-    let counter = now_ms.saturating_mul(1_000);
     let sender = Sender { identity: &publisher.identity, chain: &publisher.chain };
-    let wrapped = wrap_key(&sender, to, &channel, &key, counter + 1, now_ms).map_err(|e| format!("{e:?}"))?;
-    Ok((Stream { key, channel, counter }, keys, wrapped))
+    let wrapped = wrap_key(&sender, to, &channel, &key, start + 1, now_ms).map_err(|e| format!("{e:?}"))?;
+    Ok((Stream { key, channel, counter: start }, keys, wrapped))
 }
 
 /// Start a caller's session: `session::serve` over an in-memory pipe, its output forwarded to the hub loop, tagged with
