@@ -91,6 +91,6 @@ jobs:
       - name: Clippy, hub feature and its end-to-end tests
         run: cargo clippy --locked --features hub --all-targets -p window-ml-host -p wmlhost-hub-tests -- -D warnings
       - name: Hub unit tests
-        run: cargo test --locked --features hub --lib hub::
+        run: "cargo test --locked --features hub --lib hub::"
       - name: Hub end-to-end tests (an in-process hub)
         run: cargo test --locked -p wmlhost-hub-tests
