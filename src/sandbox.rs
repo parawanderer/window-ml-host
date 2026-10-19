@@ -100,6 +100,9 @@ pub struct Plan {
     pub allow_read: Vec<PathBuf>,
     /// The home directory, for the credential stores under it (Linux masks them by path).
     pub home: Option<PathBuf>,
+    /// The call may outlive the host (its owner-loss policy is "orphan"). Otherwise bubblewrap's `--die-with-parent`
+    /// has the kernel end it with the host, however the host ended; the warden covers the rest (src/owners.rs).
+    pub outlives_host: bool,
 }
 
 /// The command that runs `program` with `args` under the sandbox in `cwd`. `program` is a realpath.
@@ -294,7 +297,6 @@ pub fn seatbelt_profile(plan: &Plan) -> String {
 fn bwrap_fixed_args() -> Vec<&'static str> {
     vec![
         "--new-session",
-        "--die-with-parent",
         "--unshare-net",
         "--unshare-pid",
         "--unshare-ipc",
@@ -310,6 +312,9 @@ fn bwrap_fixed_args() -> Vec<&'static str> {
 /// Seatbelt's regexes, these are paths that exist NOW at the top of each root; see LIMITS in docs/SANDBOX.md.
 pub fn bwrap_args(plan: &Plan, cwd: &Path) -> Vec<OsString> {
     let mut a: Vec<OsString> = bwrap_fixed_args().into_iter().map(OsString::from).collect();
+    if !plan.outlives_host {
+        a.push("--die-with-parent".into());
+    }
     let mut push = |xs: &[&OsString]| a.extend(xs.iter().map(|x| (*x).clone()));
     let s = |x: &str| OsString::from(x);
     push(&[&s("--ro-bind"), &s("/"), &s("/"), &s("--dev"), &s("/dev"), &s("--proc"), &s("/proc")]);
@@ -368,6 +373,7 @@ mod tests {
             hidden: vec![PathBuf::from("/t/s/out")],
             allow_read: vec![],
             home: Some(PathBuf::from("/home/u")),
+            outlives_host: false,
         }
     }
 
@@ -409,10 +415,14 @@ mod tests {
             hidden: vec![],
             allow_read: vec![],
             home: Some(home.path().to_path_buf()),
+            outlives_host: false,
         };
         let a: Vec<String> = bwrap_args(&pl, root.path()).iter().map(|s| s.to_string_lossy().into_owned()).collect();
         let joined = a.join(" ");
         assert!(joined.contains("--unshare-net"));
+        assert!(joined.contains("--die-with-parent"), "a call dies with its host unless it may be orphaned");
+        let orphanable = Plan { outlives_host: true, ..pl };
+        assert!(!bwrap_args(&orphanable, root.path()).iter().any(|x| x == "--die-with-parent"));
         assert!(joined.contains(&format!("--tmpfs {}", home.path().join(".ssh").display())));
         assert!(joined.contains(&format!("--ro-bind /dev/null {}", home.path().join(".netrc").display())));
         let hooks = root.path().join(".git/hooks").display().to_string();

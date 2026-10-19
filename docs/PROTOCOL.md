@@ -38,10 +38,15 @@ the host answers each as it finishes, not in order. A message that is not an obj
 `args: {}` → the host's identity and what it can do. Safe to call any time.
 
 ```jsonc
-{ "host": "window-ml-host", "version": "0.2.0", "protocol": 1, "platform": "macos",
+{ "host": "window-ml-host", "version": "0.3.0", "protocol": 1, "platform": "macos",
   "sandbox": { "kind": "seatbelt", "available": true },             // kind: "seatbelt" | "bwrap" | null; "reason" when unavailable
-  "modes": ["host"] }                                               // "container" appears once a runner exists
+  "modes": ["host"],                                                // "container" appears once a runner exists
+  "owners": { "ledger": true },                                     // false: the owner table is in memory only (see "Owners")
+  "memory": { "metric": "phys_footprint", "enforcer": "watchdog", "everyMs": 100 } }
 ```
+
+`memory.metric` names what a memory bound is measured on: `phys_footprint` on macOS (what Activity Monitor and Jetsam
+use), `rss_anon+rss_shmem+swap` on Linux. Never the address space.
 
 ### `configure`
 
@@ -52,9 +57,16 @@ args: { "roots": ["/Users/me/src/proj"],     // workspace roots: absolute, exist
         "sandbox": true,                     // default true; false = plain host mode, by the person's choice
         "path": ["/opt/homebrew/bin", "/usr/bin", "/bin"],   // optional: PATH for lookup and for the child
         "timeoutMs": 120000,                 // optional default per call, at most 3600000
-        "outputCap": 67108864 }              // optional bytes kept per stream, at most 1 GiB
-value: { "roots": [{ "given": "…", "path": "<realpath>" }], "sandboxed": true }
+        "outputCap": 67108864,               // optional bytes kept per stream, at most 1 GiB
+        "memoryBound": 4294967296,           // optional default bound per call, bytes of physical footprint (default 4 GiB)
+        "memoryMax": 17179869184,            // optional ceiling a call's memoryBound is clamped to (default 16 GiB)
+        "onOwnerLoss": "kill",               // optional default: "kill" | "orphan" (see "Owners")
+        "orphanTimeoutMs": 600000 }          // optional: how long an orphan lives, at most 86400000 (default 10 min)
+value: { "roots": [{ "given": "…", "path": "<realpath>" }], "sandboxed": true,
+         "memoryBound": 4294967296, "memoryMax": 17179869184, "onOwnerLoss": { "policy": "kill" } }
 ```
+
+Every bound is clamped to at least 16 MiB.
 
 `sandboxed` in the answer is whether calls will run under the OS sandbox: `sandbox` asked for it AND it is available.
 Reconfiguring drops every pending spawn (their facts were judged against the old roots); running processes continue.
@@ -69,7 +81,10 @@ args: { "argv": ["git", "diff", "--stat", "HEAD~1"],
         "pathArgs": [{ "arg": 3 }],           // which argv slots are paths (from the program manifest); see below
         "walkCwd": false,                     // the call walks its cwd (a recursive reader given no path): report containsSecret
         "repoArg": 2,                         // optional: the argv slot naming the repository (`git -C dir`); else the cwd's
-        "timeoutMs": 30000 }                  // optional, at most 3600000
+        "timeoutMs": 30000,                   // optional, at most 3600000
+        "owner": { "session": "…", "run": "…", "step": 3 },   // optional: who the call is for, opaque, at most 1 KiB of JSON
+        "memoryBound": 536870912,             // optional: this call's bound, clamped to [16 MiB, memoryMax]
+        "onOwnerLoss": "orphan", "orphanTimeoutMs": 60000 }   // optional: this call's owner-loss policy
 ```
 
 The answer is the RESOLVED FACTS, everything a policy is given about the call (`SHELL.md`, "What it is given"):
@@ -89,6 +104,9 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
   "mode": "host",
   "sandboxed": true,
   "placement": "host-sandbox",                  // "host-sandbox" | "host-plain": the enforcer whose bound applies (EFFECTS.md)
+  "memoryBound": 536870912,                     // the bound the call will run under, after clamping
+  "onOwnerLoss": { "policy": "orphan", "timeoutMs": 60000 },
+  "owner": { "session": "…", "run": "…", "step": 3 },        // as given; null when none was
   "expiresInMs": 1800000 }                      // after this the id is gone and start fails UnknownId
 ```
 
@@ -199,6 +217,21 @@ the person the names a command will receive instead of a pattern a shell would e
 `args: { "id": "c3" }` → `{ "signalled": true }`. SIGTERM to the process group, SIGKILL two seconds later if it is still
 there. The `done` event follows with `cancelled: true`.
 
+### `status`: the owner table
+
+`args: {}` → every running call of this session, and the orphans other host processes left:
+
+```jsonc
+{ "running": [{ "id": "c3", "pid": 4242, "owner": { "run": "…" }, "startedMs": 1760000000000,
+                "memoryBound": 4294967296, "footprint": 52428800, "peakFootprint": 61865984,
+                "onOwnerLoss": { "policy": "kill" } }],
+  "orphans": [{ "id": "c1", "pid": 4100, "owner": { "run": "…" }, "startedMs": 1760000000000,
+                "deadlineMs": 1760000600000, "footprint": 10485760 }] }
+```
+
+`footprint` is the last measurement of the call's process group and its descendants; `pid` is the group's id. Reading
+`status` also sweeps: an orphan past its deadline is killed rather than listed.
+
 ### `read`: a range of held output
 
 ```jsonc
@@ -219,6 +252,8 @@ An `offset` past the end returns zero bytes with `eof: true`. Bytes, not text: o
   "code": 0, "signal": null,                  // code null when killed by a signal ("SIGKILL")
   "ok": true,                                 // code is in okCodes; okCodes is [0] until manifests (root F)
   "timedOut": false, "cancelled": false, "durationMs": 31,
+  "killed": null,                             // "oom": past its memory bound, the whole call was killed (SIGKILL, no grace)
+  "peakFootprint": 61865984, "memoryBound": 4294967296,      // bytes; the peak the watchdog measured
   "stdout": { "ptr": "out:…", "size": 812, "sha256": "…", "truncated": false },   // { "piped": true } for a non-last `pipe` stage
   "stderr": { "ptr": "out:…", "size": 0, "sha256": "…", "truncated": false } }
 ```
@@ -230,6 +265,27 @@ whose sandbox refused to start the program adds `"error": { "code": "SandboxFail
 `{ code, ok, stdout, stderr }` is the result shape `ml.sh.run` returns, with `stdout`/`stderr` as pointers. `truncated`
 means the stream passed the output cap: the host kept the first `outputCap` bytes and drained the rest so the program was
 not blocked.
+
+## Owners
+
+Every running call is a row of the host's ONE owner table: its process group, its leader's start time, and the `owner`
+the spawn named. `status` reads it. Each call runs in its own process group; a sandbox wrapper that moves the program
+into a session of its own is followed through its descendants, never through `ps`.
+
+- **The port closing is the owner going.** With `onOwnerLoss: "kill"` (the default) the call's group and descendants are
+  killed at once. With `"orphan"` the call keeps running until `orphanTimeoutMs` after the port closed, listed in the
+  `orphans` of any later host's `status`, then is killed.
+- **A host killed outright** (SIGKILL, Jetsam, the OOM killer) gets no EOF. Each host mirrors its table to a ledger file
+  (`$WMLHOST_STATE_DIR`, else `wmlhost-owners-<uid>` in the temp directory, private) and starts a warden (`wmlhost warden
+  <ledger>`, its own process group, no stdio) with its first call. The warden kills the dead host's calls, keeping orphans
+  until their deadlines, then exits. A new host sweeps dead hosts' ledgers too.
+- **A pid is never trusted alone.** A recorded group is killed only while its leader has the recorded start time, or the
+  leader is gone and the group still has members (a group id is not reused while a member lives).
+- The host owns what it spawned and nothing else.
+
+**The memory bound** is on physical footprint, summed over the call's group and descendants, sampled every 100 ms. Past
+it the call is killed and `done` says `killed: "oom"`. A call allocating faster than the bound per interval overshoots by
+at most one interval's growth.
 
 ## Error codes
 
@@ -254,6 +310,9 @@ These are the host's own; the worker maps them onto the `ml` wire's codes (`Refu
 | `TooLarge` | the answer would exceed 1 MiB (an `argv` that large, echoed back in the facts) |
 
 ## Not in v1, and where it will go
+
+- On Linux, a transient cgroup per call (`memory.max`, `memory.swap.max=0`) so the kernel enforces the bound instead of
+  the watchdog; needs a delegated cgroup subtree, which an unprivileged native host does not always have.
 
 - A text pipe over held output (`ml.pipe` at the host): a call taking a `ptr` and a pipe string, answering a new `ptr`.
 - Program manifests read by the host (root F): `effects`, `okCodes`, the operand terminator and the program's version

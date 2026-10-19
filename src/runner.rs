@@ -1,25 +1,53 @@
 //! runner.rs — starting one call and seeing it to its end: argv executed directly (no shell), stdin closed (or, in a
 //! pipeline, the previous stage's stdout), no terminal, its own process group, the given environment only, a time
-//! limit, cancellation, and both streams captured into the store. When the call ends, whatever is left of its process
-//! group is killed with it.
+//! limit, a memory bound on its physical footprint, cancellation, and both streams captured into the store. When the
+//! call ends, whatever is left of its process group is killed with it.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::{ExitStatus, Stdio};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use rustix::process::{Pid, Signal};
 use tokio::process::{Child, Command};
 use tokio::sync::Notify;
 
+use crate::procs;
 use crate::store::{Held, Store};
 
 /// How long a call has after SIGTERM before SIGKILL.
 pub const KILL_GRACE: Duration = Duration::from_secs(2);
 /// How long to wait for the output pipes to close once the process group is gone.
 const DRAIN_GRACE: Duration = Duration::from_secs(5);
+/// How often the watchdog measures a call's footprint. An allocation faster than the bound per interval overshoots it
+/// by at most one interval's growth before the kill.
+pub const WATCH_EVERY: Duration = Duration::from_millis(100);
+
+/// A call's measured footprint: the last sample and the peak, in bytes. `status` reads it while the call runs.
+#[derive(Default, Debug)]
+pub struct Meter {
+    pub now: AtomicU64,
+    pub peak: AtomicU64,
+}
+
+impl Meter {
+    fn record(&self, bytes: u64) {
+        self.now.store(bytes, Ordering::Relaxed);
+        self.peak.fetch_max(bytes, Ordering::Relaxed);
+    }
+}
+
+/// What a call is held to while it runs.
+pub struct Limits {
+    pub timeout: Duration,
+    /// The most bytes of each stream kept.
+    pub cap: u64,
+    /// The physical footprint past which the whole call is killed (`alloc(process) ≤ bound`, EFFECTS.md).
+    pub memory_bound: u64,
+}
 
 /// A call ready to start: the command line actually executed (the sandbox wrapper, or the program itself).
 pub struct Prepared {
@@ -44,6 +72,11 @@ pub struct Outcome {
     pub signal: Option<String>,
     pub timed_out: bool,
     pub cancelled: bool,
+    /// Why the host killed the call on its own, beyond the time limit: `"oom"` past the memory bound.
+    pub killed: Option<&'static str>,
+    /// The highest footprint the watchdog measured, in bytes.
+    pub peak_footprint: u64,
+    pub memory_bound: u64,
     pub duration_ms: u64,
     /// `None` when the stdout went on to the next stage of a pipeline ([`Running::take_stdout`]).
     pub stdout: Option<Captured>,
@@ -64,7 +97,8 @@ impl Running {
 }
 
 /// Starts the call with `stdin` as its standard input (`Stdio::null()` for a call alone). The process leads a new
-/// process group (its pid is the group id), so a signal reaches everything it started.
+/// process group (its pid is the group id), so a signal reaches everything it started. Dropping the handle does NOT
+/// kill it: the session decides what happens to a call whose owner is gone (`session::serve`).
 pub fn spawn(p: Prepared, stdin: Stdio) -> std::io::Result<Running> {
     let mut c = Command::new(&p.program);
     c.args(&p.args)
@@ -74,8 +108,7 @@ pub fn spawn(p: Prepared, stdin: Stdio) -> std::io::Result<Running> {
         .stdin(stdin)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .process_group(0)
-        .kill_on_drop(true);
+        .process_group(0);
     if let Some(a0) = &p.argv0 {
         c.arg0(a0);
     }
@@ -90,10 +123,41 @@ fn signal_group(pgid: u32, sig: Signal) {
     }
 }
 
-/// Waits for the call to end, by itself, at `timeout`, or when `cancel` is notified; captures both streams (a stdout
-/// already taken for a pipeline excepted) with at most `cap` bytes kept each.
-pub async fn finish(mut r: Running, store: Arc<Store>, cancel: Arc<Notify>, timeout: Duration, cap: u64) -> Outcome {
+/// Kills a call's group and any descendant a wrapper moved out of it (a new session), at once.
+fn kill_tree(pgid: u32) {
+    signal_group(pgid, Signal::KILL);
+    for p in procs::members(pgid) {
+        if let Some(pid) = i32::try_from(p).ok().and_then(Pid::from_raw) {
+            let _ = rustix::process::kill_process(pid, Signal::KILL);
+        }
+    }
+}
+
+/// Measures the call's footprint every [`WATCH_EVERY`] into `meter`; returns once it passes `bound`.
+async fn watchdog(pgid: u32, bound: u64, meter: Arc<Meter>) {
+    let mut tick = tokio::time::interval(WATCH_EVERY);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tick.tick().await;
+        let (bytes, _) = procs::call_footprint(pgid);
+        meter.record(bytes);
+        if bytes > bound {
+            return;
+        }
+    }
+}
+
+/// Waits for the call to end, by itself, at the time limit, past the memory bound, or when `cancel` is notified;
+/// captures both streams (a stdout already taken for a pipeline excepted) with at most `cap` bytes kept each.
+pub async fn finish(
+    mut r: Running,
+    store: Arc<Store>,
+    cancel: Arc<Notify>,
+    limits: Limits,
+    meter: Arc<Meter>,
+) -> Outcome {
     let started = Instant::now();
+    let Limits { timeout, cap, memory_bound } = limits;
     let pgid = r.pid;
     let out = r.child.stdout.take();
     let err = r.child.stderr.take().expect("piped");
@@ -102,14 +166,16 @@ pub async fn finish(mut r: Running, store: Arc<Store>, cancel: Arc<Notify>, time
     let s2 = store.clone();
     let err_task = tokio::spawn(async move { s2.capture(err, cap).await.map_err(|e| e.to_string()) });
 
-    let (mut timed_out, mut cancelled) = (false, false);
+    let (mut timed_out, mut cancelled, mut killed) = (false, false, None);
     let status: Option<ExitStatus> = tokio::select! {
         s = r.child.wait() => s.ok(),
+        // No grace past the bound: the machine is the one short of memory.
+        _ = watchdog(pgid, memory_bound, meter.clone()) => { killed = Some("oom"); kill_tree(pgid); r.child.wait().await.ok() }
         _ = tokio::time::sleep(timeout) => { timed_out = true; terminate(&mut r.child, pgid).await }
         _ = cancel.notified() => { cancelled = true; terminate(&mut r.child, pgid).await }
     };
     // The call is over: anything it left running in its group (holding the pipes open, or just lingering) goes too.
-    signal_group(pgid, Signal::KILL);
+    kill_tree(pgid);
     let join = |t: tokio::task::JoinHandle<Captured>| async move {
         match tokio::time::timeout(DRAIN_GRACE, t).await {
             Ok(Ok(c)) => c,
@@ -128,6 +194,9 @@ pub async fn finish(mut r: Running, store: Arc<Store>, cancel: Arc<Notify>, time
         signal: status.and_then(|s| s.signal()).map(signal_name),
         timed_out,
         cancelled,
+        killed,
+        peak_footprint: meter.peak.load(Ordering::Relaxed),
+        memory_bound,
         duration_ms: started.elapsed().as_millis() as u64,
         stdout,
         stderr,
@@ -146,9 +215,9 @@ async fn terminate(child: &mut Child, pgid: u32) -> Option<ExitStatus> {
     }
 }
 
-/// Kills a running call's whole group at once (the session is ending).
+/// Kills a running call's whole group, and what it started outside it, at once (the session is ending).
 pub fn kill_now(pgid: u32) {
-    signal_group(pgid, Signal::KILL);
+    kill_tree(pgid);
 }
 
 /// Kills a call that was started but will never be supervised (a later stage of its pipeline failed to start), and
