@@ -1517,6 +1517,9 @@ fn an_orphan_outlives_its_port_is_listed_with_its_owner_and_dies_at_its_deadline
     let mut h = Host::start_in(&dir, &[]);
     h.ok("configure", json!({ "roots": [r] }));
     std::fs::remove_file(r.join("late")).unwrap();
+    // The first call's marker is still there: without removing it, marker_call returns before THIS call's shell has
+    // started, and the port closes while the sandbox is still coming up.
+    std::fs::remove_file(r.join("started")).unwrap();
     marker_call(&mut h, &r, 3, json!({ "onOwnerLoss": "orphan", "orphanTimeoutMs": 500 }));
     h.close();
     std::thread::sleep(Duration::from_millis(4000));
