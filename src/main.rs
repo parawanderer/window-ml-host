@@ -6,6 +6,13 @@ fn main() {
     match args.get(1).map(String::as_str) {
         Some("install") | Some("uninstall") => std::process::exit(window_ml_host::install::main(&args[1..])),
         Some("warden") => std::process::exit(window_ml_host::owners::warden_main(&args[2..])),
+        #[cfg(feature = "hub")]
+        Some("hub") => std::process::exit(window_ml_host::hub::cli::main(&args[2..])),
+        #[cfg(not(feature = "hub"))]
+        Some("hub") => {
+            eprintln!("wmlhost: this build has no hub transport (build with `--features hub`)");
+            std::process::exit(2)
+        }
         Some("--version") | Some("-V") => println!("wmlhost {}", env!("CARGO_PKG_VERSION")),
         // Chrome passes `chrome-extension://<id>/` (and on Windows a window handle); `serve` is for tests and humans.
         _ => std::process::exit(serve()),
