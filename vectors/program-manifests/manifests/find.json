@@ -127,7 +127,7 @@
       },
       "-delete": {
         "effects": [
-          "write"
+          "write-names"
         ]
       },
       "-follow": {
