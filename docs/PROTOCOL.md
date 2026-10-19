@@ -328,8 +328,9 @@ by type, inode, size, mode, `mtime` and `ctime`, and compares at `done`. A new h
 (and `.git/hooks` `modified`). It is reported for every call, sandboxed or not, and never reverted. It says what changed
 DURING the call, not BY it: two calls in one root both see either's change. A nested repository's hooks are not read.
 ABSENT means an older host: unknown, never "nothing". It is bounded: at most 256 hooks per root are read (by name;
-past that a new hook is not named, but `.git/hooks` itself is reported `modified`), and at most 256 changes are listed,
-with `"protectedChangedTruncated": true` when the list was cut.
+past that a new hook is not named, but `.git/hooks` itself is reported `modified`), and the list holds at most 256
+changes and at most 512 KiB of JSON, with `"protectedChangedTruncated": true` when it was cut (absent: complete). The
+bound, not the fallback below, is what keeps a `done` under the native limit (docs/SANDBOX.md).
 
 A message past the 1 MiB native limit is never dropped. An answer becomes `{ "seq", "error": { "code": "TooLarge" } }`.
 A `done` keeps its `event` and `id`: it first loses `protectedChanged` (absent: unknown), and if it is still too large it

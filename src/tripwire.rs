@@ -70,6 +70,11 @@ pub const MAX_HOOKS: usize = 256;
 /// The most changes one report lists, across every root; past it the list is cut and `truncated` says so.
 pub const MAX_CHANGES: usize = 256;
 
+/// The most bytes the listed changes take as JSON (512 KiB). A change's size is not bounded by the count alone: a root
+/// path may be 4096 bytes and an escaped name six times its 255. Half of `MAX_OUT` leaves the rest of `done` (two
+/// stream pointers, an envelope, a dozen scalars) far more room than it needs, so a `done` never reaches the limit.
+pub const MAX_REPORT_BYTES: usize = 512 * 1024;
+
 /// The names one root is read for: every protected top-level name, `.git`'s protected names, and each entry of
 /// `.git/hooks` that exists (at most [`MAX_HOOKS`]). An absent name is recorded too, so its creation shows.
 fn names_of(root: &Path) -> Vec<String> {
@@ -130,11 +135,19 @@ impl Report {
     }
 }
 
-/// [`changed`], cut at [`MAX_CHANGES`].
+/// [`changed`], cut at [`MAX_CHANGES`] changes or [`MAX_REPORT_BYTES`] of JSON, whichever comes first.
 pub fn report(before: &Snapshot) -> Report {
-    let mut changes = changed(before, &before.roots());
-    let truncated = changes.len() > MAX_CHANGES;
-    changes.truncate(MAX_CHANGES);
+    let all = changed(before, &before.roots());
+    let (mut changes, mut bytes) = (Vec::new(), 2usize);
+    for c in &all {
+        let size = serde_json::to_vec(&c.json()).map_or(usize::MAX, |b| b.len()) + 1;
+        if changes.len() == MAX_CHANGES || bytes.saturating_add(size) > MAX_REPORT_BYTES {
+            break;
+        }
+        bytes += size;
+        changes.push(c.clone());
+    }
+    let truncated = changes.len() < all.len();
     Report { changes, truncated }
 }
 
@@ -273,6 +286,23 @@ mod tests {
         assert!(rep.truncated, "past the cap the report says it was cut");
         assert_eq!(rep.changes[0].name, ".git/hooks", "the directory's own change sorts first and is never cut");
         assert_eq!(rep.changes[0].change, "modified");
+    }
+
+    #[test]
+    fn the_report_fits_its_byte_budget_at_the_worst_case_and_says_so() {
+        // The worst a change can be: a 4095-byte root path and a 255-byte name of control characters (each escaped to
+        // six bytes). Far past the count cap, the report still stops inside its budget.
+        let root = PathBuf::from(format!("/{}", "r".repeat(4094)));
+        let name = format!(".git/hooks/{}", "\u{1}".repeat(255));
+        let worst = Snapshot((0..MAX_CHANGES * 4).map(|i| (root.clone(), format!("{name}{i}"), None)).collect());
+        // Every one of those names is "removed" (present before, gone now): changed() lists each.
+        let worst = Snapshot(worst.0.into_iter().map(|(r, n, _)| (r, n, Stamp::of(Path::new("/")))).collect());
+        let rep = report(&worst);
+        let json = serde_json::to_vec(&rep.json()).unwrap();
+        assert!(json.len() <= MAX_REPORT_BYTES, "{} bytes", json.len());
+        assert!(rep.truncated);
+        assert!(!rep.changes.is_empty());
+        eprintln!("worst-case report: {} changes, {} bytes of {}", rep.changes.len(), json.len(), MAX_REPORT_BYTES);
     }
 
     #[test]
