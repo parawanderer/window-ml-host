@@ -84,6 +84,11 @@ pub enum ProgramEffect {
     /// Writes the command's path targets.
     #[serde(rename = "write")]
     Write,
+    /// Creates, removes or renames the command's path targets as entries (`find -delete`, `rm`, `mv`): a `write` whose
+    /// key is kept apart from an in-place one (`write-names:fs:…`), so the two never de-duplicate (window-ml's
+    /// `EFFECTS.md`, "The top-level names of a root are outside `B`").
+    #[serde(rename = "write-names")]
+    WriteNames,
     /// Starts another program.
     #[serde(rename = "runs-code")]
     RunsCode,
@@ -540,6 +545,7 @@ pub fn describe_call(argv: &[String], m: &Manifest, version: Option<&str>, env_s
                 let op = if *term == ProgramEffect::Read { "read" } else { "write" };
                 keys.extend(paths.iter().map(|p| format!("{op}:fs:{p}:?:?")));
             }
+            ProgramEffect::WriteNames => keys.extend(paths.iter().map(|p| format!("write-names:fs:{p}:?:?"))),
             ProgramEffect::Network(n) => match n.direction.unwrap_or(Direction::Both) {
                 Direction::Both => keys.extend(["read:net:*".to_string(), "write:net:*".to_string()]),
                 Direction::Read => keys.push("read:net:*".into()),

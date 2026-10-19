@@ -621,7 +621,7 @@
       "described": true,
       "effects": [
         "read:fs:.:?:?",
-        "write:fs:.:?:?"
+        "write-names:fs:.:?:?"
       ],
       "pathArgs": [
         {
@@ -655,7 +655,7 @@
       "described": true,
       "effects": [
         "read:fs:.:?:?",
-        "write:fs:.:?:?"
+        "write-names:fs:.:?:?"
       ],
       "pathArgs": [
         {
