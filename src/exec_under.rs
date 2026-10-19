@@ -115,12 +115,38 @@ fn probe_abi() -> Result<i32, String> {
     Ok(effective as i32)
 }
 
+/// The access sets one call's ruleset uses at `abi`. Pure so the ABI masking is testable on any
+/// host that builds the Linux code: every bit a rule carries must be one `from_write`/`from_all`
+/// reports at that ABI, or HardRequirement turns the whole ruleset into an error at V1–V2.
+#[cfg(target_os = "linux")]
+fn access_sets(abi: landlock::ABI) -> AccessSets {
+    use landlock::AccessFs;
+    let write = AccessFs::from_write(abi);
+    AccessSets {
+        // Name-immutable top level: edit the contents of what is there, create/remove/rename nothing.
+        // Masked to the ABI: Truncate is V3+, and an unhandled bit is a hard error below that.
+        edit: write & (AccessFs::WriteFile | AccessFs::Truncate),
+        // File-level ops inside `.git`: create/remove/truncate a file, never mkdir/symlink.
+        file_ops: write & (AccessFs::WriteFile | AccessFs::MakeReg | AccessFs::RemoveFile | AccessFs::Truncate),
+        write,
+        // EXECUTE grants for `program-only`. Execute has been in from_all since V1.
+        exec: landlock::BitFlags::from(AccessFs::Execute),
+    }
+}
+
+/// The four ruleset access sets, kept together so a test can assert each against the ABI.
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, Copy)]
+struct AccessSets {
+    edit: landlock::BitFlags<landlock::AccessFs>,
+    file_ops: landlock::BitFlags<landlock::AccessFs>,
+    write: landlock::BitFlags<landlock::AccessFs>,
+    exec: landlock::BitFlags<landlock::AccessFs>,
+}
+
 #[cfg(target_os = "linux")]
 fn apply_and_exec(rules: &LandlockRules, program: &std::path::Path, args: &[String]) -> Result<(), String> {
-    use landlock::{
-        ABI, AccessFs, CompatLevel, Compatible, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr,
-        RulesetStatus,
-    };
+    use landlock::{ABI, AccessFs, CompatLevel, Compatible, Ruleset, RulesetAttr, RulesetStatus};
     use std::os::unix::process::CommandExt;
     use std::process::Command;
 
@@ -128,12 +154,8 @@ fn apply_and_exec(rules: &LandlockRules, program: &std::path::Path, args: &[Stri
     if abi == ABI::Unsupported {
         return Err(format!("unsupported Landlock ABI {}", rules.abi));
     }
-    let write = AccessFs::from_write(abi);
-    // Name-immutable top level: edit the contents of what is there, create/remove/rename nothing.
-    let edit = AccessFs::WriteFile | AccessFs::Truncate;
-    // File-level ops inside `.git`: create/remove/truncate a file, never mkdir/symlink.
-    let file_ops = write & (AccessFs::WriteFile | AccessFs::MakeReg | AccessFs::RemoveFile | AccessFs::Truncate);
-    let handle = if rules.exec.is_empty() { write } else { write | AccessFs::Execute };
+    let sets = access_sets(abi);
+    let handle = if rules.exec.is_empty() { sets.write } else { sets.write | sets.exec };
     let ruleset = Ruleset::default()
         .set_compatibility(CompatLevel::HardRequirement)
         .handle_access(handle)
@@ -142,23 +164,23 @@ fn apply_and_exec(rules: &LandlockRules, program: &std::path::Path, args: &[Stri
         .map_err(|e| format!("create: {e}"))?;
     let mut created = ruleset;
     for p in rules.write_edit.iter() {
-        created = add(created, p, edit)?;
+        created = add(created, p, sets.edit)?;
     }
     for p in rules.write_files.iter() {
-        created = add(created, p, file_ops)?;
+        created = add(created, p, sets.file_ops)?;
     }
     for p in rules.write_trees.iter() {
         // A regular file never gets directory-only rights (HardRequirement would refuse the
         // whole ruleset); the host sends directories here, this is TOCTOU insurance.
         let acc = if std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_file()) {
-            write & AccessFs::from_file(abi)
+            sets.write & AccessFs::from_file(abi)
         } else {
-            write
+            sets.write
         };
         created = add(created, p, acc)?;
     }
     for p in rules.exec.iter() {
-        created = add(created, p, AccessFs::Execute)?;
+        created = add(created, p, sets.exec)?;
     }
     let status = created.restrict_self().map_err(|e| format!("restrict_self: {e}"))?;
     if status.ruleset != RulesetStatus::FullyEnforced {
@@ -177,7 +199,7 @@ fn add(
     path: &std::path::Path,
     access: landlock::BitFlags<landlock::AccessFs>,
 ) -> Result<landlock::RulesetCreated, String> {
-    use landlock::{Compatible, PathBeneath, PathFd, RulesetCreatedAttr};
+    use landlock::{PathBeneath, PathFd, RulesetCreatedAttr};
     match std::fs::symlink_metadata(path) {
         Ok(m) if m.file_type().is_symlink() => return Ok(created),
         Ok(_) => {}
@@ -186,4 +208,58 @@ fn add(
     }
     let fd = PathFd::new(path).map_err(|e| format!("{}: {e}", path.display()))?;
     created.add_rule(PathBeneath::new(fd, access)).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// The ABI surface: every access set the ruleset uses at each ABI carries only bits that ABI
+/// handles. `edit` is the trap — Truncate is V3+, so an unmasked `WriteFile|Truncate` makes
+/// HardRequirement reject the whole ruleset on an ABI 1–2 kernel and every `write: "roots"`
+/// call becomes `SandboxFailed`. Execute is in `from_all` since V1. Refer is V2+, IoctlDev
+/// V5+, ResolveUnix V9; none of those are in these sets, and this test keeps it that way.
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::access_sets;
+    use landlock::{ABI, AccessFs};
+
+    #[test]
+    fn every_access_set_is_handled_at_every_abi() {
+        for abi in [ABI::V1, ABI::V2, ABI::V3, ABI::V4, ABI::V5, ABI::V6, ABI::V7, ABI::V8, ABI::V9] {
+            let s = access_sets(abi);
+            let handled = AccessFs::from_write(abi) | AccessFs::from_read(abi);
+            assert!(handled.contains(s.edit), "edit at {abi:?}: {:?}", s.edit);
+            assert!(handled.contains(s.file_ops), "file_ops at {abi:?}: {:?}", s.file_ops);
+            assert!(handled.contains(s.write), "write at {abi:?}: {:?}", s.write);
+            assert!(handled.contains(s.exec), "exec at {abi:?}: {:?}", s.exec);
+        }
+    }
+
+    #[test]
+    fn edit_is_truncate_only_where_the_abi_has_it() {
+        for abi in [ABI::V1, ABI::V2, ABI::V3, ABI::V4, ABI::V5, ABI::V6, ABI::V7, ABI::V8, ABI::V9] {
+            let s = access_sets(abi);
+            assert!(s.edit.contains(AccessFs::WriteFile), "WriteFile must stay at {abi:?}");
+            if matches!(abi, ABI::V1 | ABI::V2) {
+                assert!(!s.edit.contains(AccessFs::Truncate), "Truncate must be masked off at {abi:?}");
+            } else {
+                assert!(s.edit.contains(AccessFs::Truncate), "Truncate must be present at {abi:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn file_ops_never_carries_directory_or_symlink_rights() {
+        for abi in [ABI::V1, ABI::V2, ABI::V3, ABI::V4, ABI::V5, ABI::V6, ABI::V7, ABI::V8, ABI::V9] {
+            let s = access_sets(abi);
+            // edit = WriteFile|Truncate only: the name-immutable top level.
+            assert!(!s.edit.contains(AccessFs::MakeReg), "edit must not make names at {abi:?}");
+            assert!(!s.edit.contains(AccessFs::MakeDir), "edit must not make dirs at {abi:?}");
+            assert!(!s.edit.contains(AccessFs::MakeSym), "edit must not make symlinks at {abi:?}");
+            assert!(!s.edit.contains(AccessFs::RemoveFile), "edit must not unlink at {abi:?}");
+            assert!(!s.edit.contains(AccessFs::RemoveDir), "edit must not rmdir at {abi:?}");
+            assert!(!s.edit.contains(AccessFs::Refer), "edit must not refer at {abi:?}");
+            // file_ops may create/remove a file, never mkdir/symlink/refer.
+            assert!(!s.file_ops.contains(AccessFs::MakeDir), "file_ops must not mkdir at {abi:?}");
+            assert!(!s.file_ops.contains(AccessFs::MakeSym), "file_ops must not symlink at {abi:?}");
+            assert!(!s.file_ops.contains(AccessFs::Refer), "file_ops must not refer at {abi:?}");
+        }
+    }
 }
