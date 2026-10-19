@@ -16,7 +16,13 @@ async fn an_unavailable_sandbox_is_reported_and_nothing_runs_without_start() {
     let root = tempfile::tempdir().unwrap();
     let r = root.path().canonicalize().unwrap();
     let host = Host {
-        sandbox: Availability { kind: None, program: None, available: false, reason: Some("test".into()) },
+        sandbox: Availability {
+            kind: None,
+            program: None,
+            available: false,
+            reason: Some("test".into()),
+            landlock_abi: None,
+        },
         secrets: Box::new(NoSecrets),
         store: Arc::new(Store::create(base.path()).unwrap()),
         host_env: Box::new(|k| std::env::var(k).ok()),

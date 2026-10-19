@@ -13,6 +13,8 @@ fn main() {
             eprintln!("wmlhost: this build has no hub transport (build with `--features hub`)");
             std::process::exit(2)
         }
+        Some("landlock-abi") => std::process::exit(window_ml_host::exec_under::landlock_abi_main()),
+        Some("exec-under") => std::process::exit(window_ml_host::exec_under::exec_under_main(&args[2..])),
         Some("--version") | Some("-V") => println!("wmlhost {}", env!("CARGO_PKG_VERSION")),
         // Chrome passes `chrome-extension://<id>/` (and on Windows a window handle); `serve` is for tests and humans.
         _ => std::process::exit(serve()),

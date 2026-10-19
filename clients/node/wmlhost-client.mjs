@@ -153,10 +153,26 @@ export class HostClient {
   configure(cfg) { return this.call("configure", cfg); }
   /** Resolves the facts of a call and starts nothing; args are `{ argv, cwd, env?, mode?, pathArgs?, timeoutMs? }`. */
   spawn(args) { return this.call("spawn", args); }
-  /** Runs a pending call after its verdict. */
-  start(id) { return this.call("start", { id }); }
-  /** Runs 2 to 16 pending calls joined by OS pipes; each stage still ends with its own `done`. Resolves `{ ids, pids }`. */
-  pipe(ids) { return this.call("pipe", { ids }); }
+  /**
+   * Runs a pending call after its verdict. `envelope` optionally narrows the sandbox to
+   * `{ write: "roots"|"none", exec: "any"|"program-only" }` (both keys required; absent = today's floor).
+   * `done` reports `write: "today"` for an absent envelope; a worker may not SEND `"today"` (malformed).
+   * @param {string} id
+   * @param {{ write: "roots"|"none", exec: "any"|"program-only" }} [envelope]
+   */
+  start(id, envelope) {
+    return this.call("start", envelope === undefined ? { id } : { id, envelope });
+  }
+  /**
+   * Runs 2 to 16 pending calls joined by OS pipes; each stage still ends with its own `done`.
+   * `envelopes`, when present, is one entry per id: `null` (today's floor) or an envelope as in `start`.
+   * Resolves `{ ids, pids }`.
+   * @param {string[]} ids
+   * @param {(null|{ write: "roots"|"none", exec: "any"|"program-only" })[]} [envelopes]
+   */
+  pipe(ids, envelopes) {
+    return this.call("pipe", envelopes === undefined ? { ids } : { ids, envelopes });
+  }
   /** Expands a pattern beneath `cwd` within the roots; resolves `{ matches, truncated }`. */
   glob(cwd, pattern, limit) { return this.call("glob", limit === undefined ? { cwd, pattern } : { cwd, pattern, limit }); }
   /** Forgets a pending call that was denied. */
