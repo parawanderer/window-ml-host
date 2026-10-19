@@ -78,6 +78,13 @@ about its sender is verified. Then the host, each refusal sealed back as `Refuse
 
 Only then is the body routed. A body that is not a call is `BadRequest` with `seq: null`, and reaches no session.
 
+### What `hello` tells a caller before it asks
+
+Over the hub `hello` adds `transport: "hub"` and `hub: { roots, callers, revocationsAgeMs }`: the roots granted here,
+how many principals may call, and how old the held revocation list is (`null` while no revoker has been seen, so
+nothing can go stale; past seven days every call is `stale`). `sandbox` is the host's own fact as over native
+messaging, so a caller learns that a machine without one cannot serve it before its first `configure`.
+
 ### What a caller cannot change
 
 `configure` over the hub may only narrow: every root within `hub-roots` (else `BadRequest` naming it; no file is

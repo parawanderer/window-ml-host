@@ -159,6 +159,8 @@ pub struct Serving<'a> {
     answers_tx: mpsc::UnboundedSender<Vec<u8>>,
     answers_rx: mpsc::UnboundedReceiver<Vec<u8>>,
     counts: Arc<Counts>,
+    /// what every caller's `hello` reports the revocation list's age from
+    revocations_since: Arc<AtomicU64>,
 }
 
 impl<'a> Serving<'a> {
@@ -172,7 +174,7 @@ impl<'a> Serving<'a> {
         let revocation_files = wmlhub_connector::State::at(state.dir());
         let revocations = revocation_files.revocations(&account_root)?;
         let (answers_tx, answers_rx) = mpsc::unbounded_channel();
-        Ok(Self {
+        let serving = Self {
             state,
             channel_key,
             revocations,
@@ -184,7 +186,16 @@ impl<'a> Serving<'a> {
             answers_tx,
             answers_rx,
             counts: Arc::default(),
-        })
+            revocations_since: Arc::default(),
+        };
+        serving.note();
+        Ok(serving)
+    }
+
+    /// Publish how fresh the held list is, for `hello`: the same instant `may_grant` measures the floor from.
+    fn note(&self) {
+        let since = self.revocations.held().map(|h| h.version).or(self.revocations.armed_at()).unwrap_or(0);
+        self.revocations_since.store(since, Ordering::Relaxed);
     }
 
     pub fn counts(&self) -> Arc<Counts> {
@@ -288,7 +299,8 @@ impl<'a> Serving<'a> {
             std::collections::hash_map::Entry::Occupied(o) => o.into_mut(),
             std::collections::hash_map::Entry::Vacant(v) => {
                 let roots = self.state.roots().map_err(|e| eprintln!("wmlhost hub: {e}")).ok();
-                let transport = Transport::Hub { roots, callers: callers.len() };
+                let transport =
+                    Transport::Hub { roots, callers: callers.len(), revocations_since: self.revocations_since.clone() };
                 match (self.make_host)(transport) {
                     Ok(mut host) => {
                         host.owners_dir = Some(owners_dir);
@@ -348,6 +360,7 @@ impl<'a> Serving<'a> {
             return Ok(());
         }
         if self.revocations.saw_revoker(verified.principal, now_ms) {
+            self.note();
             self.revocation_files.write_revokers(&self.revocations).map_err(ServeError::State)?;
             self.follow(client, &verified.principal).await?;
         }
@@ -365,6 +378,7 @@ impl<'a> Serving<'a> {
         let Ok(list) = RevocationList::decode(payload) else { return Ok(()) };
         match self.revocations.apply(&list, now_ms) {
             Ok(_) => {
+                self.note();
                 self.revocation_files.write_revocation_list(&list).map_err(ServeError::State)?;
                 self.revocation_files.write_revokers(&self.revocations).map_err(ServeError::State)?;
                 self.counts.lists.fetch_add(1, Ordering::Relaxed);

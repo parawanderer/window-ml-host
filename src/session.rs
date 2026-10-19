@@ -187,6 +187,9 @@ pub enum Transport {
         roots: Option<Vec<PathBuf>>,
         /// how many principals `hub-callers` lists, for `hello`
         callers: usize,
+        /// Epoch ms the account's revocation list is fresh from (its version, or when a revoker was first seen and
+        /// no list has come yet); 0 while no revoker has been seen, so nothing can go stale. The hub loop updates it.
+        revocations_since: Arc<std::sync::atomic::AtomicU64>,
     },
 }
 
@@ -351,9 +354,13 @@ impl Session {
             "owners": { "ledger": self.ledger.is_some() },
             "memory": { "metric": procs::metric(), "enforcer": "watchdog", "everyMs": runner::WATCH_EVERY.as_millis() as u64 },
         });
-        if let Transport::Hub { roots, callers } = &self.host.transport {
+        if let Transport::Hub { roots, callers, revocations_since } = &self.host.transport {
+            // A list older than the floor refuses every call, so a caller can see that coming, and why.
+            let since = revocations_since.load(std::sync::atomic::Ordering::Relaxed);
+            let age = (since > 0).then(|| owners::now_ms().saturating_sub(since));
             v["transport"] = json!("hub");
-            v["hub"] = json!({ "roots": roots.as_deref().unwrap_or_default(), "callers": callers });
+            v["hub"] = json!({ "roots": roots.as_deref().unwrap_or_default(), "callers": callers,
+                               "revocationsAgeMs": age });
         }
         v
     }

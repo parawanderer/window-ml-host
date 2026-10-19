@@ -253,6 +253,8 @@ async fn an_allowed_desktop_caller_runs_a_program_in_a_granted_root_and_hello_sa
         assert_eq!(h["value"]["transport"], "hub");
         assert_eq!(h["value"]["hub"]["roots"], json!([desk.workspace]));
         assert_eq!(h["value"]["hub"]["callers"], 1);
+        assert_eq!(h["value"]["sandbox"]["available"], sandbox::probe().available, "the host's own fact: {h}");
+        assert_eq!(h["value"]["hub"]["revocationsAgeMs"], Value::Null, "no revoker seen, nothing to go stale: {h}");
         if !h["value"]["sandbox"]["available"].as_bool().unwrap() {
             assert!(std::env::var_os("WMLHOST_REQUIRE_SANDBOX").is_none(), "CI has a sandbox: {h}");
             eprintln!("no sandbox on this machine: skipping the run");
@@ -475,25 +477,7 @@ async fn a_caller_the_account_revokes_is_refused_from_the_next_call_and_spawns_n
         let h = call(&mut client, &to, scope::DESKTOP, 1, "hello", json!({})).await;
         assert_eq!(h["value"]["transport"], "hub", "allowed before the list: {h}");
         // the revoker comes online after the host, so the host learns of it from presence and follows its list
-        let mut r_client = revoker.connect(&desk.url, &desk.root).await;
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        let list = wmlhub_keys::revocation::sign_revocations(
-            &Identity::from_seed(revoker.identity_seed),
-            &revoker.chain,
-            account_id(&desk.root.public()),
-            now_ms(),
-            &[caller.id()],
-            &[],
-        );
-        let channel = ChannelKey::from_bytes(CHANNEL_KEY).channel("revocations", &revoker.id());
-        r_client.publish(&channel, Kind::SessionEvents, list.encode_to_vec().into()).await.unwrap();
-        for _ in 0..50 {
-            if counts.lists.load(Ordering::Relaxed) > 0 {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-        assert_eq!(counts.lists.load(Ordering::Relaxed), 1, "the host applied the list");
+        publish_list(&desk, &revoker, &[caller.id()], &counts).await;
         let routed = counts.routed.load(Ordering::Relaxed);
         refused(&touch(&mut client, &to, scope::DESKTOP, &desk.workspace).await, "revoked");
         nothing_spawned(&desk.workspace, &counts, routed).await;
@@ -505,6 +489,68 @@ async fn a_caller_the_account_revokes_is_refused_from_the_next_call_and_spawns_n
     // written down, in wmlbox's two files, so a restart refuses the caller without hearing the list again
     for kept in ["revocations", "revokers"] {
         assert!(desk.state.dir().join(kept).exists(), "{kept} is on disk");
+    }
+}
+
+/// The revoker comes online after the host (so the host learns of it from presence and follows its channel), and
+/// publishes a list naming `revoked`; returns once the host has applied it.
+async fn publish_list(desk: &Desktop, revoker: &Device, revoked: &[[u8; 32]], counts: &Counts) -> Client {
+    let mut r_client = revoker.connect(&desk.url, &desk.root).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let list = wmlhub_keys::revocation::sign_revocations(
+        &Identity::from_seed(revoker.identity_seed),
+        &revoker.chain,
+        account_id(&desk.root.public()),
+        now_ms(),
+        revoked,
+        &[],
+    );
+    let channel = ChannelKey::from_bytes(CHANNEL_KEY).channel("revocations", &revoker.id());
+    r_client.publish(&channel, Kind::SessionEvents, list.encode_to_vec().into()).await.unwrap();
+    for _ in 0..50 {
+        if counts.lists.load(Ordering::Relaxed) > 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(counts.lists.load(Ordering::Relaxed), 1, "the host applied the list");
+    r_client
+}
+
+#[tokio::test]
+async fn a_stale_revocation_list_refuses_an_allowed_caller_too_and_hello_says_how_old_it_is() {
+    let desk = Desktop::new().await;
+    let caller = desk.caller(33, &[scope::DESKTOP]);
+    desk.state.allow(&caller.id()).unwrap();
+    let revoker = Device::new(&desk.root, 34, Role::Runtime, &[], true);
+    let mut host = desk.client().await;
+    let store = tempfile::tempdir().unwrap();
+    let mut serving = desk.serving(store.path());
+    let counts = serving.counts();
+    let mut client = caller.connect(&desk.url, &desk.root).await;
+    let to = desk.recipient();
+    // The host's clock, which the test moves on eight days without waiting them. The hub and the callers keep real
+    // time, so only the host's own decisions see the jump.
+    let skew = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let host_now = {
+        let skew = skew.clone();
+        move || now_ms() + skew.load(Ordering::Relaxed)
+    };
+    let script = async {
+        let _r = publish_list(&desk, &revoker, &[], &counts).await;
+        let h = call(&mut client, &to, scope::DESKTOP, 1, "hello", json!({})).await;
+        let age = h["value"]["hub"]["revocationsAgeMs"].as_u64().expect("an age once a list is held");
+        assert!(age < 60_000, "a fresh list: {h}");
+
+        skew.store(8 * 24 * 3_600_000, Ordering::Relaxed);
+        let routed = counts.routed.load(Ordering::Relaxed);
+        let answers = touch(&mut client, &to, scope::DESKTOP, &desk.workspace).await;
+        refused(&answers, "stale");
+        nothing_spawned(&desk.workspace, &counts, routed).await;
+    };
+    tokio::select! {
+        _ = script => {}
+        e = serving.run(&mut host, &host_now) => panic!("serving stopped: {e:?}"),
     }
 }
 

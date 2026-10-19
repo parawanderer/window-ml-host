@@ -45,9 +45,9 @@ the host answers each as it finishes, not in order. A message that is not an obj
   "memory": { "metric": "phys_footprint", "enforcer": "watchdog", "everyMs": 100 } }
 ```
 
-Over the hub (`docs/HUB.md`) `hello` adds `"transport": "hub"` and `"hub": { "roots": [...], "callers": 2 }`: the
-roots the person at the machine granted (`hub-roots`), within which a `configure` may narrow, and how many principals
-may call.
+Over the hub (`docs/HUB.md`) `hello` adds `"transport": "hub"` and `"hub": { "roots": [...], "callers": 2, "revocationsAgeMs": 3600000 }`:
+the roots the person at the machine granted (`hub-roots`), within which a `configure` may narrow, how many principals
+may call, and how old the account's revocation list is (`null` while there is none to go stale).
 
 `memory.metric` names what a memory bound is measured on: `phys_footprint` on macOS (what Activity Monitor and Jetsam
 use), `rss_anon+rss_shmem+swap` on Linux. Never the address space.
