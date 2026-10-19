@@ -327,7 +327,13 @@ host records, at `start` (once for a whole `pipe`, before its first stage), ever
 by type, inode, size, mode, `mtime` and `ctime`, and compares at `done`. A new hook is `.git/hooks/<name>` `created`
 (and `.git/hooks` `modified`). It is reported for every call, sandboxed or not, and never reverted. It says what changed
 DURING the call, not BY it: two calls in one root both see either's change. A nested repository's hooks are not read.
-ABSENT means an older host: unknown, never "nothing".
+ABSENT means an older host: unknown, never "nothing". It is bounded: at most 256 hooks per root are read (by name;
+past that a new hook is not named, but `.git/hooks` itself is reported `modified`), and at most 256 changes are listed,
+with `"protectedChangedTruncated": true` when the list was cut.
+
+A message past the 1 MiB native limit is never dropped. An answer becomes `{ "seq", "error": { "code": "TooLarge" } }`.
+A `done` keeps its `event` and `id`: it first loses `protectedChanged` (absent: unknown), and if it is still too large it
+is `{ "event": "done", "id", "ok": false, "error": { "code": "TooLarge" } }`.
 
 `{ code, ok, stdout, stderr }` is the result shape `ml.sh.run` returns, with `stdout`/`stderr` as pointers. `truncated`
 means the stream passed the output cap: the host kept the first `outputCap` bytes and drained the rest so the program was

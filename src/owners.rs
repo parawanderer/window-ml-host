@@ -265,7 +265,11 @@ pub fn orphan_json(e: &Entry) -> Value {
     let mut v = json!({ "id": e.id, "pid": e.pgid, "owner": e.owner, "startedMs": e.started_ms,
                         "deadlineMs": e.deadline_ms, "footprint": procs::call_footprint(e.pgid).0 });
     if let Some(s) = &e.protected {
-        v["protectedChanged"] = tripwire::changed(s, &s.roots()).iter().map(tripwire::Change::json).collect();
+        let r = tripwire::report(s);
+        v["protectedChanged"] = r.json();
+        if r.truncated {
+            v["protectedChangedTruncated"] = json!(true);
+        }
     }
     v
 }

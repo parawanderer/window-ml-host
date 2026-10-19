@@ -233,10 +233,7 @@ where
         while let Some(msg) = rx.recv().await {
             let mut body = serde_json::to_vec(&msg).expect("JSON values serialize");
             if body.len() > MAX_OUT {
-                // Only an answer can grow this large (one echoing a huge argv); say so instead of breaking the stream.
-                body = serde_json::to_vec(&json!({ "seq": msg.get("seq"), "error":
-                    { "code": "TooLarge", "message": "the answer exceeds the 1 MiB native message limit" } }))
-                .expect("JSON");
+                body = serde_json::to_vec(&too_large(&msg)).expect("JSON");
             }
             if framing::write_frame(&mut output, &body).await.is_err() {
                 break;
@@ -681,6 +678,7 @@ impl Session {
             p.envelope = e;
         }
         // One snapshot for every stage, taken before the first starts: each stage's `done` reports the pipe's changes.
+        // Every stage has the same roots: `configure` drops every pending call, so no stage predates the current config.
         let protected = tripwire::snapshot(&stages[0].config.roots);
         let mut started: Vec<runner::Running> = Vec::new();
         let mut failure = None;
@@ -879,8 +877,7 @@ impl Session {
                 }
             }
             store.remove_call_tmp(&id);
-            let changed = tripwire::changed(&protected, &protected.roots());
-            let done = done_event(&id, o, sandboxed, envelope, &changed, &store);
+            let done = done_event(&id, o, sandboxed, envelope, &tripwire::report(&protected), &store);
             s.send(done);
         });
     }
@@ -952,13 +949,14 @@ impl Session {
 /// The `done` event for an ended call. A sandboxed call whose wrapper refused to start its program reports
 /// `SandboxFailed`: the program never ran. `envelope` is the scope the host APPLIED (today's floor when the
 /// worker sent none). `protectedChanged` is what changed among the roots' protected names during the call, `[]` when
-/// nothing ([`tripwire`]): reported, never reverted, and never attributed to this call alone.
+/// nothing ([`tripwire`]): reported, never reverted, and never attributed to this call alone; cut at
+/// [`tripwire::MAX_CHANGES`] with `protectedChangedTruncated: true`.
 fn done_event(
     id: &str,
     o: Outcome,
     sandboxed: bool,
     envelope: Envelope,
-    changed: &[tripwire::Change],
+    changed: &tripwire::Report,
     store: &Store,
 ) -> Value {
     let stream = |c: &runner::Captured| match c {
@@ -972,14 +970,37 @@ fn done_event(
         "timedOut": o.timed_out, "cancelled": o.cancelled, "durationMs": o.duration_ms,
         "killed": o.killed, "peakFootprint": o.peak_footprint, "memoryBound": o.memory_bound,
         "envelope": envelope.json(),
-        "protectedChanged": changed.iter().map(tripwire::Change::json).collect::<Vec<_>>(),
+        "protectedChanged": changed.json(),
         "stdout": o.stdout.as_ref().map_or_else(|| json!({ "piped": true }), stream), "stderr": stream(&o.stderr),
     });
+    if changed.truncated {
+        v["protectedChangedTruncated"] = json!(true);
+    }
     if sandboxed && sandbox_refused(&o, store) {
         v["ok"] = json!(false);
         v["error"] = json!({ "code": "SandboxFailed", "message": "the OS sandbox did not start the program" });
     }
     v
+}
+
+/// What is sent instead of a message past the 1 MiB native limit. An answer becomes a `TooLarge` error for its `seq`
+/// (one echoing a huge argv). An event keeps its shape, so the client still matches it by `id`: a `done` first drops
+/// `protectedChanged` (the one list that grows with the disk, then absent: unknown), and if it is still too large,
+/// keeps only its identity and says `TooLarge`.
+fn too_large(msg: &Value) -> Value {
+    let err = |what: &str| json!({ "code": "TooLarge", "message": format!("the {what} exceeds the 1 MiB native message limit") });
+    if msg.get("event").is_none() {
+        return json!({ "seq": msg.get("seq"), "error": err("answer") });
+    }
+    let mut slim = msg.clone();
+    if let Some(o) = slim.as_object_mut() {
+        o.remove("protectedChanged");
+        o.remove("protectedChangedTruncated");
+    }
+    if serde_json::to_vec(&slim).map_or(usize::MAX, |b| b.len()) <= MAX_OUT {
+        return slim;
+    }
+    json!({ "event": msg["event"], "id": msg["id"], "ok": false, "error": err("event") })
 }
 
 /// The optional `envelope` of `start`. Absent is today's floor; a malformed one is `BadRequest`, never
@@ -1073,7 +1094,35 @@ fn opt_bool(a: &Map<String, Value>, k: &str) -> Result<Option<bool>, Fail> {
 
 #[cfg(test)]
 mod tests {
-    use super::sandbox_refusal;
+    use super::{MAX_OUT, sandbox_refusal, too_large};
+    use serde_json::json;
+
+    // --- a message past the native limit ---
+
+    #[test]
+    fn an_oversized_done_keeps_its_id_and_drops_only_the_protected_list() {
+        let big: Vec<_> = (0..20_000)
+            .map(|i| json!({ "root": "/r", "name": format!(".git/hooks/h{i:06}"), "change": "created" }))
+            .collect();
+        let done = json!({ "event": "done", "id": "c7", "code": 0, "ok": true, "protectedChanged": big, "protectedChangedTruncated": true });
+        assert!(serde_json::to_vec(&done).unwrap().len() > MAX_OUT);
+        let slim = too_large(&done);
+        assert_eq!(
+            (&slim["event"], &slim["id"], &slim["code"], &slim["ok"]),
+            (&json!("done"), &json!("c7"), &json!(0), &json!(true))
+        );
+        assert!(slim.get("protectedChanged").is_none(), "absent: unknown, never a cut list that reads as complete");
+        assert!(slim.get("protectedChangedTruncated").is_none());
+        // Still too large without it: only its identity, and why.
+        let huge = json!({ "event": "done", "id": "c8", "stdout": { "error": "x".repeat(MAX_OUT + 1) } });
+        assert_eq!(
+            too_large(&huge),
+            json!({ "event": "done", "id": "c8", "ok": false,
+            "error": { "code": "TooLarge", "message": "the event exceeds the 1 MiB native message limit" } })
+        );
+        // An answer is still an error for its seq.
+        assert_eq!(too_large(&json!({ "seq": 4, "value": "x" }))["seq"], json!(4));
+    }
 
     // --- what counts as the sandbox refusing to start the program ---
 

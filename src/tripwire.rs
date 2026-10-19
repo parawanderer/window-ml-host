@@ -62,8 +62,16 @@ impl Snapshot {
     }
 }
 
+/// The most `.git/hooks` entries read per root, in name order. Past it, a new hook is not named, but `.git/hooks`
+/// itself still reports `modified` (its own stamp moves), so the change is never silent. Bounds the snapshot kept on a
+/// ledger entry and the report on `done`.
+pub const MAX_HOOKS: usize = 256;
+
+/// The most changes one report lists, across every root; past it the list is cut and `truncated` says so.
+pub const MAX_CHANGES: usize = 256;
+
 /// The names one root is read for: every protected top-level name, `.git`'s protected names, and each entry of
-/// `.git/hooks` that exists. An absent name is recorded too, so its creation shows.
+/// `.git/hooks` that exists (at most [`MAX_HOOKS`]). An absent name is recorded too, so its creation shows.
 fn names_of(root: &Path) -> Vec<String> {
     let mut names: Vec<String> = PROTECTED_TOP.iter().map(|n| n.to_string()).collect();
     names.extend(PROTECTED_GIT.iter().map(|n| format!(".git/{n}")));
@@ -71,15 +79,21 @@ fn names_of(root: &Path) -> Vec<String> {
         let mut hooks: Vec<String> =
             rd.flatten().map(|e| format!(".git/hooks/{}", e.file_name().to_string_lossy())).collect();
         hooks.sort();
+        hooks.truncate(MAX_HOOKS);
         names.extend(hooks);
     }
     names
 }
 
-/// Records the protected names of `roots` now.
+/// Records the protected names of `roots` now. A root named twice is read once.
 pub fn snapshot(roots: &[PathBuf]) -> Snapshot {
     let mut out = Vec::new();
+    let mut seen: Vec<&PathBuf> = Vec::new();
     for root in roots {
+        if seen.contains(&root) {
+            continue;
+        }
+        seen.push(root);
         for name in names_of(root) {
             let stamp = Stamp::of(&root.join(&name));
             out.push((root.clone(), name, stamp));
@@ -100,6 +114,28 @@ impl Change {
     pub fn json(&self) -> Value {
         json!({ "root": self.root.to_string_lossy(), "name": self.name, "change": self.change })
     }
+}
+
+/// A report: the changes, sorted and cut at [`MAX_CHANGES`], and whether it was cut.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Report {
+    pub changes: Vec<Change>,
+    pub truncated: bool,
+}
+
+impl Report {
+    /// The changes as `protectedChanged` lists them.
+    pub fn json(&self) -> Value {
+        self.changes.iter().map(Change::json).collect()
+    }
+}
+
+/// [`changed`], cut at [`MAX_CHANGES`].
+pub fn report(before: &Snapshot) -> Report {
+    let mut changes = changed(before, &before.roots());
+    let truncated = changes.len() > MAX_CHANGES;
+    changes.truncate(MAX_CHANGES);
+    Report { changes, truncated }
 }
 
 /// What changed between `before` and now: a name present now and absent before is `created`, the reverse `removed`,
@@ -220,6 +256,32 @@ mod tests {
             c[0].json(),
             json!({ "root": b.path().to_string_lossy(), "name": ".gitmodules", "change": "created" })
         );
+    }
+
+    #[test]
+    fn a_flood_of_hooks_is_bounded_and_still_reported() {
+        let r = root();
+        let roots = vec![r.path().to_path_buf()];
+        let s = snapshot(&roots);
+        for i in 0..(MAX_HOOKS + 50) {
+            fs::write(r.path().join(format!(".git/hooks/h{i:05}")), "").unwrap();
+        }
+        let after = snapshot(&roots);
+        assert!(after.0.len() <= PROTECTED_TOP.len() + PROTECTED_GIT.len() + MAX_HOOKS, "the snapshot is bounded");
+        let rep = report(&s);
+        assert!(rep.changes.len() <= MAX_CHANGES);
+        assert!(rep.truncated, "past the cap the report says it was cut");
+        assert_eq!(rep.changes[0].name, ".git/hooks", "the directory's own change sorts first and is never cut");
+        assert_eq!(rep.changes[0].change, "modified");
+    }
+
+    #[test]
+    fn a_root_named_twice_is_read_and_reported_once() {
+        let r = root();
+        let roots = vec![r.path().to_path_buf(), r.path().to_path_buf()];
+        let s = snapshot(&roots);
+        fs::write(r.path().join(".envrc"), "").unwrap();
+        assert_eq!(names(&changed(&s, &s.roots())), vec![(".envrc".into(), "created")]);
     }
 
     #[test]
