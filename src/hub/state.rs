@@ -29,6 +29,9 @@ const PAIRED_FILE: &str = "paired";
 pub const ROOTS_FILE: &str = "hub-roots";
 /// The principals that may call this host over the hub, one hex principal id a line, written at this machine.
 pub const CALLERS_FILE: &str = "hub-callers";
+/// The highest stream counter this host may have published under any key, as decimal: a restarted host starts above
+/// it, so a clock stepped backwards cannot repeat a counter on a channel (`serve.rs`, `Serving::lease`).
+pub const COUNTER_FILE: &str = "stream-counter";
 
 /// The host's hub state directory.
 pub struct State {
@@ -167,6 +170,23 @@ impl State {
         let was = callers.remove(principal);
         self.write_callers(&callers)?;
         Ok(was)
+    }
+
+    /// The counter mark: 0 when none was written. One that does not parse is an error, so a damaged file stops
+    /// serving rather than restarting the count.
+    pub fn counter_mark(&self) -> io::Result<u64> {
+        let Some(text) = self.text(COUNTER_FILE)? else { return Ok(0) };
+        text.trim().parse().map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("{} is not a counter", self.dir.join(COUNTER_FILE).display()),
+            )
+        })
+    }
+
+    pub fn write_counter_mark(&self, mark: u64) -> io::Result<()> {
+        self.make_dir()?;
+        self.replace_atomically(COUNTER_FILE, format!("{mark}\n").as_bytes())
     }
 
     fn write_callers(&self, callers: &BTreeSet<[u8; 32]>) -> io::Result<()> {
@@ -359,6 +379,19 @@ mod tests {
         assert_eq!(state.keys().unwrap_err().kind(), io::ErrorKind::PermissionDenied);
         assert_eq!(state.callers().unwrap_err().kind(), io::ErrorKind::PermissionDenied);
         assert_eq!(state.roots().unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn the_counter_mark_is_zero_until_written_private_and_a_damaged_one_is_an_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_tmp, state) = state();
+        assert_eq!(state.counter_mark().unwrap(), 0, "absent is 0");
+        state.write_counter_mark(1_800_000_000_000_000).unwrap();
+        assert_eq!(state.counter_mark().unwrap(), 1_800_000_000_000_000);
+        let path = state.dir().join(COUNTER_FILE);
+        assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        fs::write(&path, "soon\n").unwrap();
+        assert_eq!(state.counter_mark().unwrap_err().kind(), io::ErrorKind::InvalidData, "not restarted from 0");
     }
 
     #[test]

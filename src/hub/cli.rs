@@ -13,7 +13,7 @@ use wmlhub_client::{Client, Config};
 use wmlhub_seal::ChannelKey;
 
 use super::pair::{Offer, PAIRING_WINDOW, ROLE, check};
-use super::serve::{MakeHost, Serving};
+use super::serve::{MakeHost, Publisher, Serving};
 use super::state::{State, unhex};
 use crate::session::Host;
 
@@ -192,6 +192,12 @@ async fn serve(state: &State, url: String, hub_name: String) -> i32 {
     else {
         return fail("what pairing stored is not a key; pair it again");
     };
+    // The connection takes the keys; the publisher signs with its own copy of them.
+    let publisher = match state.keys() {
+        Ok(Some(k)) => Publisher { identity: k.identity, chain: paired.chain.clone() },
+        Ok(None) => return fail("the keys went away"),
+        Err(e) => return fail(&e.to_string()),
+    };
     let mut client = match Client::connect(Config {
         url,
         hub_name,
@@ -212,7 +218,8 @@ async fn serve(state: &State, url: String, hub_name: String) -> i32 {
         host.transport = transport;
         Ok(host)
     });
-    let mut serving = match Serving::new(state, account_root, ChannelKey::from_bytes(channel_key), make_host) {
+    let mut serving = match Serving::new(state, account_root, ChannelKey::from_bytes(channel_key), publisher, make_host)
+    {
         Ok(s) => s,
         Err(e) => return fail(&e.to_string()),
     };

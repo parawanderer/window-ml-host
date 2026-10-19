@@ -15,8 +15,8 @@ learns nothing about shells or processes beyond relaying sealed bytes.
 | Slice | What | State |
 | --- | --- | --- |
 | H1 | identity: keys, pairing as a runtime, the local roots and callers files, `wmlhost hub …` | done |
-| H2 | serving: one session per caller over the same engine as native messaging; scope, revocation, callers | this |
-| H3 | `done` and the other session events published on the host's channel; a caller's session ending | next |
+| H2 | serving: one session per caller over the same engine as native messaging; scope, revocation, callers | done |
+| H3 | `done` published on a stream of the caller's own; a caller's session ending when its presence does | this |
 
 ## Pairing
 
@@ -59,8 +59,8 @@ body is one call of `docs/PROTOCOL.md` (`{ "seq", "call", "args" }`), and its an
 sealed back as the command's result. Each caller gets a session of its own, over the same engine as native messaging,
 so one caller's pending calls, held output and `configure` are invisible to another. Each also has its own owner
 table (`owners/<principal>` in the state directory): the native one's `status` would show a remote caller the orphans,
-and their owners, of the person's own sessions. What a session says unprompted
-(`done`) is H3's; this slice drops it, so a caller learns a call ended through `status` or `read`.
+and their owners, of the person's own sessions. What a session says unprompted (`done`) is published to its caller
+alone ("Session events").
 
 ### The order of checks on a call
 
@@ -80,9 +80,10 @@ Only then is the body routed. A body that is not a call is `BadRequest` with `se
 
 ### What `hello` tells a caller before it asks
 
-Over the hub `hello` adds `transport: "hub"` and `hub: { roots, callers, revocationsAgeMs }`: the roots granted here,
-how many principals may call, and how old the held revocation list is (`null` while no revoker has been seen, so
-nothing can go stale; past seven days every call is `stale`). `sandbox` is the host's own fact as over native
+Over the hub `hello` adds `transport: "hub"` and `hub: { roots, callers, revocationsAgeMs, events }`: the roots granted
+here, how many principals may call, how old the held revocation list is (`null` while no revoker has been seen, so
+nothing can go stale; past seven days every call is `stale`), and whether this caller will be given its session
+events (it holds `view`). `sandbox` is the host's own fact as over native
 messaging, so a caller learns that a machine without one cannot serve it before its first `configure`.
 
 ### What a caller cannot change
@@ -91,3 +92,40 @@ messaging, so a caller learns that a machine without one cannot serve it before 
 `NotConfigured`), the sandbox on (`sandbox: false` is `BadRequest`), and a machine with no working sandbox refuses
 every `configure` with `SandboxFailed`. Plain host mode is the person's choice at their own machine, never a remote
 caller's.
+
+### Session events
+
+What a session says unprompted, `done` today, is published, never sent: the hub's one path for a runtime's unsolicited
+output (window-ml's coordinator, 2026-10-19, Q2). Each caller has a stream of its own on the host's channels, named
+from the account's channel key with the caller's principal as subject:
+
+| Channel | Carries |
+| --- | --- |
+| `ChannelKey::channel("host.events", <caller>)` | each event, the JSON a native session would write plus `v` (the protocol version `hello` reports), sealed as a stream frame |
+| `ChannelKey::channel("host.keys", <caller>)` | the stream's key, wrapped to the caller's agreement key (retained) |
+
+The key is granted only to the caller whose session it is, and only if its leaf holds `view`: another device of the
+account can name the channels (it holds the channel key) and cannot open the grant. A caller without `view` is told
+by `hello` (`events: false`) and its events go to nobody. Reading held output stays a call (`read`), answered to its
+nonce.
+
+One key per caller per `wmlhost hub serve` process, kept across that caller's sessions. A stream's counter starts at
+the clock in microseconds or at the mark in `stream-counter` (state directory, 0600), whichever is higher, so a
+restarted host's new key never repeats a counter a reader passed, even with its clock stepped back. The mark is
+written 1000 ahead before any frame passes it, so a host that crashed between writes still left it above every counter
+it used; a mark that does not parse stops serving rather than restarting the count.
+
+Who receives a caller's events is that caller alone. A second device watching a desktop's calls, as every `view` device
+watches a browser runtime's sessions, would be a widening, and is the person's decision (window-ml's coordinator,
+2026-10-19); it is one change in `serve.rs`.
+
+### A caller going away
+
+A caller's presence going offline starts a grace of 30 s (chosen, not derived); back online, or a call from it, ends
+the grace. Past it, the caller's session closes as a closed native port does: its calls meet their `onOwnerLoss`
+policy. Only its own: each caller's owner table is its own (`owners/<principal>`), so what dies with one caller is
+what that caller started, and another caller's calls run on.
+
+Each caller's session also has a store of its own (held output and the calls' temp directories), as
+`Host::from_system` gives it; a store shared by two callers' sessions collides on their calls' temp directories and
+would let one `read` the other's output.
