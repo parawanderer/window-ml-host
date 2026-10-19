@@ -671,13 +671,138 @@ fn a_protected_path_created_during_the_call_is_denied_on_macos_and_a_known_gap_o
     h.ok("configure", json!({ "roots": [r] }));
     let (_, d) = h.run(json!({ "argv": ["sh", "-c", "mkdir -p .vscode && echo x > .vscode/tasks.json"], "cwd": r }));
     let created = r.join(".vscode/tasks.json").exists();
-    if cfg!(target_os = "macos") {
-        assert_ne!(d["code"], 0);
-        assert!(!created, "Seatbelt's regex covers a path that did not exist when the call started");
+    let landlock = h.ok("hello", json!({}))["sandbox"]["landlockAbi"].clone();
+    if cfg!(target_os = "macos") || !landlock.is_null() {
+        // Seatbelt's regex covers a path that did not exist when the call started; Landlock's
+        // gap-closing write grants do the same on Linux (a new top-level dir cannot be made).
+        assert_ne!(d["code"], 0, "{d}");
+        assert!(!created, "a protected path created during the call must not appear: {landlock}");
     } else {
-        // bubblewrap re-binds read-only only what exists when the call starts (docs/SANDBOX.md, "Limits"). When this
-        // starts failing, the gap is closed: make the assertion the macOS one and update SANDBOX.md.
+        // bubblewrap re-binds read-only only what exists when the call starts (docs/SANDBOX.md, "Limits").
         assert!(created, "the Linux gap documented in SANDBOX.md has closed; flip this test and the doc");
+    }
+    h.close();
+}
+
+// --- the sandbox envelope: `write` and `exec` on start/pipe, applied and reported ---
+
+/// spawn + start with an `envelope` + done.
+fn run_envelope(h: &mut Host, args: Value, envelope: Value) -> (Value, Value) {
+    let facts = h.ok("spawn", args);
+    let id = facts["id"].as_str().unwrap().to_string();
+    h.ok("start", json!({ "id": id, "envelope": envelope }));
+    let d = h.done(&id);
+    (facts, d)
+}
+
+#[test]
+fn write_none_lets_the_call_write_only_its_temp_dir() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let (_, d) = run_envelope(
+        &mut h,
+        json!({ "argv": ["sh", "-c", "touch inside"], "cwd": r }),
+        json!({ "write": "none", "exec": "any" }),
+    );
+    assert_ne!(d["code"], 0, "write: none still wrote the root: {d}");
+    assert!(!r.join("inside").exists());
+    let (_, d) = run_envelope(
+        &mut h,
+        json!({ "argv": ["sh", "-c", "echo x > \"$TMPDIR/t\" && cat \"$TMPDIR/t\""], "cwd": r }),
+        json!({ "write": "none", "exec": "any" }),
+    );
+    assert_eq!(d["code"], 0, "write: none must keep $TMPDIR: {}", text(&h.read_all(&d["stderr"])));
+    assert_eq!(d["envelope"], json!({ "write": "none", "exec": "any" }), "done reports what was applied");
+    h.close();
+}
+
+#[test]
+fn exec_program_only_lets_the_call_run_only_its_program() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    // `sh` runs; `ls` is not in the exec set, so `sh -c ls` cannot exec it.
+    let (_, d) = run_envelope(
+        &mut h,
+        json!({ "argv": ["sh", "-c", "echo ran > out.txt"], "cwd": r }),
+        json!({ "write": "roots", "exec": "program-only" }),
+    );
+    assert_eq!(d["code"], 0, "{}", text(&h.read_all(&d["stderr"])));
+    assert!(r.join("out.txt").exists());
+    let (_, d) = run_envelope(
+        &mut h,
+        json!({ "argv": ["sh", "-c", "ls >/dev/null"], "cwd": r }),
+        json!({ "write": "roots", "exec": "program-only" }),
+    );
+    assert_ne!(d["code"], 0, "program-only still exec'd ls: {d}");
+    assert_eq!(d["envelope"], json!({ "write": "roots", "exec": "program-only" }));
+    h.close();
+}
+
+#[test]
+fn an_absent_envelope_is_todays_floor_and_done_says_so() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let (facts, d) = h.run(json!({ "argv": ["touch", "inside"], "cwd": r }));
+    assert_eq!(facts["sandboxed"], true);
+    assert_eq!(d["code"], 0, "{d}");
+    assert!(r.join("inside").exists(), "no envelope keeps today's write");
+    assert_eq!(
+        d["envelope"],
+        json!({ "write": "roots", "exec": "any" }),
+        "done reports the floor when the worker sent none"
+    );
+    h.close();
+}
+
+#[test]
+fn a_malformed_envelope_is_bad_request_and_never_todays_floor() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    for bad in [
+        json!({ "write": "all", "exec": "any" }),
+        json!({ "write": "roots", "exec": 7 }),
+        json!({ "write": "roots", "exec": "any", "extra": 1 }),
+        json!({ "write": "roots" }),
+        json!({ "exec": "any" }),
+        json!("roots"),
+    ] {
+        let facts = h.ok("spawn", json!({ "argv": ["true"], "cwd": r }));
+        let id = facts["id"].as_str().unwrap();
+        let e = h.call("start", json!({ "id": id, "envelope": bad })).unwrap_err();
+        assert_eq!(e.0, "BadRequest", "envelope {bad} was not refused: {e:?}");
+        // the call is consumed by the failed start and never ran
+        assert!(h.call("status", json!({})).is_ok(), "host still answers after a refused start");
+    }
+    // a pipe with a wrong-length envelopes array is the same
+    let a = h.ok("spawn", json!({ "argv": ["true"], "cwd": r }))["id"].as_str().unwrap().to_string();
+    let b = h.ok("spawn", json!({ "argv": ["true"], "cwd": r }))["id"].as_str().unwrap().to_string();
+    let e = h.call("pipe", json!({ "ids": [a, b], "envelopes": [{ "write": "roots", "exec": "any" }] })).unwrap_err();
+    assert_eq!(e.0, "BadRequest", "{e:?}");
+    h.close();
+}
+
+#[test]
+fn hello_reports_the_landlock_abi_or_null() {
+    let mut h = Host::start();
+    let v = h.ok("hello", json!({}));
+    let abi = &v["sandbox"]["landlockAbi"];
+    assert!(abi.is_null() || abi.as_i64().is_some_and(|n| n > 0), "landlockAbi is a positive number or null: {v}");
+    if cfg!(target_os = "linux") {
+        // A null here is the documented "no Landlock / not fully enforced" answer, not a defect.
+        eprintln!("linux landlockAbi: {abi}");
     }
     h.close();
 }

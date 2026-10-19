@@ -39,7 +39,7 @@ the host answers each as it finishes, not in order. A message that is not an obj
 
 ```jsonc
 { "host": "window-ml-host", "version": "0.3.0", "protocol": 1, "platform": "macos",
-  "sandbox": { "kind": "seatbelt", "available": true },             // kind: "seatbelt" | "bwrap" | null; "reason" when unavailable
+  "sandbox": { "kind": "seatbelt", "available": true, "landlockAbi": null },  // kind: "seatbelt" | "bwrap" | null; "reason" when unavailable; landlockAbi: number | null (Linux only)
   "modes": ["host"],                                                // "container" appears once a runner exists
   "owners": { "ledger": true },                                     // false: the owner table is in memory only (see "Owners")
   "memory": { "metric": "phys_footprint", "enforcer": "watchdog", "everyMs": 100 } }
@@ -52,6 +52,11 @@ is given its session events (`done`), which over the hub are published on a stre
 
 `memory.metric` names what a memory bound is measured on: `phys_footprint` on macOS (what Activity Monitor and Jetsam
 use), `rss_anon+rss_shmem+swap` on Linux. Never the address space.
+
+`sandbox.landlockAbi` is the Landlock ABI the host can fully enforce a ruleset at (Linux). `null` means the restriction
+is unavailable (no Landlock, or only a best-effort one): a `start`/`pipe` asking for an envelope narrower than the
+bwrap floor fails `SandboxFailed` rather than running unrestricted. On macOS it is always `null` (Seatbelt holds every
+envelope in-profile).
 
 ### `configure`
 
@@ -162,6 +167,26 @@ time limit, the output cap, and the OS sandbox when `sandboxed` was true. If the
 call's `done` carries `error: { code: "SandboxFailed" }` and the program never ran; the host never falls back to running
 it unsandboxed.
 
+**The optional `envelope` narrows the sandbox further.** The worker sends the narrowest envelope the approved
+description allows; it can only ever NARROW what the host does today, never widen it.
+
+```jsonc
+args: { "id": "c3", "envelope": { "write": "roots" | "none", "exec": "any" | "program-only" } }
+```
+
+- `write: "roots"` is today's floor (the roots minus the protected names, and `$TMPDIR`); `write: "none"` is `$TMPDIR`
+  alone.
+- `exec: "any"` is today's floor; `exec: "program-only"` allows only the resolved program, its `#!` interpreters (and
+  `env`'s target), each hashed path argument's own chain, and on Linux each ELF's `PT_INTERP` (plus macOS's `sh`→`bash`
+  variant).
+- **Absent** means today's behaviour (an older worker). **Malformed** (`write: "all"`, `exec: 7`, an unknown key, a
+  missing key) is `BadRequest` and the call is gone — never a silent fallback to today.
+- The envelope carries two enums and nothing else. `write: "roots"` means the roots the HOST configured minus the
+  protected names, never a path list the worker sends; `exec: "program-only"` means the set the HOST resolved, never a
+  list from the worker.
+- On Linux, anything narrower than the bwrap floor needs Landlock (`hello.sandbox.landlockAbi`). Without it the call
+  fails `SandboxFailed` rather than running unrestricted.
+
 **A hashed path argument that changed since `spawn`** (its `sha256` is not the one the facts reported) refuses the call
 with `PinChanged`, and the call is gone: it is a different program than the one judged, and nothing of it ran. The same
 holds for any stage of a `pipe`. The worker treats it as a call with no manifest, never as a hash to re-approve.
@@ -175,8 +200,13 @@ card. Then, instead of `start`:
 
 ```jsonc
 args:  { "ids": ["c3", "c4", "c5"] }                  // 2 to 16 distinct ids, in pipeline order
+args:  { "ids": ["c3", "c4", "c5"],                   // optional per-stage envelopes, same length as ids
+         "envelopes": [null, { "write": "roots", "exec": "program-only" }, { "write": "none", "exec": "any" }] }
 value: { "ids": ["c3", "c4", "c5"], "pids": [4242, 4243, 4244] }
 ```
+
+`envelopes[i]` is `null` (that stage keeps today's floor) or an envelope object as under `start`. Present means the
+array is exactly as long as `ids`; anything else is `BadRequest` and nothing starts.
 
 Stage 0 has stdin closed, as under `start`; stage *i* > 0 reads stage *i* − 1's stdout through an OS pipe. Only the last
 stage's stdout is held. Every stage's stderr is held. Each stage keeps what `start` gives a call: its own sandbox
@@ -271,6 +301,7 @@ An `offset` past the end returns zero bytes with `eof: true`. Bytes, not text: o
   "timedOut": false, "cancelled": false, "durationMs": 31,
   "killed": null,                             // "oom": past its memory bound, the whole call was killed (SIGKILL, no grace)
   "peakFootprint": 61865984, "memoryBound": 4294967296,      // bytes; the peak the watchdog measured
+  "envelope": { "write": "roots", "exec": "any" },            // the scope the host APPLIED (today's floor when the worker sent none)
   "stdout": { "ptr": "out:…", "size": 812, "sha256": "…", "truncated": false },   // { "piped": true } for a non-last `pipe` stage
   "stderr": { "ptr": "out:…", "size": 0, "sha256": "…", "truncated": false } }
 ```
@@ -278,6 +309,9 @@ An `offset` past the end returns zero bytes with `eof: true`. Bytes, not text: o
 A non-last stage of a `pipe` has `"stdout": { "piped": true }`: its output went to the next stage and nothing of it is
 held. A stream the host could not keep (the disk filled, say) is `{ "error": "…" }` instead of a pointer. A sandboxed call
 whose sandbox refused to start the program adds `"error": { "code": "SandboxFailed", "message": "…" }` and `ok: false`.
+
+`envelope` is the scope the host APPLIED, including when it fell back to today's floor because the worker sent none. An
+ABSENT `envelope` on `done` means an older host; the extension treats that as unknown, never as narrow.
 
 `{ code, ok, stdout, stderr }` is the result shape `ml.sh.run` returns, with `stdout`/`stderr` as pointers. `truncated`
 means the stream passed the output cap: the host kept the first `outputCap` bytes and drained the rest so the program was

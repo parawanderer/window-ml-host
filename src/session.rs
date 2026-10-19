@@ -21,7 +21,7 @@ use crate::glob;
 use crate::owners::{self, Entry, Ledger};
 use crate::procs;
 use crate::runner::{self, Limits, Meter, Outcome, Prepared};
-use crate::sandbox::{self, Availability, Plan};
+use crate::sandbox::{self, Availability, Envelope, ExecScope, Plan, WriteScope};
 use crate::store::{MAX_READ, Store};
 use crate::walk;
 
@@ -128,6 +128,8 @@ struct Pending {
     owner: Value,
     memory_bound: u64,
     owner_loss: OwnerLoss,
+    /// The worker's narrowing envelope from `start`/`pipe`; `None` means today's floor.
+    envelope: Option<Envelope>,
     /// The config it was judged against (a reconfigure drops pending calls, so this is the current one).
     config: Config,
 }
@@ -347,6 +349,7 @@ impl Session {
         if let Some(r) = &sb.reason {
             sandbox["reason"] = json!(r);
         }
+        sandbox["landlockAbi"] = json!(sb.landlock_abi);
         let mut v = json!({
             "host": "window-ml-host",
             "version": env!("CARGO_PKG_VERSION"),
@@ -576,6 +579,7 @@ impl Session {
                 owner,
                 memory_bound,
                 owner_loss,
+                envelope: None,
                 config,
             },
         );
@@ -630,7 +634,7 @@ impl Session {
     /// Runs a pending call. Answers `seq` itself, BEFORE the call can end, so `done` never overtakes the answer.
     fn start(self: &Arc<Self>, seq: &Value, a: &Map<String, Value>) -> Result<(), Fail> {
         let id = req_str(a, "id")?;
-        let p = {
+        let mut p = {
             let mut st = self.state.lock().unwrap();
             if st.running.len() >= MAX_RUNNING {
                 return fail("Busy", format!("{MAX_RUNNING} calls are already running"));
@@ -640,6 +644,7 @@ impl Session {
                 _ => return fail("UnknownId", format!("no pending call {id:?}")),
             }
         };
+        p.envelope = parse_envelope(a.get("envelope"))?;
         let (running, _) = self.launch(id, &p, Stdio::null(), false)?;
         let pid = running.pid;
         let (cancel, meter) = self.register(id, pid, &p);
@@ -657,7 +662,8 @@ impl Session {
         if !(2..=MAX_PIPE_STAGES).contains(&ids.len()) || (1..ids.len()).any(|i| ids[..i].contains(&ids[i])) {
             return Err(bad());
         }
-        let stages: Vec<Pending> = {
+        let envelopes = parse_envelopes(a.get("envelopes"), ids.len())?;
+        let mut stages: Vec<Pending> = {
             let mut st = self.state.lock().unwrap();
             let live = |p: &Pending| p.created.elapsed() < PENDING_TTL;
             if let Some(id) = ids.iter().find(|id| !st.pending.get(*id).is_some_and(live)) {
@@ -668,6 +674,9 @@ impl Session {
             }
             ids.iter().filter_map(|id| st.pending.remove(id)).collect()
         };
+        for (p, e) in stages.iter_mut().zip(envelopes) {
+            p.envelope = e;
+        }
         let mut started: Vec<runner::Running> = Vec::new();
         let mut failure = None;
         let mut stdin = Stdio::null();
@@ -736,6 +745,17 @@ impl Session {
             Err(_) => return failed(Fail("SecretUnavailable", "a secret went away between spawn and start".into())),
         };
         let prepared = if p.sandboxed {
+            let env = p.envelope.unwrap_or_else(Envelope::today);
+            let exec = if env.program_only {
+                let hashed: Vec<PathBuf> = p.pins.iter().map(|(x, _)| x.clone()).collect();
+                let path = (self.host.host_env)("PATH");
+                match sandbox::exec_set(&p.program, &hashed, path.as_deref()) {
+                    Ok(set) => ExecScope::ProgramOnly(set),
+                    Err(m) => return failed(Fail("SandboxFailed", m)),
+                }
+            } else {
+                ExecScope::Any
+            };
             let plan = Plan {
                 roots: p.config.roots.clone(),
                 tmp: tmp.clone(),
@@ -743,7 +763,15 @@ impl Session {
                 allow_read: p.named_secrets.clone(),
                 home: (self.host.host_env)("HOME").map(PathBuf::from),
                 outlives_host: matches!(p.owner_loss, OwnerLoss::Orphan(_)),
+                write: env.write,
+                exec,
             };
+            if !self.host.sandbox.can_hold(&plan) {
+                return failed(Fail(
+                    "SandboxFailed",
+                    "this sandbox cannot hold the requested envelope (Landlock is unavailable)".into(),
+                ));
+            }
             let Some((prog, args)) = sandbox::wrap(&self.host.sandbox, &plan, &p.program, &p.argv[1..], &p.cwd) else {
                 return failed(Fail("SandboxFailed", "the sandbox is not available".into()));
             };
@@ -828,6 +856,7 @@ impl Session {
             memory_bound: p.memory_bound,
         };
         let sandboxed = p.sandboxed;
+        let envelope = p.envelope.unwrap_or_else(Envelope::today);
         tokio::spawn(async move {
             let o = runner::finish(running, store.clone(), cancel, limits, meter).await;
             {
@@ -838,7 +867,7 @@ impl Session {
                 }
             }
             store.remove_call_tmp(&id);
-            let done = done_event(&id, o, sandboxed, &store);
+            let done = done_event(&id, o, sandboxed, envelope, &store);
             s.send(done);
         });
     }
@@ -908,8 +937,9 @@ impl Session {
 }
 
 /// The `done` event for an ended call. A sandboxed call whose wrapper refused to start its program reports
-/// `SandboxFailed`: the program never ran.
-fn done_event(id: &str, o: Outcome, sandboxed: bool, store: &Store) -> Value {
+/// `SandboxFailed`: the program never ran. `envelope` is the scope the host APPLIED (today's floor when the
+/// worker sent none).
+fn done_event(id: &str, o: Outcome, sandboxed: bool, envelope: Envelope, store: &Store) -> Value {
     let stream = |c: &runner::Captured| match c {
         Ok((ptr, h)) => json!({ "ptr": ptr, "size": h.size, "sha256": h.sha256, "truncated": h.truncated }),
         Err(e) => json!({ "error": e }),
@@ -920,6 +950,7 @@ fn done_event(id: &str, o: Outcome, sandboxed: bool, store: &Store) -> Value {
         "ok": o.code == Some(0),
         "timedOut": o.timed_out, "cancelled": o.cancelled, "durationMs": o.duration_ms,
         "killed": o.killed, "peakFootprint": o.peak_footprint, "memoryBound": o.memory_bound,
+        "envelope": envelope.json(),
         "stdout": o.stdout.as_ref().map_or_else(|| json!({ "piped": true }), stream), "stderr": stream(&o.stderr),
     });
     if sandboxed && sandbox_refused(&o, store) {
@@ -927,6 +958,48 @@ fn done_event(id: &str, o: Outcome, sandboxed: bool, store: &Store) -> Value {
         v["error"] = json!({ "code": "SandboxFailed", "message": "the OS sandbox did not start the program" });
     }
     v
+}
+
+/// The optional `envelope` of `start`. Absent is today's floor; a malformed one is `BadRequest`, never
+/// a silent fallback to today (an unknown key, a wrong type or a wrong value all refuse the call).
+fn parse_envelope(v: Option<&Value>) -> Result<Option<Envelope>, Fail> {
+    let Some(v) = v else { return Ok(None) };
+    let Some(o) = v.as_object() else {
+        return fail("BadRequest", "envelope is an object with write and exec");
+    };
+    for k in o.keys() {
+        if k != "write" && k != "exec" {
+            return fail("BadRequest", format!("envelope has an unknown key {k:?}"));
+        }
+    }
+    let Some(w) = o.get("write").and_then(Value::as_str) else {
+        return fail("BadRequest", "envelope.write is \"none\" or \"roots\"");
+    };
+    let Some(e) = o.get("exec").and_then(Value::as_str) else {
+        return fail("BadRequest", "envelope.exec is \"any\" or \"program-only\"");
+    };
+    let Some(write) = WriteScope::parse(w) else {
+        return fail("BadRequest", format!("envelope.write {w:?} is \"none\" or \"roots\""));
+    };
+    let program_only = match e {
+        "any" => false,
+        "program-only" => true,
+        _ => return fail("BadRequest", format!("envelope.exec {e:?} is \"any\" or \"program-only\"")),
+    };
+    Ok(Some(Envelope { write, program_only }))
+}
+
+/// The optional `envelopes` of `pipe`: one per id, each `null` (that stage keeps today's floor) or an
+/// envelope object. Present means the array is exactly as long as `ids`.
+fn parse_envelopes(v: Option<&Value>, n: usize) -> Result<Vec<Option<Envelope>>, Fail> {
+    let Some(v) = v else { return Ok(vec![None; n]) };
+    let Some(xs) = v.as_array() else {
+        return fail("BadRequest", "envelopes is an array of envelopes or nulls");
+    };
+    if xs.len() != n {
+        return fail("BadRequest", format!("envelopes has {} entries for {n} ids", xs.len()));
+    }
+    xs.iter().map(|x| if x.is_null() { Ok(None) } else { parse_envelope(Some(x)) }).collect()
 }
 
 /// The wrapper's own failure: `sandbox-exec` exits 65 or 71 with `sandbox-exec:` first on stderr; `bwrap` exits 1 with
