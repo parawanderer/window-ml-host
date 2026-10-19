@@ -550,35 +550,12 @@ const DENY_READ_DIRS: &[&str] = &[
 /// File names that are never readable: credential files outside a credential directory.
 const DENY_READ_FILES: &[&str] = &[".netrc", ".git-credentials", ".pgpass"];
 
-/// Regexes (POSIX ERE, case-insensitive by construction) for paths in a root that, written, run code later: git's
-/// hooks and config, shell and tool rc files, editor and agent configuration. From `sandbox-runtime`'s mandatory
-/// denies. Matched anywhere in a path, so renaming a parent cannot carry one out from under its rule.
+/// Regexes (POSIX ERE, case-insensitive by construction) for paths in a root that, written, run code later: every
+/// protected name ([`protected_rels`]), the same list bubblewrap re-binds on Linux, so the two OSes hold the same names.
+/// Matched anywhere in a path and as a whole subtree (`(/|$)`), so renaming a parent cannot carry one out from under its
+/// rule and a directory's contents are held with it (`.claude/` whole, as Linux binds it).
 fn deny_write_regexes() -> Vec<String> {
-    let mut v = vec![
-        format!("/{}(/|$)", ci(".git/hooks")),
-        format!("/{}$", ci(".git/config")),
-        format!("/{}$", ci(".gitmodules")),
-        format!("/{}(/|$)", ci(".vscode")),
-        format!("/{}(/|$)", ci(".idea")),
-        format!("/{}(/|$)", ci(".claude/commands")),
-        format!("/{}(/|$)", ci(".claude/agents")),
-        format!("/{}$", ci(".claude/settings.json")),
-        format!("/{}$", ci(".claude/settings.local.json")),
-    ];
-    for f in [
-        ".gitconfig",
-        ".bashrc",
-        ".bash_profile",
-        ".zshrc",
-        ".zprofile",
-        ".profile",
-        ".ripgreprc",
-        ".mcp.json",
-        ".envrc",
-    ] {
-        v.push(format!("/{}$", ci(f)));
-    }
-    v
+    protected_rels().map(|r| format!("/{}(/|$)", ci(&r))).collect()
 }
 
 /// A regex fragment matching `s` literally and case-insensitively (macOS filesystems are case-insensitive, and
@@ -955,16 +932,7 @@ mod tests {
     fn seatbelt_denies_writing_every_protected_name() {
         let rx = deny_write_regexes();
         for rel in protected_rels() {
-            // `.claude` is denied by its parts (commands, agents, settings), so the rest of it stays writable on macOS.
-            if rel == ".claude" {
-                assert!(rx.iter().any(|r| r.starts_with(&format!("/{}/", ci(".claude")))));
-                continue;
-            }
-            let c = ci(&rel);
-            assert!(
-                rx.iter().any(|r| *r == format!("/{c}$") || *r == format!("/{c}(/|$)")),
-                "{rel} has no deny-write regex"
-            );
+            assert!(rx.contains(&format!("/{}(/|$)", ci(&rel))), "{rel} has no whole-subtree deny-write regex");
         }
     }
 }

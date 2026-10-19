@@ -903,10 +903,6 @@ fn write_roots_holds_every_existing_protected_name_read_only() {
         return h.close();
     }
     for rel in &rels {
-        // macOS denies only `.claude`'s commands, agents and settings, not the name itself: a known gap, its own PR.
-        if cfg!(target_os = "macos") && rel == ".claude" {
-            continue;
-        }
         if rel == ".git/hooks" {
             let d = roots_envelope(&mut h, &r, "echo x > .git/hooks/pre-commit");
             assert_ne!(d["code"], 0, "write: roots created a hook: {d}");
