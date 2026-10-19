@@ -2,7 +2,7 @@
 //! reported as `protectedChanged` and never reverted.
 //!
 //! The names are the ones that run code LATER, when an editor, git, direnv or an MCP client acts on them
-//! ([`sandbox::PROTECTED_TOP`], `.git/config`, `.git/hooks` and each entry of it). The OS sandbox holds the existing
+//! (`sandbox::PROTECTED_TOP`, `.git/config`, `.git/hooks` and each entry of it). The OS sandbox holds the existing
 //! ones read-only, but on Linux it cannot refuse an absent one under today's floor (docs/SANDBOX.md), so this reports
 //! what the call's lifetime left behind, on both OSes. It reports and never attributes: two calls in one root see each
 //! other's change. Only the top of each root is read; a nested repository's hooks are not walked.
