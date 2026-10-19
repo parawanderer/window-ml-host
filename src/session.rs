@@ -667,6 +667,7 @@ impl Session {
                 hidden: vec![store.out_dir().to_path_buf()],
                 allow_read: p.named_secrets.clone(),
                 home: (self.host.host_env)("HOME").map(PathBuf::from),
+                outlives_host: matches!(p.owner_loss, OwnerLoss::Orphan(_)),
             };
             let Some((prog, args)) = sandbox::wrap(&self.host.sandbox, &plan, &p.program, &p.argv[1..], &p.cwd) else {
                 return failed(Fail("SandboxFailed", "the sandbox is not available".into()));
