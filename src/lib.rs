@@ -19,4 +19,5 @@ pub mod runner;
 pub mod sandbox;
 pub mod session;
 pub mod store;
+pub mod tripwire;
 pub mod walk;

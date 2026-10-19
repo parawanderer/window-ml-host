@@ -149,7 +149,14 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
   then fails `SandboxFailed` rather than running unrestricted. With Landlock and `write: "roots"` the top-level gap
   closes (the name-immutable universal above); nested repositories and credential stores outside `$HOME` remain
   weaker than macOS. An ABSENT envelope keeps the gap on Linux in every case — that is what "today" means, and the
-  report-only tripwire (K3b) watches it without closing it.
+  report-only tripwire watches it without closing it: `done.protectedChanged` (docs/PROTOCOL.md) names a protected
+  top-level name, `.git/config` or hook that changed during the call, on both OSes, and the host never reverts it.
+  `the_linux_floor_gap_is_reported_and_a_refused_write_reports_nothing` pins that the report matches the disk.
+- **Two layers hold an existing protected name under `write: "roots"` on Linux, and one of them is not Landlock.**
+  Landlock rights are inherited below the inode they are granted on: the root's `WriteFile` reaches every existing
+  file beneath it, `.git`'s `MakeReg`/`RemoveFile` reach an existing `.git/hooks/`. What keeps `.envrc`, `.vscode/`,
+  `.git/config` and the existing hooks read-only is bubblewrap's read-only re-binds of those names. Do not drop a bind
+  as redundant with Landlock.
 - **`write: "roots"` refuses the named casualties above.** That is the cost of asking for a name-immutable top level,
   not a defect: the worker sends it only when the claims permit no new top-level name.
 - **A secret inside a root is not hidden from a directory walk.** `rg pattern .` reads `root/.env`. The facts flag `.env`

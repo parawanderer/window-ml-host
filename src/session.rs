@@ -23,6 +23,7 @@ use crate::procs;
 use crate::runner::{self, Limits, Meter, Outcome, Prepared};
 use crate::sandbox::{self, Availability, Envelope, ExecScope, Plan, WriteScope};
 use crate::store::{MAX_READ, Store};
+use crate::tripwire::{self, Snapshot};
 use crate::walk;
 
 /// The protocol version `hello` reports.
@@ -645,11 +646,13 @@ impl Session {
             }
         };
         p.envelope = parse_envelope(a.get("envelope"))?;
+        // What the protected names look like before the program runs: `done` reports what changed since.
+        let protected = tripwire::snapshot(&p.config.roots);
         let (running, _) = self.launch(id, &p, Stdio::null(), false)?;
         let pid = running.pid;
-        let (cancel, meter) = self.register(id, pid, &p);
+        let (cancel, meter) = self.register(id, pid, &p, &protected);
         self.send(json!({ "seq": seq, "value": { "id": id, "pid": pid } }));
-        self.supervise(id.to_string(), running, cancel, meter, &p);
+        self.supervise(id.to_string(), running, cancel, meter, &p, protected);
         Ok(())
     }
 
@@ -677,6 +680,8 @@ impl Session {
         for (p, e) in stages.iter_mut().zip(envelopes) {
             p.envelope = e;
         }
+        // One snapshot for every stage, taken before the first starts: each stage's `done` reports the pipe's changes.
+        let protected = tripwire::snapshot(&stages[0].config.roots);
         let mut started: Vec<runner::Running> = Vec::new();
         let mut failure = None;
         let mut stdin = Stdio::null();
@@ -702,10 +707,10 @@ impl Session {
         }
         let pids: Vec<u32> = started.iter().map(|r| r.pid).collect();
         let handles: Vec<_> =
-            ids.iter().zip(&pids).zip(&stages).map(|((id, pid), p)| self.register(id, *pid, p)).collect();
+            ids.iter().zip(&pids).zip(&stages).map(|((id, pid), p)| self.register(id, *pid, p, &protected)).collect();
         self.send(json!({ "seq": seq, "value": { "ids": ids, "pids": pids } }));
         for (((id, r), (cancel, meter)), p) in ids.into_iter().zip(started).zip(handles).zip(&stages) {
-            self.supervise(id, r, cancel, meter, p);
+            self.supervise(id, r, cancel, meter, p, protected.clone());
         }
         Ok(())
     }
@@ -811,7 +816,7 @@ impl Session {
 
     /// Records a started call in the owner table (and its ledger), starts the warden with the first one, and returns the
     /// handle `cancel` notifies and the call's footprint meter.
-    fn register(&self, id: &str, pid: u32, p: &Pending) -> (Arc<Notify>, Arc<Meter>) {
+    fn register(&self, id: &str, pid: u32, p: &Pending, protected: &Snapshot) -> (Arc<Notify>, Arc<Meter>) {
         let cancel = Arc::new(Notify::new());
         let meter = Arc::new(Meter::default());
         let entry = Entry {
@@ -822,6 +827,7 @@ impl Session {
             started_ms: owners::now_ms(),
             deadline_ms: None,
             memory_bound: p.memory_bound,
+            protected: Some(protected.clone()),
         };
         let mut st = self.state.lock().unwrap();
         if st.closed {
@@ -852,6 +858,7 @@ impl Session {
         cancel: Arc<Notify>,
         meter: Arc<Meter>,
         p: &Pending,
+        protected: Snapshot,
     ) {
         let s = self.clone();
         let store = self.host.store.clone();
@@ -872,7 +879,8 @@ impl Session {
                 }
             }
             store.remove_call_tmp(&id);
-            let done = done_event(&id, o, sandboxed, envelope, &store);
+            let changed = tripwire::changed(&protected, &protected.roots());
+            let done = done_event(&id, o, sandboxed, envelope, &changed, &store);
             s.send(done);
         });
     }
@@ -943,8 +951,16 @@ impl Session {
 
 /// The `done` event for an ended call. A sandboxed call whose wrapper refused to start its program reports
 /// `SandboxFailed`: the program never ran. `envelope` is the scope the host APPLIED (today's floor when the
-/// worker sent none).
-fn done_event(id: &str, o: Outcome, sandboxed: bool, envelope: Envelope, store: &Store) -> Value {
+/// worker sent none). `protectedChanged` is what changed among the roots' protected names during the call, `[]` when
+/// nothing ([`tripwire`]): reported, never reverted, and never attributed to this call alone.
+fn done_event(
+    id: &str,
+    o: Outcome,
+    sandboxed: bool,
+    envelope: Envelope,
+    changed: &[tripwire::Change],
+    store: &Store,
+) -> Value {
     let stream = |c: &runner::Captured| match c {
         Ok((ptr, h)) => json!({ "ptr": ptr, "size": h.size, "sha256": h.sha256, "truncated": h.truncated }),
         Err(e) => json!({ "error": e }),
@@ -956,6 +972,7 @@ fn done_event(id: &str, o: Outcome, sandboxed: bool, envelope: Envelope, store: 
         "timedOut": o.timed_out, "cancelled": o.cancelled, "durationMs": o.duration_ms,
         "killed": o.killed, "peakFootprint": o.peak_footprint, "memoryBound": o.memory_bound,
         "envelope": envelope.json(),
+        "protectedChanged": changed.iter().map(tripwire::Change::json).collect::<Vec<_>>(),
         "stdout": o.stdout.as_ref().map_or_else(|| json!({ "piped": true }), stream), "stderr": stream(&o.stderr),
     });
     if sandboxed && sandbox_refused(&o, store) {

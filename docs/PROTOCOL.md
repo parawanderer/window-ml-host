@@ -275,11 +275,14 @@ there. The `done` event follows with `cancelled: true`.
                 "memoryBound": 4294967296, "footprint": 52428800, "peakFootprint": 61865984,
                 "onOwnerLoss": { "policy": "kill" } }],
   "orphans": [{ "id": "c1", "pid": 4100, "owner": { "run": "…" }, "startedMs": 1760000000000,
-                "deadlineMs": 1760000600000, "footprint": 10485760 }] }
+                "deadlineMs": 1760000600000, "footprint": 10485760,
+                "protectedChanged": [{ "root": "/Users/me/proj", "name": ".envrc", "change": "created" }] }] }
 ```
 
 `footprint` is the last measurement of the call's process group and its descendants; `pid` is the group's id. Reading
-`status` also sweeps: an orphan past its deadline is killed rather than listed.
+`status` also sweeps: an orphan past its deadline is killed rather than listed. An orphan's `protectedChanged` is
+computed at the read, against the snapshot its `start` took (as on `done`, below): what changed so far. It is absent for
+an orphan an older host started. What an orphan changes between the last `status` and its kill is not reported.
 
 ### `read`: a range of held output
 
@@ -304,6 +307,7 @@ An `offset` past the end returns zero bytes with `eof: true`. Bytes, not text: o
   "killed": null,                             // "oom": past its memory bound, the whole call was killed (SIGKILL, no grace)
   "peakFootprint": 61865984, "memoryBound": 4294967296,      // bytes; the peak the watchdog measured
   "envelope": { "write": "today", "exec": "any" },           // the scope the host APPLIED ("today" when the worker sent none)
+  "protectedChanged": [],                                    // protected names that changed during the call (below)
   "stdout": { "ptr": "out:…", "size": 812, "sha256": "…", "truncated": false },   // { "piped": true } for a non-last `pipe` stage
   "stderr": { "ptr": "out:…", "size": 0, "sha256": "…", "truncated": false } }
 ```
@@ -315,6 +319,15 @@ whose sandbox refused to start the program adds `"error": { "code": "SandboxFail
 `envelope` is the scope the host APPLIED. `write: "today"` is the host's name for today's floor: what an ABSENT
 envelope means, and what `done` reports for one — never `"roots"`. A worker may not SEND `"today"`; that is
 malformed. An ABSENT `envelope` on `done` means an older host; the extension treats that as unknown, never as narrow.
+
+`protectedChanged` lists what changed among the roots' protected names while the call ran, `[]` when nothing: each
+`{ "root", "name", "change" }`, `change` one of `"created"`, `"modified"`, `"removed"`, sorted by root and name. The
+host records, at `start` (once for a whole `pipe`, before its first stage), every protected top-level name of every root
+(`.envrc`, `.mcp.json`, `.vscode`, … as in docs/SANDBOX.md), `.git/config`, `.git/hooks` and each entry of `.git/hooks`,
+by type, inode, size, mode, `mtime` and `ctime`, and compares at `done`. A new hook is `.git/hooks/<name>` `created`
+(and `.git/hooks` `modified`). It is reported for every call, sandboxed or not, and never reverted. It says what changed
+DURING the call, not BY it: two calls in one root both see either's change. A nested repository's hooks are not read.
+ABSENT means an older host: unknown, never "nothing".
 
 `{ code, ok, stdout, stderr }` is the result shape `ml.sh.run` returns, with `stdout`/`stderr` as pointers. `truncated`
 means the stream passed the output cap: the host kept the first `outputCap` bytes and drained the rest so the program was

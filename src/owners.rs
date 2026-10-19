@@ -16,6 +16,7 @@ use rustix::process::{Pid, Signal};
 use serde_json::{Value, json};
 
 use crate::procs;
+use crate::tripwire::{self, Snapshot};
 
 /// Milliseconds since the epoch, the ledger's clock (it must mean the same thing to the next host process).
 pub fn now_ms() -> u64 {
@@ -34,12 +35,16 @@ pub struct Entry {
     /// Set once the owner is gone under the orphan policy: the group is killed at this time.
     pub deadline_ms: Option<u64>,
     pub memory_bound: u64,
+    /// The roots' protected names as the call found them at `start`, so `status` can report what changed during an
+    /// orphan's life ([`tripwire`]). `None` in a ledger an older host wrote.
+    pub protected: Option<Snapshot>,
 }
 
 impl Entry {
     fn to_json(&self) -> Value {
         json!({ "id": self.id, "pgid": self.pgid, "start": self.start, "owner": self.owner,
-                "startedMs": self.started_ms, "deadlineMs": self.deadline_ms, "memoryBound": self.memory_bound })
+                "startedMs": self.started_ms, "deadlineMs": self.deadline_ms, "memoryBound": self.memory_bound,
+                "protected": self.protected })
     }
 
     fn from_json(v: &Value) -> Option<Entry> {
@@ -51,6 +56,7 @@ impl Entry {
             started_ms: v["startedMs"].as_u64().unwrap_or(0),
             deadline_ms: v["deadlineMs"].as_u64(),
             memory_bound: v["memoryBound"].as_u64().unwrap_or(0),
+            protected: serde_json::from_value(v["protected"].clone()).ok().flatten(),
         })
     }
 }
@@ -253,10 +259,15 @@ pub fn warden_main(args: &[String]) -> i32 {
     }
 }
 
-/// An orphan as `status` reports it.
+/// An orphan as `status` reports it. `protectedChanged` is computed now, against the snapshot its `start` took: what
+/// changed among the protected names so far, `[]` when nothing; absent when an older host wrote the entry.
 pub fn orphan_json(e: &Entry) -> Value {
-    json!({ "id": e.id, "pid": e.pgid, "owner": e.owner, "startedMs": e.started_ms, "deadlineMs": e.deadline_ms,
-            "footprint": procs::call_footprint(e.pgid).0 })
+    let mut v = json!({ "id": e.id, "pid": e.pgid, "owner": e.owner, "startedMs": e.started_ms,
+                        "deadlineMs": e.deadline_ms, "footprint": procs::call_footprint(e.pgid).0 });
+    if let Some(s) = &e.protected {
+        v["protectedChanged"] = tripwire::changed(s, &s.roots()).iter().map(tripwire::Change::json).collect();
+    }
+    v
 }
 
 #[cfg(test)]
@@ -277,6 +288,7 @@ mod tests {
             started_ms: now_ms(),
             deadline_ms,
             memory_bound: 0,
+            protected: None,
         }
     }
 
@@ -306,6 +318,30 @@ mod tests {
         assert!(s.orphans.is_empty());
         assert!(c.wait().unwrap().code().is_none(), "killed by a signal");
         assert!(!p.exists());
+    }
+
+    #[test]
+    fn an_entry_keeps_its_snapshot_through_the_ledger_and_an_older_hosts_entry_reports_no_field() {
+        let root = tempfile::tempdir().unwrap();
+        let roots = vec![root.path().to_path_buf()];
+        let c = sleeper();
+        let e = Entry { protected: Some(tripwire::snapshot(&roots)), ..entry(&c, Some(now_ms() + 60_000)) };
+        let back = Entry::from_json(&e.to_json()).unwrap();
+        assert_eq!(back.protected, e.protected, "the snapshot survives the ledger file");
+        std::fs::write(root.path().join(".envrc"), "").unwrap();
+        assert_eq!(
+            orphan_json(&back)["protectedChanged"],
+            json!([{ "root": root.path().to_string_lossy(), "name": ".envrc", "change": "created" }])
+        );
+        // A ledger written before the tripwire: no snapshot, so no field (unknown), never `[]`.
+        let mut old = e.to_json();
+        old.as_object_mut().unwrap().remove("protected");
+        let old = Entry::from_json(&old).unwrap();
+        assert!(old.protected.is_none());
+        assert!(orphan_json(&old).get("protectedChanged").is_none());
+        let mut c = c;
+        let _ = c.kill();
+        let _ = c.wait();
     }
 
     #[test]
