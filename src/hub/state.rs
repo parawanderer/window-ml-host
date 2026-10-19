@@ -207,6 +207,11 @@ impl State {
 
     /// The file's bytes, `None` when it does not exist, and an error when anyone but its owner can read it.
     fn read(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
+        match fs::metadata(&self.dir) {
+            Ok(meta) => check_private(&self.dir, &meta)?,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e),
+        }
         let path = self.dir.join(name);
         match fs::metadata(&path) {
             Ok(meta) => {
@@ -245,7 +250,9 @@ impl State {
         options.recursive(true);
         #[cfg(unix)]
         std::os::unix::fs::DirBuilderExt::mode(&mut options, 0o700);
-        options.create(&self.dir)
+        options.create(&self.dir)?;
+        // `create` leaves an existing directory's mode as it was: one others can list is refused, as a file is
+        check_private(&self.dir, &fs::metadata(&self.dir)?)
     }
 }
 
@@ -263,7 +270,11 @@ fn check_private(path: &Path, meta: &fs::Metadata) -> io::Result<()> {
     if mode & 0o077 != 0 {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            format!("{} is readable or writable by others (mode {mode:o}): chmod 600 it", path.display()),
+            format!(
+                "{} is readable or writable by others (mode {mode:o}): chmod {} it",
+                path.display(),
+                if meta.is_dir() { 700 } else { 600 }
+            ),
         ));
     }
     Ok(())
@@ -348,6 +359,34 @@ mod tests {
         assert_eq!(state.keys().unwrap_err().kind(), io::ErrorKind::PermissionDenied);
         assert_eq!(state.callers().unwrap_err().kind(), io::ErrorKind::PermissionDenied);
         assert_eq!(state.roots().unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn the_directory_is_created_private_and_an_existing_one_others_can_list_is_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_tmp, state) = state();
+        state.generate_keys().unwrap();
+        assert_eq!(fs::metadata(state.dir()).unwrap().permissions().mode() & 0o777, 0o700, "created 0700");
+
+        fs::set_permissions(state.dir(), fs::Permissions::from_mode(0o755)).unwrap();
+        for files in [0o600, 0o644] {
+            for name in [IDENTITY_FILE, AGREEMENT_FILE] {
+                fs::set_permissions(state.dir().join(name), fs::Permissions::from_mode(files)).unwrap();
+            }
+            let err = state.keys().unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::PermissionDenied, "files {files:o}");
+            assert!(err.to_string().contains("chmod 700"), "{err}");
+        }
+        assert_eq!(state.callers().unwrap_err().kind(), io::ErrorKind::PermissionDenied, "read refused");
+        assert_eq!(state.allow(&[1; 32]).unwrap_err().kind(), io::ErrorKind::PermissionDenied, "write refused");
+        assert!(!state.dir().join(CALLERS_FILE).exists(), "nothing written into it");
+
+        // an existing directory, never created by the host, is refused the same way
+        let (_tmp2, other) = super::tests::state();
+        fs::create_dir(other.dir()).unwrap();
+        fs::set_permissions(other.dir(), fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(other.generate_keys().unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+        assert!(!other.dir().join(IDENTITY_FILE).exists());
     }
 
     // --- the local roots ---
