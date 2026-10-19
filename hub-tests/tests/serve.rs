@@ -1,6 +1,8 @@
 //! serve.rs — the host answering calls over an in-process hub, as a desktop runtime. A caller holding `desktop`, not
 //! revoked, and listed in `hub-callers` runs a program in a root the person granted; every other caller is refused
 //! with the refusal sealed back, and nothing is spawned. A `configure` may narrow the person's roots, never widen them.
+//! What a session says unprompted (`done`) reaches its own caller only, on a stream keyed to it; a caller gone past the
+//! presence grace loses its calls, and no other caller does.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -10,7 +12,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use window_ml_host::env::NoSecrets;
-use window_ml_host::hub::serve::{Counts, MakeHost, Serving};
+use window_ml_host::hub::serve::{Counts, EVENTS_PURPOSE, KEYS_PURPOSE, MakeHost, Publisher, Serving};
 use window_ml_host::hub::state::State;
 use window_ml_host::sandbox;
 use window_ml_host::session::Host;
@@ -20,7 +22,7 @@ use wmlhub_client::{Client, Config, Event};
 use wmlhub_keys::{CertSpec, Identity, account_id, issue, principal_id, scope};
 use wmlhub_proto::prost::Message;
 use wmlhub_proto::v1::{Certificate, Kind, PairedWith, Role};
-use wmlhub_seal::{AgreementKey, ChannelKey, Recipient, Sender, seal_command};
+use wmlhub_seal::{AgreementKey, ChannelKey, Recipient, Sender, StreamReader, seal_command};
 
 const HUB: &str = "hub.test";
 const CHANNEL_KEY: [u8; 32] = [33; 32];
@@ -162,20 +164,23 @@ impl Desktop {
         .unwrap()
     }
 
-    fn serving(&self, store: &Path) -> Serving<'_> {
-        let store = Arc::new(Store::create(store).unwrap());
+    /// Serving with each caller's session on a store of its own under `stores`, as `Host::from_system` gives it.
+    fn serving(&self, stores: &Path) -> Serving<'_> {
+        let stores = stores.to_owned();
         let make_host: Arc<MakeHost> = Arc::new(move |transport| {
             Ok(Host {
                 sandbox: sandbox::probe(),
                 secrets: Box::new(NoSecrets),
-                store: store.clone(),
+                store: Arc::new(Store::create(&stores)?),
                 host_env: Box::new(|k| std::env::var(k).ok()),
                 owners_dir: None,
                 warden: None,
                 transport,
             })
         });
-        Serving::new(&self.state, self.root.public(), ChannelKey::from_bytes(CHANNEL_KEY), make_host).unwrap()
+        let publisher = Publisher { identity: self.state.keys().unwrap().unwrap().identity, chain: self.chain.clone() };
+        Serving::new(&self.state, self.root.public(), ChannelKey::from_bytes(CHANNEL_KEY), publisher, make_host)
+            .unwrap()
     }
 
     /// A caller holding `scopes`, not yet allowed.
@@ -186,18 +191,73 @@ impl Desktop {
 
 /// One call, asked under `scope`, and its sealed answer.
 async fn call(client: &mut Client, to: &Recipient, scope: &str, seq: u64, name: &str, args: Value) -> Value {
+    call_keeping(client, to, scope, seq, name, args, &mut Vec::new()).await
+}
+
+/// [`call`], keeping whatever was published to this client while it waited.
+async fn call_keeping(
+    client: &mut Client,
+    to: &Recipient,
+    scope: &str,
+    seq: u64,
+    name: &str,
+    args: Value,
+    published: &mut Vec<Event>,
+) -> Value {
     let body = serde_json::to_vec(&json!({ "seq": seq, "call": name, "args": args })).unwrap();
     let nonce = client.command(to, scope, &body).await.unwrap();
     let answer = tokio::time::timeout(Duration::from_secs(20), async {
         loop {
-            if let Event::Result(r) = client.next().await.unwrap() {
-                if r.answers == Some(nonce) {
+            match client.next().await.unwrap() {
+                Event::Result(r) if r.answers == Some(nonce) => {
                     return serde_json::from_slice::<Value>(&r.body).unwrap();
                 }
+                e @ Event::Published { .. } => published.push(e),
+                _ => {}
             }
         }
     });
     answer.await.expect("an answer, not silence")
+}
+
+/// The next published envelope on `channel`, from what a call kept or else from the client.
+async fn published_on(client: &mut Client, kept: &mut Vec<Event>, channel: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    let on = |e: &Event| matches!(e, Event::Published { stream, .. } if stream.channel == channel);
+    if let Some(i) = kept.iter().position(on) {
+        if let Event::Published { sender, payload, .. } = kept.remove(i) {
+            return (sender, payload.to_vec());
+        }
+    }
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let e = client.next().await.unwrap();
+            if on(&e) {
+                if let Event::Published { sender, payload, .. } = e {
+                    return (sender, payload.to_vec());
+                }
+            } else if matches!(e, Event::Published { .. }) {
+                kept.push(e);
+            }
+        }
+    })
+    .await
+    .expect("something published on the channel")
+}
+
+/// A caller's two channels on the desktop, as the caller names them from the account's channel key.
+fn host_channels(caller: &[u8; 32]) -> (Vec<u8>, Vec<u8>) {
+    let channels = ChannelKey::from_bytes(CHANNEL_KEY);
+    (channels.channel(EVENTS_PURPOSE, caller).to_vec(), channels.channel(KEYS_PURPOSE, caller).to_vec())
+}
+
+/// Skip a run on a machine with no sandbox, which CI is not.
+fn no_sandbox(hello: &Value) -> bool {
+    if hello["value"]["sandbox"]["available"].as_bool().unwrap() {
+        return false;
+    }
+    assert!(std::env::var_os("WMLHOST_REQUIRE_SANDBOX").is_none(), "CI has a sandbox: {hello}");
+    eprintln!("no sandbox on this machine: skipping the run");
+    true
 }
 
 /// configure, spawn `touch marker` in the granted root, start it: the whole of running a program.
@@ -618,6 +678,196 @@ async fn a_body_that_is_not_a_call_is_bad_request_and_reaches_no_session() {
         }
         assert_eq!(counts.routed.load(Ordering::Relaxed), 0);
         assert_eq!(counts.malformed.load(Ordering::Relaxed), 3);
+    };
+    tokio::select! {
+        _ = script => {}
+        e = serving.run(&mut host, &now_ms) => panic!("serving stopped: {e:?}"),
+    }
+}
+
+// --- session events: `done` reaches its own caller only ---
+
+#[tokio::test]
+async fn a_caller_holding_view_is_granted_its_own_stream_and_reads_done_from_it() {
+    let desk = Desktop::new().await;
+    let (a, b) = (desk.caller(40, &[scope::DESKTOP, scope::VIEW]), desk.caller(41, &[scope::DESKTOP, scope::VIEW]));
+    desk.state.allow(&a.id()).unwrap();
+    desk.state.allow(&b.id()).unwrap();
+    let mut host = desk.client().await;
+    let store = tempfile::tempdir().unwrap();
+    let mut serving = desk.serving(store.path());
+    let counts = serving.counts();
+    let (mut a_client, mut b_client) = (a.connect(&desk.url, &desk.root).await, b.connect(&desk.url, &desk.root).await);
+    let to = desk.recipient();
+    let (events, keys) = host_channels(&a.id());
+    let script = async {
+        a_client.subscribe(&to.principal, &keys, None).await.unwrap();
+        a_client.subscribe(&to.principal, &events, None).await.unwrap();
+        // b names a's channels too: it holds the account's channel key, as every device does.
+        b_client.subscribe(&to.principal, &keys, None).await.unwrap();
+        let mut kept = Vec::new();
+        let h = call_keeping(&mut a_client, &to, scope::DESKTOP, 1, "hello", json!({}), &mut kept).await;
+        assert_eq!(h["value"]["hub"]["events"], true, "{h}");
+        let (sender, wrapped) = published_on(&mut a_client, &mut kept, &keys).await;
+        assert_eq!(sender, to.principal.to_vec());
+        let grant = a_client.open_grant(&sender, &wrapped).expect("a's key opens for a");
+        assert_eq!(grant.channel, events, "the key is for a's events channel");
+        let (b_sender, b_wrapped) = published_on(&mut b_client, &mut Vec::new(), &keys).await;
+        assert!(b_client.open_grant(&b_sender, &b_wrapped).is_err(), "a's key is sealed to a, and b cannot open it");
+        if no_sandbox(&h) {
+            return;
+        }
+        let cwd = desk.workspace.join("sub");
+        call_keeping(&mut a_client, &to, scope::DESKTOP, 2, "configure", json!({ "roots": [cwd] }), &mut kept).await;
+        let spawn = json!({ "argv": ["sh", "-c", "echo out-of-band"], "cwd": cwd });
+        let s = call_keeping(&mut a_client, &to, scope::DESKTOP, 3, "spawn", spawn, &mut kept).await;
+        let id = s["value"]["id"].clone();
+        call_keeping(&mut a_client, &to, scope::DESKTOP, 4, "start", json!({ "id": id }), &mut kept).await;
+        let (_, frame) = published_on(&mut a_client, &mut kept, &events).await;
+        let mut reader = StreamReader::new(&grant);
+        let done: Value = serde_json::from_slice(&reader.open(&frame).expect("a frame a's key opens").batch).unwrap();
+        assert_eq!(done["event"], "done", "{done}");
+        assert_eq!(done["id"], id, "{done}");
+        assert_eq!(done["ok"], true, "{done}");
+        assert!(done.get("seq").is_none(), "an event answers no call: {done}");
+        let ptr = done["stdout"]["ptr"].clone();
+        let r = call_keeping(&mut a_client, &to, scope::DESKTOP, 5, "read", json!({ "ptr": ptr }), &mut kept).await;
+        use base64::Engine;
+        let data = base64::engine::general_purpose::STANDARD.decode(r["value"]["data"]["$bytes"].as_str().unwrap());
+        assert_eq!(data.unwrap(), b"out-of-band\n", "{r}");
+        let theirs = call(&mut b_client, &to, scope::DESKTOP, 1, "read", json!({ "ptr": ptr })).await;
+        assert_eq!(theirs["error"]["code"], "UnknownPtr", "b cannot read what a's call held: {theirs}");
+        assert_eq!(counts.events.load(Ordering::Relaxed), 1);
+    };
+    tokio::select! {
+        _ = script => {}
+        e = serving.run(&mut host, &now_ms) => panic!("serving stopped: {e:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_caller_without_view_is_told_so_and_its_events_are_published_to_nobody() {
+    let desk = Desktop::new().await;
+    let caller = desk.caller(42, &[scope::DESKTOP]);
+    desk.state.allow(&caller.id()).unwrap();
+    let mut host = desk.client().await;
+    let store = tempfile::tempdir().unwrap();
+    let mut serving = desk.serving(store.path());
+    let counts = serving.counts();
+    let mut client = caller.connect(&desk.url, &desk.root).await;
+    let to = desk.recipient();
+    let script = async {
+        let h = call(&mut client, &to, scope::DESKTOP, 1, "hello", json!({})).await;
+        assert_eq!(h["value"]["hub"]["events"], false, "no view, no stream, and it is said up front: {h}");
+        if no_sandbox(&h) {
+            return;
+        }
+        touch(&mut client, &to, scope::DESKTOP, &desk.workspace).await;
+        eventually_exists(&desk.workspace.join("sub/marker")).await;
+        for _ in 0..100 {
+            if counts.unpublished.load(Ordering::Relaxed) > 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_eq!(counts.unpublished.load(Ordering::Relaxed), 1, "the done went nowhere");
+        assert_eq!(counts.events.load(Ordering::Relaxed), 0, "and nothing was published");
+    };
+    tokio::select! {
+        _ = script => {}
+        e = serving.run(&mut host, &now_ms) => panic!("serving stopped: {e:?}"),
+    }
+}
+
+// --- a caller's presence: what dies with it is its own ---
+
+/// Configure `dir` and run `touch started; sleep <secs>; touch late` in it, waiting for `started`.
+async fn sleeper(client: &mut Client, to: &Recipient, dir: &Path, secs: u32) {
+    std::fs::create_dir_all(dir).unwrap();
+    let c = call(client, to, scope::DESKTOP, 1, "configure", json!({ "roots": [dir] })).await;
+    assert!(c["value"].is_object(), "{c}");
+    let argv = json!(["sh", "-c", format!("touch started; sleep {secs}; touch late")]);
+    let s = call(client, to, scope::DESKTOP, 2, "spawn", json!({ "argv": argv, "cwd": dir })).await;
+    let st = call(client, to, scope::DESKTOP, 3, "start", json!({ "id": s["value"]["id"] })).await;
+    assert!(st["value"]["pid"].is_u64(), "{st}");
+    eventually_exists(&dir.join("started")).await;
+}
+
+#[tokio::test]
+async fn a_caller_gone_past_the_grace_loses_its_calls_and_another_callers_sleeper_survives() {
+    let desk = Desktop::new().await;
+    let (a, b) = (desk.caller(43, &[scope::DESKTOP]), desk.caller(44, &[scope::DESKTOP]));
+    desk.state.allow(&a.id()).unwrap();
+    desk.state.allow(&b.id()).unwrap();
+    let mut host = desk.client().await;
+    let store = tempfile::tempdir().unwrap();
+    let mut serving = desk.serving(store.path()).with_grace(Duration::from_millis(300));
+    let counts = serving.counts();
+    let (mut a_client, mut b_client) = (a.connect(&desk.url, &desk.root).await, b.connect(&desk.url, &desk.root).await);
+    let to = desk.recipient();
+    let (a_dir, b_dir) = (desk.workspace.join("sub/a"), desk.workspace.join("sub/b"));
+    let script = async {
+        let h = call(&mut a_client, &to, scope::DESKTOP, 0, "hello", json!({})).await;
+        if no_sandbox(&h) {
+            return;
+        }
+        sleeper(&mut a_client, &to, &a_dir, 3).await;
+        sleeper(&mut b_client, &to, &b_dir, 3).await;
+        drop(a_client);
+        for _ in 0..100 {
+            if counts.gone.load(Ordering::Relaxed) > 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_eq!(counts.gone.load(Ordering::Relaxed), 1, "a's session ended once its grace ran out");
+        // b keeps talking to the host, so the host loop runs while b's sleeper finishes.
+        let mut seq = 10;
+        while !b_dir.join("late").exists() {
+            assert!(seq < 200, "b's sleeper never finished");
+            let st = call(&mut b_client, &to, scope::DESKTOP, seq, "status", json!({})).await;
+            assert!(st["value"].is_object(), "{st}");
+            seq += 1;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(!a_dir.join("late").exists(), "a's sleeper was killed with a's session");
+        assert_eq!(counts.gone.load(Ordering::Relaxed), 1, "and b's session was never ended");
+    };
+    tokio::select! {
+        _ = script => {}
+        e = serving.run(&mut host, &now_ms) => panic!("serving stopped: {e:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_caller_back_within_the_grace_keeps_its_calls() {
+    let desk = Desktop::new().await;
+    let a = desk.caller(45, &[scope::DESKTOP]);
+    desk.state.allow(&a.id()).unwrap();
+    let mut host = desk.client().await;
+    let store = tempfile::tempdir().unwrap();
+    let mut serving = desk.serving(store.path()).with_grace(Duration::from_secs(5));
+    let counts = serving.counts();
+    let mut a_client = a.connect(&desk.url, &desk.root).await;
+    let to = desk.recipient();
+    let a_dir = desk.workspace.join("sub/a");
+    let script = async {
+        let h = call(&mut a_client, &to, scope::DESKTOP, 0, "hello", json!({})).await;
+        if no_sandbox(&h) {
+            return;
+        }
+        sleeper(&mut a_client, &to, &a_dir, 2).await;
+        drop(a_client);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let mut a_client = a.connect(&desk.url, &desk.root).await;
+        let mut seq = 10;
+        while !a_dir.join("late").exists() {
+            assert!(seq < 200, "a's sleeper never finished");
+            call(&mut a_client, &to, scope::DESKTOP, seq, "status", json!({})).await;
+            seq += 1;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_eq!(counts.gone.load(Ordering::Relaxed), 0, "a came back in time");
     };
     tokio::select! {
         _ = script => {}

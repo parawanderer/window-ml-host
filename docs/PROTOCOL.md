@@ -45,9 +45,10 @@ the host answers each as it finishes, not in order. A message that is not an obj
   "memory": { "metric": "phys_footprint", "enforcer": "watchdog", "everyMs": 100 } }
 ```
 
-Over the hub (`docs/HUB.md`) `hello` adds `"transport": "hub"` and `"hub": { "roots": [...], "callers": 2, "revocationsAgeMs": 3600000 }`:
+Over the hub (`docs/HUB.md`) `hello` adds `"transport": "hub"` and `"hub": { "roots": [...], "callers": 2, "revocationsAgeMs": 3600000, "events": true }`:
 the roots the person at the machine granted (`hub-roots`), within which a `configure` may narrow, how many principals
-may call, and how old the account's revocation list is (`null` while there is none to go stale).
+may call, how old the account's revocation list is (`null` while there is none to go stale), and whether this caller
+is given its session events (`done`), which over the hub are published on a stream of its own rather than written.
 
 `memory.metric` names what a memory bound is measured on: `phys_footprint` on macOS (what Activity Monitor and Jetsam
 use), `rss_anon+rss_shmem+swap` on Linux. Never the address space.
@@ -297,6 +298,8 @@ into a session of its own is followed through its descendants, never through `ps
   until their deadlines, then exits. A new host sweeps dead hosts' ledgers too.
 - **A pid is never trusted alone.** A recorded group is killed only while its leader has the recorded start time, or the
   leader is gone and the group still has members (a group id is not reused while a member lives).
+- **Over the hub the owner is the caller.** Its presence gone for 30 s closes its session, as the port closing does
+  here, and only its calls meet their `onOwnerLoss`: each caller has its own table (`docs/HUB.md`).
 - The host owns what it spawned and nothing else.
 
 **The memory bound** is on physical footprint, summed over the call's group and descendants, sampled every 100 ms. Past
