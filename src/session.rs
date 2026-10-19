@@ -18,7 +18,9 @@ use crate::facts;
 use crate::framing::{self, FrameError, MAX_OUT};
 use crate::gitconfig;
 use crate::glob;
-use crate::runner::{self, Outcome, Prepared};
+use crate::owners::{self, Entry, Ledger};
+use crate::procs;
+use crate::runner::{self, Limits, Meter, Outcome, Prepared};
 use crate::sandbox::{self, Availability, Plan};
 use crate::store::{MAX_READ, Store};
 use crate::walk;
@@ -42,6 +44,16 @@ pub const MAX_TIMEOUT_MS: u64 = 3_600_000;
 /// The default and the ceiling of the bytes kept per stream.
 pub const DEFAULT_OUTPUT_CAP: u64 = 64 << 20;
 pub const MAX_OUTPUT_CAP: u64 = 1 << 30;
+/// The default memory bound of a call (its physical footprint, children included), the person's default ceiling, and
+/// the floor no bound goes below.
+pub const DEFAULT_MEMORY_BOUND: u64 = 4 << 30;
+pub const DEFAULT_MEMORY_MAX: u64 = 16 << 30;
+pub const MIN_MEMORY_BOUND: u64 = 16 << 20;
+/// The default and the ceiling of how long an orphan outlives its owner.
+pub const DEFAULT_ORPHAN_TIMEOUT_MS: u64 = 10 * 60_000;
+pub const MAX_ORPHAN_TIMEOUT_MS: u64 = 24 * 3_600_000;
+/// The most bytes of the `owner` a spawn names, as JSON.
+pub const MAX_OWNER_BYTES: usize = 1024;
 /// PATH directories added after the host's own when `configure` names none: where package managers put programs,
 /// which Chrome's launchd environment usually lacks.
 const EXTRA_PATH: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
@@ -62,6 +74,41 @@ struct Config {
     path: Vec<PathBuf>,
     timeout_ms: u64,
     output_cap: u64,
+    memory_bound: u64,
+    /// The person's ceiling: a call's `memoryBound` may be lowered or raised up to this.
+    memory_max: u64,
+    owner_loss: OwnerLoss,
+}
+
+/// What happens to a running call when the port closes (its owner is gone).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum OwnerLoss {
+    /// The default: the group is killed.
+    Kill,
+    /// Parked on the orphan list for this many milliseconds, then killed anyway.
+    Orphan(u64),
+}
+
+impl OwnerLoss {
+    fn parse(v: Option<&Value>, timeout: Option<u64>, default: OwnerLoss) -> Result<OwnerLoss, Fail> {
+        let ms = timeout.unwrap_or(DEFAULT_ORPHAN_TIMEOUT_MS).clamp(1, MAX_ORPHAN_TIMEOUT_MS);
+        match v.map(|v| v.as_str()) {
+            None => Ok(match (default, timeout) {
+                (OwnerLoss::Orphan(_), Some(_)) => OwnerLoss::Orphan(ms),
+                _ => default,
+            }),
+            Some(Some("kill")) => Ok(OwnerLoss::Kill),
+            Some(Some("orphan")) => Ok(OwnerLoss::Orphan(ms)),
+            Some(_) => fail("BadRequest", "onOwnerLoss is \"kill\" or \"orphan\""),
+        }
+    }
+
+    fn json(self) -> Value {
+        match self {
+            OwnerLoss::Kill => json!({ "policy": "kill" }),
+            OwnerLoss::Orphan(ms) => json!({ "policy": "orphan", "timeoutMs": ms }),
+        }
+    }
 }
 
 /// A spawned call waiting for its verdict.
@@ -75,15 +122,37 @@ struct Pending {
     sandboxed: bool,
     /// Secret-flagged paths the call names: the sandbox lets the call read exactly these.
     named_secrets: Vec<PathBuf>,
+    /// Who the call is for, as the extension named it (`{ session, run, step }`): opaque to the host.
+    owner: Value,
+    memory_bound: u64,
+    owner_loss: OwnerLoss,
     /// The config it was judged against (a reconfigure drops pending calls, so this is the current one).
     config: Config,
+}
+
+/// A running call: the owner table's row.
+struct Call {
+    entry: Entry,
+    cancel: Arc<Notify>,
+    meter: Arc<Meter>,
+    owner_loss: OwnerLoss,
 }
 
 struct State {
     config: Option<Config>,
     pending: HashMap<String, Pending>,
-    running: HashMap<String, (u32, Arc<Notify>)>,
+    running: HashMap<String, Call>,
     next_id: u64,
+    /// Whether this host's warden has been started (on the first call that runs).
+    warden: bool,
+    /// The port has closed: the ledger now holds only the orphans, and a call that still starts is killed at once.
+    closed: bool,
+}
+
+impl State {
+    fn entries(&self) -> Vec<Entry> {
+        self.running.values().map(|c| c.entry.clone()).collect()
+    }
 }
 
 /// Reads one variable of the host's own environment.
@@ -96,6 +165,11 @@ pub struct Host {
     pub store: Arc<Store>,
     /// The host's own environment, read for the scrubbed base and the default PATH.
     pub host_env: Box<HostEnv>,
+    /// The owner table's ledger directory ([`owners`]); `None` keeps the table in memory only.
+    pub owners_dir: Option<PathBuf>,
+    /// The program started as this host's warden (`wmlhost warden …`): it reaps the calls of a host that was killed
+    /// outright. `None` starts none.
+    pub warden: Option<PathBuf>,
 }
 
 impl Host {
@@ -106,6 +180,8 @@ impl Host {
             secrets: Box::new(NoSecrets),
             store: Arc::new(Store::create(&std::env::temp_dir())?),
             host_env: Box::new(|k| std::env::var(k).ok()),
+            owners_dir: Some(owners::default_dir(std::env::var("WMLHOST_STATE_DIR").ok())),
+            warden: std::env::current_exe().ok(),
         })
     }
 }
@@ -114,10 +190,11 @@ struct Session {
     host: Host,
     state: Mutex<State>,
     tx: mpsc::UnboundedSender<Value>,
+    ledger: Option<Ledger>,
 }
 
-/// Serves one session until the input ends or breaks the framing, then kills every running call and deletes the held
-/// output.
+/// Serves one session until the input ends or breaks the framing, then deals with every running call by its owner-loss
+/// policy (killed by default, else left on the orphan list until its deadline) and deletes the held output.
 pub async fn serve<R, W>(mut input: R, mut output: W, host: Host) -> Result<(), FrameError>
 where
     R: AsyncRead + Unpin,
@@ -138,10 +215,23 @@ where
             }
         }
     });
+    let ledger = host.owners_dir.as_deref().and_then(Ledger::open);
+    if let Some(dir) = &host.owners_dir {
+        // Calls a host killed outright left behind, whose warden did not get to them.
+        owners::sweep(dir, ledger.as_ref());
+    }
     let s = Arc::new(Session {
         host,
-        state: Mutex::new(State { config: None, pending: HashMap::new(), running: HashMap::new(), next_id: 1 }),
+        state: Mutex::new(State {
+            config: None,
+            pending: HashMap::new(),
+            running: HashMap::new(),
+            next_id: 1,
+            warden: false,
+            closed: false,
+        }),
         tx,
+        ledger,
     });
     let result = loop {
         match framing::read_frame(&mut input).await {
@@ -153,10 +243,7 @@ where
             Err(e) => break Err(e),
         }
     };
-    let running: Vec<u32> = s.state.lock().unwrap().running.values().map(|(pg, _)| *pg).collect();
-    for pg in running {
-        runner::kill_now(pg);
-    }
+    s.owner_lost();
     s.host.store.cleanup();
     drop(s);
     writer.abort();
@@ -164,6 +251,26 @@ where
 }
 
 impl Session {
+    /// The port closed: every running call is killed, or kept as an orphan with a deadline its warden enforces.
+    fn owner_lost(&self) {
+        let mut st = self.state.lock().unwrap();
+        st.closed = true;
+        let now = owners::now_ms();
+        let mut orphans = Vec::new();
+        for c in st.running.values() {
+            match c.owner_loss {
+                OwnerLoss::Kill => runner::kill_now(c.entry.pgid),
+                OwnerLoss::Orphan(ms) => orphans.push(Entry { deadline_ms: Some(now + ms), ..c.entry.clone() }),
+            }
+        }
+        if let Some(l) = &self.ledger {
+            l.write(&orphans);
+        } else {
+            // No ledger and no warden to keep the deadline: an orphan would outlive its owner unseen, so it goes too.
+            orphans.iter().for_each(|e| runner::kill_now(e.pgid));
+        }
+    }
+
     fn send(&self, v: Value) {
         let _ = self.tx.send(v);
     }
@@ -200,6 +307,7 @@ impl Session {
             "cancel" => self.cancel(args),
             "read" => self.read(args),
             "release" => self.release(args),
+            "status" => Ok(self.status()),
             other => fail("BadRequest", format!("unknown call {other:?}")),
         };
         match answer {
@@ -221,7 +329,32 @@ impl Session {
             "platform": std::env::consts::OS,
             "sandbox": sandbox,
             "modes": ["host"],
+            "owners": { "ledger": self.ledger.is_some() },
+            "memory": { "metric": procs::metric(), "enforcer": "watchdog", "everyMs": runner::WATCH_EVERY.as_millis() as u64 },
         })
+    }
+
+    /// The owner table: every running call with its owner and footprint, and the orphans other host processes left.
+    fn status(&self) -> Value {
+        let st = self.state.lock().unwrap();
+        let mut running: Vec<Value> = st
+            .running
+            .values()
+            .map(|c| {
+                json!({ "id": c.entry.id, "pid": c.entry.pgid, "owner": c.entry.owner,
+                        "startedMs": c.entry.started_ms, "memoryBound": c.entry.memory_bound,
+                        "footprint": c.meter.now.load(std::sync::atomic::Ordering::Relaxed),
+                        "peakFootprint": c.meter.peak.load(std::sync::atomic::Ordering::Relaxed),
+                        "onOwnerLoss": c.owner_loss.json() })
+            })
+            .collect();
+        running.sort_by(|a, b| a["startedMs"].as_u64().cmp(&b["startedMs"].as_u64()));
+        drop(st);
+        let orphans = match &self.host.owners_dir {
+            Some(dir) => owners::sweep(dir, self.ledger.as_ref()).orphans.iter().map(owners::orphan_json).collect(),
+            None => vec![],
+        };
+        json!({ "running": running, "orphans": orphans })
     }
 
     fn configure(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
@@ -250,11 +383,16 @@ impl Session {
         };
         let timeout_ms = opt_u64(a, "timeoutMs")?.unwrap_or(DEFAULT_TIMEOUT_MS).clamp(1, MAX_TIMEOUT_MS);
         let output_cap = opt_u64(a, "outputCap")?.unwrap_or(DEFAULT_OUTPUT_CAP).min(MAX_OUTPUT_CAP);
+        let memory_max = opt_u64(a, "memoryMax")?.unwrap_or(DEFAULT_MEMORY_MAX).max(MIN_MEMORY_BOUND);
+        let memory_bound =
+            opt_u64(a, "memoryBound")?.unwrap_or(DEFAULT_MEMORY_BOUND).clamp(MIN_MEMORY_BOUND, memory_max);
+        let owner_loss = OwnerLoss::parse(a.get("onOwnerLoss"), opt_u64(a, "orphanTimeoutMs")?, OwnerLoss::Kill)?;
         let sandboxed = sandbox && self.host.sandbox.available;
         let mut st = self.state.lock().unwrap();
         st.pending.clear();
-        st.config = Some(Config { roots, sandbox, path, timeout_ms, output_cap });
-        Ok(json!({ "roots": shown, "sandboxed": sandboxed }))
+        st.config = Some(Config { roots, sandbox, path, timeout_ms, output_cap, memory_bound, memory_max, owner_loss });
+        Ok(json!({ "roots": shown, "sandboxed": sandboxed, "memoryBound": memory_bound, "memoryMax": memory_max,
+                   "onOwnerLoss": owner_loss.json() }))
     }
 
     fn default_path(&self) -> Vec<PathBuf> {
@@ -316,6 +454,14 @@ impl Session {
         };
         let repo = gitconfig::inspect(&repo_dir);
         let timeout_ms = opt_u64(a, "timeoutMs")?.unwrap_or(config.timeout_ms).clamp(1, MAX_TIMEOUT_MS);
+        let memory_bound =
+            opt_u64(a, "memoryBound")?.unwrap_or(config.memory_bound).clamp(MIN_MEMORY_BOUND, config.memory_max);
+        let owner_loss = OwnerLoss::parse(a.get("onOwnerLoss"), opt_u64(a, "orphanTimeoutMs")?, config.owner_loss)?;
+        let owner = match a.get("owner") {
+            None => Value::Null,
+            Some(o @ Value::Object(_)) if o.to_string().len() <= MAX_OWNER_BYTES => o.clone(),
+            Some(_) => return fail("BadRequest", format!("owner is an object of at most {MAX_OWNER_BYTES} bytes")),
+        };
         let sandboxed = config.sandbox && self.host.sandbox.available;
         let named_secrets: Vec<PathBuf> = paths
             .iter()
@@ -346,11 +492,27 @@ impl Session {
             "mode": "host",
             "sandboxed": sandboxed,
             "placement": if sandboxed { "host-sandbox" } else { "host-plain" },
+            "memoryBound": memory_bound,
+            "onOwnerLoss": owner_loss.json(),
+            "owner": owner,
             "expiresInMs": PENDING_TTL.as_millis() as u64,
         });
         st.pending.insert(
             id,
-            Pending { created: Instant::now(), program, argv, cwd, env, timeout_ms, sandboxed, named_secrets, config },
+            Pending {
+                created: Instant::now(),
+                program,
+                argv,
+                cwd,
+                env,
+                timeout_ms,
+                sandboxed,
+                named_secrets,
+                owner,
+                memory_bound,
+                owner_loss,
+                config,
+            },
         );
         Ok(facts)
     }
@@ -409,9 +571,9 @@ impl Session {
         };
         let (running, _) = self.launch(id, &p, Stdio::null(), false)?;
         let pid = running.pid;
-        let cancel = self.register(id, pid);
+        let (cancel, meter) = self.register(id, pid, &p);
         self.send(json!({ "seq": seq, "value": { "id": id, "pid": pid } }));
-        self.supervise(id.to_string(), running, cancel, &p);
+        self.supervise(id.to_string(), running, cancel, meter, &p);
         Ok(())
     }
 
@@ -459,10 +621,11 @@ impl Session {
             return Err(f);
         }
         let pids: Vec<u32> = started.iter().map(|r| r.pid).collect();
-        let cancels: Vec<Arc<Notify>> = ids.iter().zip(&pids).map(|(id, pid)| self.register(id, *pid)).collect();
+        let handles: Vec<_> =
+            ids.iter().zip(&pids).zip(&stages).map(|((id, pid), p)| self.register(id, *pid, p)).collect();
         self.send(json!({ "seq": seq, "value": { "ids": ids, "pids": pids } }));
-        for (((id, r), cancel), p) in ids.into_iter().zip(started).zip(cancels).zip(&stages) {
-            self.supervise(id, r, cancel, p);
+        for (((id, r), (cancel, meter)), p) in ids.into_iter().zip(started).zip(handles).zip(&stages) {
+            self.supervise(id, r, cancel, meter, p);
         }
         Ok(())
     }
@@ -537,21 +700,67 @@ impl Session {
         Ok((running, next))
     }
 
-    /// Records a started call as running, and returns the handle `cancel` notifies.
-    fn register(&self, id: &str, pid: u32) -> Arc<Notify> {
+    /// Records a started call in the owner table (and its ledger), starts the warden with the first one, and returns the
+    /// handle `cancel` notifies and the call's footprint meter.
+    fn register(&self, id: &str, pid: u32, p: &Pending) -> (Arc<Notify>, Arc<Meter>) {
         let cancel = Arc::new(Notify::new());
-        self.state.lock().unwrap().running.insert(id.to_string(), (pid, cancel.clone()));
-        cancel
+        let meter = Arc::new(Meter::default());
+        let entry = Entry {
+            id: id.to_string(),
+            pgid: pid,
+            start: procs::start_time(pid),
+            owner: p.owner.clone(),
+            started_ms: owners::now_ms(),
+            deadline_ms: None,
+            memory_bound: p.memory_bound,
+        };
+        let mut st = self.state.lock().unwrap();
+        if st.closed {
+            runner::kill_now(pid);
+            return (cancel, meter);
+        }
+        st.running.insert(
+            id.to_string(),
+            Call { entry, cancel: cancel.clone(), meter: meter.clone(), owner_loss: p.owner_loss },
+        );
+        if let Some(l) = &self.ledger {
+            l.write(&st.entries());
+            if !st.warden {
+                st.warden = true;
+                if let Some(exe) = &self.host.warden {
+                    l.start_warden(exe);
+                }
+            }
+        }
+        (cancel, meter)
     }
 
     /// Sees a started call to its end in the background, then sends its `done`.
-    fn supervise(self: &Arc<Self>, id: String, running: runner::Running, cancel: Arc<Notify>, p: &Pending) {
+    fn supervise(
+        self: &Arc<Self>,
+        id: String,
+        running: runner::Running,
+        cancel: Arc<Notify>,
+        meter: Arc<Meter>,
+        p: &Pending,
+    ) {
         let s = self.clone();
         let store = self.host.store.clone();
-        let (timeout, cap, sandboxed) = (Duration::from_millis(p.timeout_ms), p.config.output_cap, p.sandboxed);
+        let limits = Limits {
+            timeout: Duration::from_millis(p.timeout_ms),
+            cap: p.config.output_cap,
+            memory_bound: p.memory_bound,
+        };
+        let sandboxed = p.sandboxed;
         tokio::spawn(async move {
-            let o = runner::finish(running, store.clone(), cancel, timeout, cap).await;
-            s.state.lock().unwrap().running.remove(&id);
+            let o = runner::finish(running, store.clone(), cancel, limits, meter).await;
+            {
+                let mut st = s.state.lock().unwrap();
+                st.running.remove(&id);
+                if let Some(l) = s.ledger.as_ref().filter(|_| !st.closed) {
+                    l.write(&st.entries());
+                }
+            }
             store.remove_call_tmp(&id);
             let done = done_event(&id, o, sandboxed, &store);
             s.send(done);
@@ -594,8 +803,8 @@ impl Session {
     fn cancel(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
         let id = req_str(a, "id")?;
         match self.state.lock().unwrap().running.get(id) {
-            Some((_, n)) => {
-                n.notify_one();
+            Some(c) => {
+                c.cancel.notify_one();
                 Ok(json!({ "signalled": true }))
             }
             None => fail("UnknownId", format!("no running call {id:?}")),
@@ -634,6 +843,7 @@ fn done_event(id: &str, o: Outcome, sandboxed: bool, store: &Store) -> Value {
         "code": o.code, "signal": o.signal,
         "ok": o.code == Some(0),
         "timedOut": o.timed_out, "cancelled": o.cancelled, "durationMs": o.duration_ms,
+        "killed": o.killed, "peakFootprint": o.peak_footprint, "memoryBound": o.memory_bound,
         "stdout": o.stdout.as_ref().map_or_else(|| json!({ "piped": true }), stream), "stderr": stream(&o.stderr),
     });
     if sandboxed && sandbox_refused(&o, store) {

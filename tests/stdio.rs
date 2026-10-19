@@ -11,6 +11,8 @@ use base64::Engine;
 use serde_json::{Value, json};
 
 struct Host {
+    /// The owner table's ledger directory, private to this test unless shared on purpose.
+    state: Option<tempfile::TempDir>,
     child: Child,
     stdin: Option<ChildStdin>,
     stdout: ChildStdout,
@@ -24,7 +26,17 @@ impl Host {
     }
 
     fn start_with_env(extra: &[(&str, &str)]) -> Host {
+        let state = tempfile::tempdir().unwrap();
+        let dir = state.path().join("owners");
+        let mut h = Host::start_in(&dir, extra);
+        h.state = Some(state);
+        h
+    }
+
+    /// A host whose owner table lives in `dir`, which another host may share.
+    fn start_in(dir: &Path, extra: &[(&str, &str)]) -> Host {
         let mut c = Command::new(env!("CARGO_BIN_EXE_wmlhost"));
+        c.env("WMLHOST_STATE_DIR", dir);
         c.arg("chrome-extension://abcdefghijklmnopabcdefghijklmnop/")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -35,7 +47,7 @@ impl Host {
         let mut child = c.spawn().expect("wmlhost starts");
         let stdin = child.stdin.take();
         let stdout = child.stdout.take().unwrap();
-        Host { child, stdin, stdout, seq: 0, events: vec![] }
+        Host { state: None, child, stdin, stdout, seq: 0, events: vec![] }
     }
 
     fn send(&mut self, v: &Value) {
@@ -970,5 +982,181 @@ fn a_sandboxed_pipeline_still_cannot_write_outside_the_roots() {
     assert!(!outside.join("pwned").exists(), "a write outside the roots got through a pipeline");
     assert_eq!(dones[2]["code"], 0, "{}", text(&h.read_all(&dones[2]["stderr"])));
     assert!(r.join("inside").exists(), "writes inside the roots still work");
+    h.close();
+}
+
+// --- owners: every call has one, and dies with it by default ---
+
+/// Waits up to `ms` for `p` to exist.
+fn appears(p: &Path, ms: u64) -> bool {
+    let end = std::time::Instant::now() + Duration::from_millis(ms);
+    while std::time::Instant::now() < end {
+        if p.exists() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    p.exists()
+}
+
+/// A call that writes `started` at once and `late` after `secs`, unless it is killed first.
+fn marker_call(h: &mut Host, r: &Path, secs: u32, extra: Value) -> String {
+    let mut args = json!({ "argv": ["sh", "-c", format!("touch started; sleep {secs}; touch late")], "cwd": r });
+    args.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+    let f = h.ok("spawn", args);
+    let id = f["id"].as_str().unwrap().to_string();
+    h.ok("start", json!({ "id": id }));
+    assert!(appears(&r.join("started"), 5000));
+    id
+}
+
+#[test]
+fn the_owner_is_echoed_in_the_facts_and_listed_while_the_call_runs() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    let c = h.ok("configure", json!({ "roots": [r] }));
+    assert_eq!(c["onOwnerLoss"], json!({ "policy": "kill" }), "{c}");
+    let owner = json!({ "session": "s1", "run": "r1", "step": 3 });
+    let f = h.ok("spawn", json!({ "argv": ["sleep", "30"], "cwd": r, "owner": owner }));
+    assert_eq!(f["owner"], owner);
+    let id = f["id"].as_str().unwrap().to_string();
+    h.ok("start", json!({ "id": id }));
+    let st = h.ok("status", json!({}));
+    let row = st["running"].as_array().unwrap().iter().find(|c| c["id"] == json!(id)).cloned().expect("listed");
+    assert_eq!(row["owner"], owner);
+    assert_eq!(row["onOwnerLoss"]["policy"], "kill");
+    h.ok("cancel", json!({ "id": id }));
+    h.done(&id);
+    assert_eq!(h.ok("status", json!({}))["running"], json!([]));
+    h.close();
+}
+
+#[test]
+fn an_owner_that_is_not_a_small_object_is_refused() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    for bad in [json!("r1"), json!({ "run": "x".repeat(2000) })] {
+        let e = h.call("spawn", json!({ "argv": ["true"], "cwd": r, "owner": bad })).unwrap_err();
+        assert_eq!(e.0, "BadRequest");
+    }
+    let e = h.call("spawn", json!({ "argv": ["true"], "cwd": r, "onOwnerLoss": "detach" })).unwrap_err();
+    assert_eq!(e.0, "BadRequest");
+    h.close();
+}
+
+#[test]
+fn a_sleeper_dies_with_its_port() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    marker_call(&mut h, &r, 2, json!({}));
+    h.close();
+    std::thread::sleep(Duration::from_millis(3000));
+    assert!(!r.join("late").exists(), "the call outlived its port");
+}
+
+#[test]
+fn a_host_killed_outright_still_takes_its_calls_with_it() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    marker_call(&mut h, &r, 2, json!({}));
+    // What Jetsam or the OOM killer does: no EOF, no cleanup; the host's warden is all that is left.
+    h.child.kill().unwrap();
+    h.child.wait().unwrap();
+    std::thread::sleep(Duration::from_millis(3000));
+    assert!(!r.join("late").exists(), "the call outlived its killed host");
+}
+
+#[test]
+fn an_orphan_outlives_its_port_is_listed_with_its_owner_and_dies_at_its_deadline() {
+    let (_d, r) = root();
+    let state = tempfile::tempdir().unwrap();
+    let dir = state.path().join("owners");
+    let mut h = Host::start_in(&dir, &[]);
+    h.ok("configure", json!({ "roots": [r] }));
+    let owner = json!({ "run": "r9" });
+    marker_call(&mut h, &r, 1, json!({ "owner": owner, "onOwnerLoss": "orphan", "orphanTimeoutMs": 60_000 }));
+    // A second call under the default policy dies with the port.
+    let r2 = r.join("k");
+    std::fs::create_dir(&r2).unwrap();
+    marker_call(&mut h, &r2, 1, json!({}));
+    h.close();
+
+    let mut next = Host::start_in(&dir, &[]);
+    let st = next.ok("status", json!({}));
+    let orphans = st["orphans"].as_array().unwrap();
+    assert_eq!(orphans.len(), 1, "{st}");
+    assert_eq!(orphans[0]["owner"], owner);
+    assert!(orphans[0]["deadlineMs"].as_u64().is_some());
+    assert!(appears(&r.join("late"), 5000), "the orphan was killed before its deadline");
+    std::thread::sleep(Duration::from_millis(1500));
+    assert!(!r2.join("late").exists(), "the default policy kills");
+    next.close();
+
+    // A short deadline: the warden kills it once it passes.
+    let mut h = Host::start_in(&dir, &[]);
+    h.ok("configure", json!({ "roots": [r] }));
+    std::fs::remove_file(r.join("late")).unwrap();
+    marker_call(&mut h, &r, 3, json!({ "onOwnerLoss": "orphan", "orphanTimeoutMs": 500 }));
+    h.close();
+    std::thread::sleep(Duration::from_millis(4000));
+    assert!(!r.join("late").exists(), "the orphan outlived its deadline");
+}
+
+// --- the memory bound: physical footprint, enforced by the host ---
+
+/// Allocates and touches 16 MiB every 20 ms until `total` MiB, then sleeps a little and exits 0.
+fn allocator(total_mib: u32) -> Vec<String> {
+    let py = format!(
+        "import time\na=[]\nfor _ in range({}):\n    a.append(bytearray(b'x'*(16<<20)))\n    time.sleep(0.02)\ntime.sleep(0.3)",
+        total_mib / 16
+    );
+    vec!["python3".into(), "-c".into(), py]
+}
+
+#[test]
+fn a_call_past_its_memory_bound_is_killed_and_done_says_so() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.sandbox_available();
+    let c = h.ok("configure", json!({ "roots": [r] }));
+    assert!(c["memoryBound"].as_u64().unwrap() >= 1 << 30, "{c}");
+    let bound: u64 = 128 << 20;
+    let (f, d) = h.run(json!({ "argv": allocator(1024), "cwd": r, "memoryBound": bound }));
+    assert_eq!(f["memoryBound"], bound);
+    assert_eq!(d["killed"], "oom", "{d}");
+    assert_eq!(d["ok"], false);
+    assert_eq!(d["signal"], "SIGKILL");
+    assert_eq!(d["memoryBound"], bound);
+    let peak = d["peakFootprint"].as_u64().unwrap();
+    assert!(peak > bound && peak < 768 << 20, "killed soon after the bound: {peak}");
+    h.close();
+}
+
+#[test]
+fn a_call_under_its_bound_runs_and_reports_its_peak() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let (_, d) = h.run(json!({ "argv": allocator(64), "cwd": r, "memoryBound": 512u64 << 20 }));
+    assert_eq!(d["ok"], true, "{d}");
+    assert_eq!(d["killed"], Value::Null);
+    assert!(d["peakFootprint"].as_u64().unwrap() >= 48 << 20, "{d}");
+    h.close();
+}
+
+#[test]
+fn a_bound_is_clamped_to_the_persons_ceiling_and_a_floor() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r], "memoryMax": 1u64 << 30, "memoryBound": 256u64 << 20 }));
+    let f = h.ok("spawn", json!({ "argv": ["true"], "cwd": r, "memoryBound": 8u64 << 30 }));
+    assert_eq!(f["memoryBound"], 1u64 << 30, "a call cannot raise past the ceiling");
+    let f = h.ok("spawn", json!({ "argv": ["true"], "cwd": r, "memoryBound": 1 }));
+    assert_eq!(f["memoryBound"], 16u64 << 20);
+    let f = h.ok("spawn", json!({ "argv": ["true"], "cwd": r }));
+    assert_eq!(f["memoryBound"], 256u64 << 20);
     h.close();
 }

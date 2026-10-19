@@ -11,6 +11,8 @@ pub mod glob;
 pub mod hub;
 pub mod install;
 pub mod manifest;
+pub mod owners;
+pub mod procs;
 pub mod runner;
 pub mod sandbox;
 pub mod session;

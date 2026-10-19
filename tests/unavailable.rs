@@ -20,6 +20,8 @@ async fn an_unavailable_sandbox_is_reported_and_nothing_runs_without_start() {
         secrets: Box::new(NoSecrets),
         store: Arc::new(Store::create(base.path()).unwrap()),
         host_env: Box::new(|k| std::env::var(k).ok()),
+        owners_dir: None,
+        warden: None,
     };
     let (mut ours, theirs) = tokio::io::duplex(1 << 20);
     let (rd, wr) = tokio::io::split(theirs);
