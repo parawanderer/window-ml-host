@@ -294,8 +294,9 @@ pub(crate) const PROTECTED_TOP: &[&str] = &[
 /// Names under `.git` that are never writable.
 pub(crate) const PROTECTED_GIT: &[&str] = &["hooks", "config"];
 
-/// Every protected name of a root, relative to it: `PROTECTED_GIT` under `.git`, then `PROTECTED_TOP`.
-fn protected_rels() -> impl Iterator<Item = String> {
+/// Every protected name of a root, relative to it: `PROTECTED_GIT` under `.git`, then `PROTECTED_TOP`. Public so the
+/// integration tests enumerate the same list the sandbox binds.
+pub fn protected_rels() -> impl Iterator<Item = String> {
     PROTECTED_GIT.iter().map(|n| format!(".git/{n}")).chain(PROTECTED_TOP.iter().map(|n| n.to_string()))
 }
 
