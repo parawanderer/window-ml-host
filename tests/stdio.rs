@@ -715,6 +715,78 @@ fn a_programs_fingerprint_is_stable_and_changes_when_the_file_does() {
     h.close();
 }
 
+// --- pins: an interpreted script's entrypoint, hashed (PROGRAM_MANIFEST.md, "Interpreted script tools") ---
+
+fn sha256_hex(b: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(b))
+}
+
+#[test]
+fn a_hashed_argument_names_the_given_and_resolved_file_and_hashes_the_one_after_symlinks() {
+    let (_d, r) = root();
+    std::fs::create_dir(r.join("scripts")).unwrap();
+    let body = b"touch ran\n";
+    std::fs::write(r.join("scripts/real.sh"), body).unwrap();
+    std::os::unix::fs::symlink("real.sh", r.join("scripts/link.sh")).unwrap();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let fact = |h: &mut Host, cwd: &Path, given: &str| {
+        let f = h.ok("spawn", json!({ "argv": ["sh", given], "cwd": cwd, "pathArgs": [{ "arg": 1, "hash": true }] }));
+        h.ok("discard", json!({ "id": f["id"] }));
+        f["paths"][0].clone()
+    };
+    let p = fact(&mut h, &r, "scripts/link.sh");
+    assert_eq!(p["given"], "scripts/link.sh");
+    assert_eq!(p["path"], json!(r.join("scripts/real.sh")), "the file after symlinks: {p}");
+    assert_eq!(p["sha256"], json!(sha256_hex(body)));
+    // a relative entrypoint resolves against the call's cwd
+    let q = fact(&mut h, &r.join("scripts"), "link.sh");
+    assert_eq!((&q["path"], &q["sha256"]), (&p["path"], &p["sha256"]), "{q}");
+    // without `hash` there is no hash; a directory or a file past the cap has none to match
+    let f = h.ok("spawn", json!({ "argv": ["sh", "scripts/real.sh"], "cwd": r, "pathArgs": [{ "arg": 1 }] }));
+    assert!(f["paths"][0].get("sha256").is_none(), "{f}");
+    assert_eq!(fact(&mut h, &r, "scripts")["sha256"], Value::Null);
+    std::fs::File::create(r.join("big")).unwrap().set_len((16 << 20) + 1).unwrap();
+    assert_eq!(fact(&mut h, &r, "big")["sha256"], Value::Null);
+    let bad = h.call("spawn", json!({ "argv": ["sh", "x"], "cwd": r, "pathArgs": [{ "arg": 1, "hash": "yes" }] }));
+    assert_eq!(bad.unwrap_err().0, "BadRequest");
+    h.close();
+}
+
+#[test]
+fn an_unchanged_pinned_script_runs() {
+    let (_d, r) = root();
+    std::fs::write(r.join("tool.sh"), "touch ran\n").unwrap();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let (_, d) = h.run(json!({ "argv": ["sh", "tool.sh"], "cwd": r, "pathArgs": [{ "arg": 1, "hash": true }] }));
+    assert_eq!(d["ok"], true, "{d}");
+    assert!(r.join("ran").exists());
+    h.close();
+}
+
+#[test]
+fn a_script_changed_between_its_facts_and_start_is_refused_and_never_runs() {
+    let (_d, r) = root();
+    std::fs::write(r.join("tool.sh"), "touch ran\n").unwrap();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let pinned = json!({ "argv": ["sh", "tool.sh"], "cwd": r, "pathArgs": [{ "arg": 1, "hash": true }] });
+    let f = h.ok("spawn", pinned.clone());
+    std::fs::write(r.join("tool.sh"), "touch ran; touch evil\n").unwrap();
+    assert_eq!(h.call("start", json!({ "id": f["id"] })).unwrap_err().0, "PinChanged");
+    assert_eq!(h.call("start", json!({ "id": f["id"] })).unwrap_err().0, "UnknownId", "the refused call is gone");
+    // a pipeline with a changed stage starts none of its stages' work
+    let f = h.ok("spawn", pinned);
+    let tail = h.ok("spawn", json!({ "argv": ["cat"], "cwd": r }));
+    std::fs::write(r.join("tool.sh"), "touch ran\n").unwrap();
+    assert_eq!(h.call("pipe", json!({ "ids": [f["id"], tail["id"]] })).unwrap_err().0, "PinChanged");
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!r.join("ran").exists() && !r.join("evil").exists());
+    h.close();
+}
+
 // --- glob: expansion within the roots ---
 
 fn glob(h: &mut Host, cwd: &Path, pattern: &str) -> Value {
