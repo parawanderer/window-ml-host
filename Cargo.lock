@@ -1373,6 +1373,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "wmlhub-client",
+ "wmlhub-connector",
  "wmlhub-keys",
  "wmlhub-proto",
  "wmlhub-seal",
@@ -1397,6 +1398,7 @@ dependencies = [
 name = "wmlhost-hub-tests"
 version = "0.0.0"
 dependencies = [
+ "serde_json",
  "tempfile",
  "tokio",
  "window-ml-host",
@@ -1426,6 +1428,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "wmlhub-box"
+version = "0.4.3"
+source = "git+https://github.com/parawanderer/window-ml-hub?tag=v0.4.3#5151a1b874538596507979ed124684e3e21b163c"
+dependencies = [
+ "prost-build",
+ "protox",
+]
+
+[[package]]
 name = "wmlhub-client"
 version = "0.4.3"
 source = "git+https://github.com/parawanderer/window-ml-hub?tag=v0.4.3#5151a1b874538596507979ed124684e3e21b163c"
@@ -1433,6 +1444,24 @@ dependencies = [
  "futures-util",
  "tokio",
  "tokio-tungstenite",
+ "wmlhub-keys",
+ "wmlhub-proto",
+ "wmlhub-seal",
+]
+
+[[package]]
+name = "wmlhub-connector"
+version = "0.4.3"
+source = "git+https://github.com/parawanderer/window-ml-hub?tag=v0.4.3#5151a1b874538596507979ed124684e3e21b163c"
+dependencies = [
+ "clap",
+ "getrandom",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "wmlhub-box",
+ "wmlhub-client",
+ "wmlhub-frame",
  "wmlhub-keys",
  "wmlhub-proto",
  "wmlhub-seal",

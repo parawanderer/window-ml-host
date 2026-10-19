@@ -86,6 +86,20 @@ jobs:
       - name: Toolchain
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      # The end-to-end tests run a program over the hub, which runs only sandboxed: the same bubblewrap as `rust`.
+      - name: Install bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - name: Let bubblewrap create user namespaces
+        run: |
+          sudo tee /etc/apparmor.d/bwrap >/dev/null <<'PROFILE'
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile bwrap /usr/bin/bwrap flags=(unconfined) {
+            userns,
+          }
+          PROFILE
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap
+          bwrap --ro-bind / / --unshare-net --unshare-pid --dev /dev --proc /proc /bin/true
       - name: Check with the hub feature
         run: cargo check --locked --features hub --all-targets
       - name: Clippy, hub feature and its end-to-end tests
@@ -94,3 +108,5 @@ jobs:
         run: "cargo test --locked --features hub --lib hub::"
       - name: Hub end-to-end tests (an in-process hub)
         run: cargo test --locked -p wmlhost-hub-tests
+        env:
+          WMLHOST_REQUIRE_SANDBOX: "1"

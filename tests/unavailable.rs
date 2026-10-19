@@ -22,6 +22,7 @@ async fn an_unavailable_sandbox_is_reported_and_nothing_runs_without_start() {
         host_env: Box::new(|k| std::env::var(k).ok()),
         owners_dir: None,
         warden: None,
+        transport: Default::default(),
     };
     let (mut ours, theirs) = tokio::io::duplex(1 << 20);
     let (rd, wr) = tokio::io::split(theirs);

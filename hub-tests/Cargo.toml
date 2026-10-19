@@ -18,6 +18,7 @@ wmlhub-proto = { git = "https://github.com/parawanderer/window-ml-hub", tag = "v
 wmlhub-seal = { git = "https://github.com/parawanderer/window-ml-hub", tag = "v0.4.3" }
 tokio = { version = "1.53.3", features = ["macros", "net", "rt-multi-thread", "time"] }
 tempfile = "3.27.0"
+serde_json = "1.0.154"
 
 [lints.rust]
 unsafe_code = "forbid"

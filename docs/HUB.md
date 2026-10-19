@@ -14,9 +14,9 @@ learns nothing about shells or processes beyond relaying sealed bytes.
 
 | Slice | What | State |
 | --- | --- | --- |
-| H1 | identity: keys, pairing as a runtime, the local roots and callers files, `wmlhost hub …` | this |
-| H2 | serving: one session per caller over the same engine as native messaging; scope, revocation, callers | next |
-| H3 | `done` and the other session events published on the host's channel; a caller's session ending | after |
+| H1 | identity: keys, pairing as a runtime, the local roots and callers files, `wmlhost hub …` | done |
+| H2 | serving: one session per caller over the same engine as native messaging; scope, revocation, callers | this |
+| H3 | `done` and the other session events published on the host's channel; a caller's session ending | next |
 
 ## Pairing
 
@@ -48,9 +48,39 @@ A line in either file that is not what the host wrote (a relative path, a missin
 error naming the file and line, never skipped. `wmlhost hub status` prints the principal, the account, the
 certificate's lifetime, the roots and the callers.
 
-## The order of checks on a call (H2)
+## Serving
+
+```
+wmlhost hub serve --hub wss://hub.example --hub-name hub.example
+```
+
+logs in as the paired `Runtime` and answers until the connection ends (a service manager restarts it). Each command's
+body is one call of `docs/PROTOCOL.md` (`{ "seq", "call", "args" }`), and its answer, with the caller's own `seq`, is
+sealed back as the command's result. Each caller gets a session of its own, over the same engine as native messaging,
+so one caller's pending calls, held output and `configure` are invisible to another. Each also has its own owner
+table (`owners/<principal>` in the state directory): the native one's `status` would show a remote caller the orphans,
+and their owners, of the person's own sessions. What a session says unprompted
+(`done`) is H3's; this slice drops it, so a caller learns a call ended through `status` or `read`.
+
+### The order of checks on a call
 
 The seal opens first, in its own order (window-ml-hub `crates/seal`: size, HPKE, chain to the root with leaf ==
-sender, signature, scope held, from/to/clock, nonce). Then the host: the declared scope is `desktop`, the sender is
-not revoked, the sender is in `hub-callers`, and only then is the body routed. A refusal at any step is sealed back
-and spawns nothing.
+sender, signature, scope held, from/to/clock, nonce). A command that does not open is answered with nothing: nothing
+about its sender is verified. Then the host, each refusal sealed back as `Refused` with a `reason` and spawning nothing:
+
+1. the command is asked under `desktop` (`scope`);
+2. the account's revocation list does not name the sender (`revoked`), and the list is fresh (`stale`). This is
+   wmlbox's logic, used as a crate rather than copied (`wmlhub_connector::revoked`): the host follows every principal
+   it sees holding `may_revoke`, applies their lists, and writes them to `revocations` and `revokers` in the state
+   directory, so a restart still refuses. Once a revoker has been seen, a list more than seven days old refuses
+   everyone, as a box connector stops granting its key: a hub that withholds the list causes an outage, not a bypass;
+3. the sender is in `hub-callers` (`notACaller`), read again on every call, so `wmlhost hub disallow` holds at once.
+
+Only then is the body routed. A body that is not a call is `BadRequest` with `seq: null`, and reaches no session.
+
+### What a caller cannot change
+
+`configure` over the hub may only narrow: every root within `hub-roots` (else `BadRequest` naming it; no file is
+`NotConfigured`), the sandbox on (`sandbox: false` is `BadRequest`), and a machine with no working sandbox refuses
+every `configure` with `SandboxFailed`. Plain host mode is the person's choice at their own machine, never a remote
+caller's.
