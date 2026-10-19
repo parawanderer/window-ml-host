@@ -1521,9 +1521,32 @@ fn an_orphan_outlives_its_port_is_listed_with_its_owner_and_dies_at_its_deadline
     // started, and the port closes while the sandbox is still coming up.
     std::fs::remove_file(r.join("started")).unwrap();
     marker_call(&mut h, &r, 3, json!({ "onOwnerLoss": "orphan", "orphanTimeoutMs": 500 }));
+    let t = std::time::Instant::now();
     h.close();
+    let closed_in = t.elapsed();
+    let ledgers = |d: &Path| -> Vec<(String, String)> {
+        std::fs::read_dir(d).map_or(vec![], |rd| {
+            rd.flatten()
+                .map(|e| {
+                    (
+                        e.file_name().to_string_lossy().into_owned(),
+                        std::fs::read_to_string(e.path()).unwrap_or_default(),
+                    )
+                })
+                .collect()
+        })
+    };
+    let at_close = ledgers(&dir);
     std::thread::sleep(Duration::from_millis(4000));
-    assert!(!r.join("late").exists(), "the orphan outlived its deadline");
+    if r.join("late").exists() {
+        let ps = Command::new("ps").args(["-eo", "pid,ppid,pgid,sid,etime,args"]).output().map(|o| text(&o.stdout));
+        panic!(
+            "the orphan outlived its deadline\nhost exited {closed_in:?} after the port closed\nledgers at close: \
+             {at_close:#?}\nledgers now: {:#?}\nps:\n{}",
+            ledgers(&dir),
+            ps.unwrap_or_default()
+        );
+    }
 }
 
 // --- the memory bound: physical footprint, enforced by the host ---
