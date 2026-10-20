@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::{ExitStatus, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rustix::process::{Pid, Signal};
@@ -31,6 +31,9 @@ pub const WATCH_EVERY: Duration = Duration::from_millis(100);
 pub struct Meter {
     pub now: AtomicU64,
     pub peak: AtomicU64,
+    /// The call's members at the last sample, each with its start time ([`follow`]): what a kill reaches besides the
+    /// group, once a descendant that left it has been reparented away from the call.
+    tracked: Mutex<Vec<(u32, u64)>>,
 }
 
 impl Meter {
@@ -38,6 +41,19 @@ impl Meter {
         self.now.store(bytes, Ordering::Relaxed);
         self.peak.fetch_max(bytes, Ordering::Relaxed);
     }
+
+    /// The members seen at the last sample, with their start times.
+    pub fn tracked(&self) -> Vec<(u32, u64)> {
+        self.tracked.lock().unwrap().clone()
+    }
+}
+
+/// A call's members now, each with its start time: its group, the processes in `known` that are still the processes
+/// recorded there (same start time), and every descendant of either. Followed over the call's life, this keeps a
+/// descendant that left the group (`setsid`, bubblewrap's `--new-session`) after its parent exits and it is reparented.
+pub fn follow(pgid: u32, known: &[(u32, u64)]) -> Vec<(u32, u64)> {
+    let alive: Vec<u32> = known.iter().filter(|(p, t)| procs::start_time(*p) == Some(*t)).map(|(p, _)| *p).collect();
+    procs::members_with(pgid, &alive).into_iter().filter_map(|p| procs::start_time(p).map(|t| (p, t))).collect()
 }
 
 /// What a call is held to while it runs.
@@ -127,11 +143,13 @@ fn signal_group(pgid: u32, sig: Signal) {
 /// there to kill. The members are read BEFORE anything is signalled: once the group's leader dies its children are
 /// reparented, and a descendant in a session of its own (bubblewrap's `--new-session`) could no longer be found.
 ///
+/// `known` are members seen earlier ([`Meter::tracked`]): a descendant whose parent already exited is found only
+/// through them.
+///
 /// A pid is never trusted alone: each member is recorded with its start time, and is signalled only while that is
 /// still its start time, so a member that exits after the read and whose pid is reused is not the one killed.
-fn kill_tree(pgid: u32) -> bool {
-    let members: Vec<(u32, u64)> =
-        procs::members(pgid).into_iter().filter_map(|p| procs::start_time(p).map(|t| (p, t))).collect();
+fn kill_tree(pgid: u32, known: &[(u32, u64)]) -> bool {
+    let members = follow(pgid, known);
     signal_group(pgid, Signal::KILL);
     for &(p, started) in &members {
         kill_if_same(p, started);
@@ -156,7 +174,9 @@ async fn watchdog(pgid: u32, bound: u64, meter: Arc<Meter>) {
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         tick.tick().await;
-        let (bytes, _) = procs::call_footprint(pgid);
+        let members = follow(pgid, &meter.tracked());
+        let bytes = members.iter().filter_map(|(p, _)| procs::footprint(*p)).sum();
+        *meter.tracked.lock().unwrap() = members;
         meter.record(bytes);
         if bytes > bound {
             return;
@@ -187,12 +207,13 @@ pub async fn finish(
     let status: Option<ExitStatus> = tokio::select! {
         s = r.child.wait() => s.ok(),
         // No grace past the bound: the machine is the one short of memory.
-        _ = watchdog(pgid, memory_bound, meter.clone()) => { killed = Some("oom"); kill_tree(pgid); r.child.wait().await.ok() }
+        _ = watchdog(pgid, memory_bound, meter.clone()) => { killed = Some("oom"); kill_tree(pgid, &meter.tracked()); r.child.wait().await.ok() }
         _ = tokio::time::sleep(timeout) => { timed_out = true; terminate(&mut r.child, pgid).await }
         _ = cancel.notified() => { cancelled = true; terminate(&mut r.child, pgid).await }
     };
-    // The call is over: anything it left running in its group (holding the pipes open, or just lingering) goes too.
-    kill_tree(pgid);
+    // The call is over: anything it left running in its group (holding the pipes open, or just lingering) goes too, and
+    // what left the group: a descendant in a session of its own, found through the members the watchdog last saw.
+    kill_tree(pgid, &meter.tracked());
     let join = |t: tokio::task::JoinHandle<Captured>| async move {
         match tokio::time::timeout(DRAIN_GRACE, t).await {
             Ok(Ok(c)) => c,
@@ -234,12 +255,13 @@ async fn terminate(child: &mut Child, pgid: u32) -> Option<ExitStatus> {
 
 /// Kills a running call's whole group, and what it started outside it, at once (the session is ending).
 pub fn kill_now(pgid: u32) {
-    kill_tree(pgid);
+    kill_tree(pgid, &[]);
 }
 
-/// [`kill_now`], saying whether the call had anything left to kill.
-pub fn kill_call(pgid: u32) -> bool {
-    kill_tree(pgid)
+/// [`kill_now`] for a call whose members were seen earlier (`known`, [`Meter::tracked`] or a ledger's record), saying
+/// whether it had anything left to kill.
+pub fn kill_call(pgid: u32, known: &[(u32, u64)]) -> bool {
+    kill_tree(pgid, known)
 }
 
 /// Kills a call that was started but will never be supervised (a later stage of its pipeline failed to start), and
@@ -285,5 +307,61 @@ mod tests {
         assert!(kill_if_same(pid, started));
         let status = child.wait().unwrap();
         assert!(!status.success(), "killed, not exited");
+    }
+
+    // --- a call's tree is followed while it runs, so a descendant that left its group dies with the call ---
+
+    /// Starts `sh -c <script>` as a call; `script` may name `$PIDFILE`, where a moved descendant writes its pid.
+    fn run_call(script: &str, pidfile: &std::path::Path) -> (Running, Arc<Store>, tempfile::TempDir) {
+        let base = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::create(base.path()).unwrap());
+        let env = BTreeMap::from([
+            ("PIDFILE".to_string(), pidfile.to_string_lossy().into_owned()),
+            ("PATH".to_string(), "/usr/bin:/bin".to_string()),
+        ]);
+        let p = Prepared {
+            program: "/bin/sh".into(),
+            args: vec!["-c".into(), script.into()],
+            argv0: None,
+            cwd: base.path().into(),
+            env,
+        };
+        (spawn(p, Stdio::null()).unwrap(), store, base)
+    }
+
+    /// The pid a moved descendant wrote, once it has.
+    fn moved_pid(pidfile: &std::path::Path) -> u32 {
+        let end = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(p) = std::fs::read_to_string(pidfile).ok().and_then(|s| s.trim().parse().ok()) {
+                return p;
+            }
+            assert!(Instant::now() < end, "the descendant never started");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// Whether `pid` is gone within a few seconds (a SIGKILL is delivered, not instant).
+    fn gone(pid: u32) -> bool {
+        let end = Instant::now() + Duration::from_secs(3);
+        while procs::start_time(pid).is_some() && Instant::now() < end {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        procs::start_time(pid).is_none()
+    }
+
+    /// A descendant in a session of its own whose parent exits: it is reparented out of the call's group and tree.
+    const SETSID_THEN_LEADER_EXITS: &str = "perl -e 'use POSIX; POSIX::setsid(); open(F, \">$ENV{PIDFILE}\"); print F $$; close F; open(STDOUT, \">/dev/null\"); open(STDERR, \">/dev/null\"); sleep 30' & sleep 1";
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_descendant_that_left_the_group_dies_when_the_call_ends_by_itself() {
+        let d = tempfile::tempdir().unwrap();
+        let pidfile = d.path().join("pid");
+        let (r, store, _base) = run_call(SETSID_THEN_LEADER_EXITS, &pidfile);
+        let limits = Limits { timeout: Duration::from_secs(20), cap: 1 << 16, memory_bound: u64::MAX };
+        let o = finish(r, store, Arc::new(Notify::new()), limits, Arc::new(Meter::default())).await;
+        assert_eq!(o.code, Some(0), "the leader exited by itself");
+        let moved = moved_pid(&pidfile);
+        assert!(gone(moved), "the descendant in its own session outlived its call");
     }
 }

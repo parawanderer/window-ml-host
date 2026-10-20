@@ -284,15 +284,23 @@ impl Session {
         let mut orphans = Vec::new();
         for c in st.running.values() {
             match c.owner_loss {
-                OwnerLoss::Kill => runner::kill_now(c.entry.pgid),
-                OwnerLoss::Orphan(ms) => orphans.push(Entry { deadline_ms: Some(now + ms), ..c.entry.clone() }),
+                OwnerLoss::Kill => {
+                    runner::kill_call(c.entry.pgid, &c.meter.tracked());
+                }
+                // The members the watchdog last saw go into the ledger, so the warden still finds a descendant that
+                // left the group once its parent has exited.
+                OwnerLoss::Orphan(ms) => {
+                    orphans.push(Entry { deadline_ms: Some(now + ms), members: c.meter.tracked(), ..c.entry.clone() })
+                }
             }
         }
         if let Some(l) = &self.ledger {
             l.write(&orphans);
         } else {
             // No ledger and no warden to keep the deadline: an orphan would outlive its owner unseen, so it goes too.
-            orphans.iter().for_each(|e| runner::kill_now(e.pgid));
+            orphans.iter().for_each(|e| {
+                runner::kill_call(e.pgid, &e.members);
+            });
         }
     }
 
@@ -826,6 +834,7 @@ impl Session {
             deadline_ms: None,
             memory_bound: p.memory_bound,
             protected: Some(protected.clone()),
+            members: Vec::new(),
         };
         let mut st = self.state.lock().unwrap();
         if st.closed {
