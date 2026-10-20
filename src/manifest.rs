@@ -100,6 +100,67 @@ pub enum ProgramEffect {
     Network(Network),
 }
 
+impl ProgramEffect {
+    /// One value of each term and of each network direction, absent included: the inventory the vector test
+    /// (`tests/manifest_vectors.rs`) holds to the recorded calls. Held to the enum by [`ProgramEffect::slot`]: a new
+    /// variant does not build until it has a slot here.
+    pub const ALL: [ProgramEffect; 9] = [
+        ProgramEffect::Read,
+        ProgramEffect::Write,
+        ProgramEffect::WriteNames,
+        ProgramEffect::RunsCode,
+        ProgramEffect::Unknown,
+        ProgramEffect::Network(Network { direction: None }),
+        ProgramEffect::Network(Network { direction: Some(Direction::Both) }),
+        ProgramEffect::Network(Network { direction: Some(Direction::Read) }),
+        ProgramEffect::Network(Network { direction: Some(Direction::Write) }),
+    ];
+
+    /// Where this term sits in [`ProgramEffect::ALL`]. The `match` is exhaustive, so a new variant (or direction) does
+    /// not build until it has an arm; each arm indexes `ALL` at its own slot, and a slot `ALL` does not have is an
+    /// out-of-bounds index into a constant, which does not build either (`unconditional_panic`, deny by default).
+    pub const fn slot(&self) -> usize {
+        match self {
+            ProgramEffect::Read => {
+                let _ = &Self::ALL[0];
+                0
+            }
+            ProgramEffect::Write => {
+                let _ = &Self::ALL[1];
+                1
+            }
+            ProgramEffect::WriteNames => {
+                let _ = &Self::ALL[2];
+                2
+            }
+            ProgramEffect::RunsCode => {
+                let _ = &Self::ALL[3];
+                3
+            }
+            ProgramEffect::Unknown => {
+                let _ = &Self::ALL[4];
+                4
+            }
+            ProgramEffect::Network(Network { direction: None }) => {
+                let _ = &Self::ALL[5];
+                5
+            }
+            ProgramEffect::Network(Network { direction: Some(Direction::Both) }) => {
+                let _ = &Self::ALL[6];
+                6
+            }
+            ProgramEffect::Network(Network { direction: Some(Direction::Read) }) => {
+                let _ = &Self::ALL[7];
+                7
+            }
+            ProgramEffect::Network(Network { direction: Some(Direction::Write) }) => {
+                let _ = &Self::ALL[8];
+                8
+            }
+        }
+    }
+}
+
 /// The body of a `{ "network": ... }` term.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]

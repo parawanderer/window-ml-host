@@ -105,24 +105,9 @@ fn recorded_effects() -> Vec<Option<Vec<String>>> {
     out
 }
 
-/// One value of each effect term and network direction. The match below is exhaustive, so a new variant does not
-/// compile until it is listed here and given a key.
-fn every_term() -> Vec<ProgramEffect> {
-    let net = |direction| ProgramEffect::Network(Network { direction });
-    vec![
-        ProgramEffect::Read,
-        ProgramEffect::Write,
-        ProgramEffect::WriteNames,
-        ProgramEffect::RunsCode,
-        ProgramEffect::Unknown,
-        net(None),
-        net(Some(Direction::Both)),
-        net(Some(Direction::Read)),
-        net(Some(Direction::Write)),
-    ]
-}
-
-/// Whether a recorded call's effects show `term` was read: `None` is the top element.
+/// Whether a recorded call's effects show `term` was read: `None` is the top element. Exhaustive, so a new
+/// `ProgramEffect` variant does not build until it has a key here, as it does not build until it has a slot in
+/// `ProgramEffect::ALL` (`ProgramEffect::slot`).
 fn shows(term: &ProgramEffect, effects: &Option<Vec<String>>) -> bool {
     let Some(keys) = effects else { return *term == ProgramEffect::Unknown };
     let has = |prefix: &str| keys.iter().any(|k| k.starts_with(prefix));
@@ -141,12 +126,19 @@ fn shows(term: &ProgramEffect, effects: &Option<Vec<String>>) -> bool {
 }
 
 #[test]
+fn every_term_sits_in_its_own_slot_of_the_inventory() {
+    for (i, term) in ProgramEffect::ALL.iter().enumerate() {
+        assert_eq!(term.slot(), i, "{term:?}");
+    }
+}
+
+#[test]
 fn every_effect_term_the_host_reads_is_exercised_by_a_vector() {
     let recorded = recorded_effects();
     // No vector manifest says `{"network": {"direction": "write"}}`: none of the nine programs only sends. It is held
     // by `a_send_only_network_term_describes_as_a_write` below until window-ml's vectors gain one.
     let without_vector = [ProgramEffect::Network(Network { direction: Some(Direction::Write) })];
-    for term in every_term() {
+    for term in ProgramEffect::ALL {
         let seen = recorded.iter().any(|e| shows(&term, e));
         if without_vector.contains(&term) {
             assert!(!seen, "{term:?} now has a vector: drop it from without_vector");
