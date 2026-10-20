@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 
 use serde_json::{Value, json};
-use window_ml_host::manifest::{Manifest, describe_call, harden_argv, in_range};
+use window_ml_host::manifest::{Direction, Manifest, Network, ProgramEffect, describe_call, harden_argv, in_range};
 
 // --- program manifest vectors ---
 
@@ -90,4 +90,102 @@ fn in_range_matches_the_reference_cases() {
     assert!(in_range("1.7.1", "=1.7.1"));
     assert!(!in_range("garbage", ">=1"));
     assert!(!in_range("1.0", ""));
+}
+
+// --- the effect vocabulary, enumerated ---
+
+/// Every recorded call's effects across the nine programs: `None` for the top element (`"unknown"`).
+fn recorded_effects() -> Vec<Option<Vec<String>>> {
+    let mut out = Vec::new();
+    for program in PROGRAMS {
+        for c in load("calls", program)["calls"].as_array().unwrap() {
+            out.push(c["effects"].as_array().map(|ks| ks.iter().map(|k| k.as_str().unwrap().to_string()).collect()));
+        }
+    }
+    out
+}
+
+/// One value of each effect term and network direction. The match below is exhaustive, so a new variant does not
+/// compile until it is listed here and given a key.
+fn every_term() -> Vec<ProgramEffect> {
+    let net = |direction| ProgramEffect::Network(Network { direction });
+    vec![
+        ProgramEffect::Read,
+        ProgramEffect::Write,
+        ProgramEffect::WriteNames,
+        ProgramEffect::RunsCode,
+        ProgramEffect::Unknown,
+        net(None),
+        net(Some(Direction::Both)),
+        net(Some(Direction::Read)),
+        net(Some(Direction::Write)),
+    ]
+}
+
+/// Whether a recorded call's effects show `term` was read: `None` is the top element.
+fn shows(term: &ProgramEffect, effects: &Option<Vec<String>>) -> bool {
+    let Some(keys) = effects else { return *term == ProgramEffect::Unknown };
+    let has = |prefix: &str| keys.iter().any(|k| k.starts_with(prefix));
+    match term {
+        ProgramEffect::Read => has("read:fs:"),
+        ProgramEffect::Write => has("write:fs:"),
+        ProgramEffect::WriteNames => has("write-names:fs:"),
+        ProgramEffect::RunsCode => has("exec:process"),
+        ProgramEffect::Unknown => false,
+        ProgramEffect::Network(n) => match n.direction.unwrap_or(Direction::Both) {
+            Direction::Both => has("read:net:") && has("write:net:"),
+            Direction::Read => has("read:net:") && !has("write:net:"),
+            Direction::Write => has("write:net:") && !has("read:net:"),
+        },
+    }
+}
+
+#[test]
+fn every_effect_term_the_host_reads_is_exercised_by_a_vector() {
+    let recorded = recorded_effects();
+    // No vector manifest says `{"network": {"direction": "write"}}`: none of the nine programs only sends. It is held
+    // by `a_send_only_network_term_describes_as_a_write` below until window-ml's vectors gain one.
+    let without_vector = [ProgramEffect::Network(Network { direction: Some(Direction::Write) })];
+    for term in every_term() {
+        let seen = recorded.iter().any(|e| shows(&term, e));
+        if without_vector.contains(&term) {
+            assert!(!seen, "{term:?} now has a vector: drop it from without_vector");
+        } else {
+            assert!(seen, "no vector call exercises {term:?}");
+        }
+    }
+}
+
+#[test]
+fn a_send_only_network_term_describes_as_a_write() {
+    let mut m = load("manifests", "cat");
+    m["command"]["effects"] = json!([{ "network": { "direction": "write" } }]);
+    let manifest: Manifest = serde_json::from_value(m).unwrap();
+    let d = describe_call(&["cat".to_string()], &manifest, None, &[]);
+    assert_eq!(d.effects.to_json(), json!(["write:net:*"]));
+}
+
+#[test]
+fn an_unknown_effect_word_fails_to_parse() {
+    let base = load("manifests", "cat");
+    for word in [
+        json!("reed"),
+        json!("write_names"),
+        json!({ "network": { "direction": "sideways" } }),
+        json!({ "netwerk": {} }),
+    ] {
+        let mut cmd = base.clone();
+        cmd["command"]["effects"] = json!([word.clone()]);
+        assert!(serde_json::from_value::<Manifest>(cmd).is_err(), "command: {word}");
+        let mut flag = base.clone();
+        let first = flag["command"]["flags"].as_object().unwrap().keys().next().unwrap().clone();
+        flag["command"]["flags"][&first]["effects"] = json!([word.clone()]);
+        assert!(serde_json::from_value::<Manifest>(flag).is_err(), "flag: {word}");
+    }
+    // The control: the same two places parse with a known word, so the refusals above are about the word.
+    let mut ok = base.clone();
+    let first = ok["command"]["flags"].as_object().unwrap().keys().next().unwrap().clone();
+    ok["command"]["effects"] = json!(["write-names"]);
+    ok["command"]["flags"][&first]["effects"] = json!([{ "network": { "direction": "write" } }]);
+    assert!(serde_json::from_value::<Manifest>(ok).is_ok());
 }
