@@ -76,7 +76,7 @@ fn group_is_ours(e: &Entry) -> bool {
     }
 }
 
-/// Whether anything of a recorded call still exists as OURS: its group ([`group_is_ours`]), or a recorded member that
+/// Whether anything of a recorded call still exists as OURS: its group (`group_is_ours`), or a recorded member that
 /// is still the process it was (a descendant that left the group).
 pub fn still_ours(e: &Entry) -> bool {
     group_is_ours(e) || e.members.iter().any(|(p, t)| procs::start_time(*p) == Some(*t))
