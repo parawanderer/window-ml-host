@@ -18,7 +18,20 @@ pub fn start_time(pid: u32) -> Option<u64> {
 
 /// The process group `pgid` and every descendant of its members, `pgid` first if it is alive.
 pub fn members(pgid: u32) -> Vec<u32> {
-    sys::members(pgid)
+    sys::members(Some(pgid), &[])
+}
+
+/// [`members`], also following `known`: processes seen in the call before, which the caller has checked are still
+/// those processes. A descendant that left the group (`setsid`) is reparented away from the call once its parent
+/// exits, so after that only an earlier sighting finds it, and its own descendants.
+pub fn members_with(pgid: u32, known: &[u32]) -> Vec<u32> {
+    sys::members(Some(pgid), known)
+}
+
+/// `known` and every descendant of them, and nothing else: no group is read. For a recorded call whose group id now
+/// names another process's group, so that group is not taken for the call's.
+pub fn descendants_of(known: &[u32]) -> Vec<u32> {
+    sys::members(None, known)
 }
 
 /// One process's physical footprint in bytes; `None` once it is gone.
@@ -36,6 +49,15 @@ pub fn call_footprint(pgid: u32) -> (u64, Vec<u32>) {
 /// What `hello` says about the measure, for the policy and the run log.
 pub fn metric() -> &'static str {
     sys::METRIC
+}
+
+/// Appends each of `known` the seed does not already hold.
+fn add_known(seed: &mut Vec<u32>, known: &[u32]) {
+    for &k in known {
+        if k != 0 && !seed.contains(&k) {
+            seed.push(k);
+        }
+    }
 }
 
 fn closure(seed: Vec<u32>, children: impl Fn(u32) -> Vec<u32>) -> Vec<u32> {
@@ -67,10 +89,11 @@ mod sys {
         (b.pbi_pid == pid).then(|| b.pbi_start_tvsec * 1_000_000 + b.pbi_start_tvusec)
     }
 
-    pub fn members(pgid: u32) -> Vec<u32> {
+    pub fn members(pgid: Option<u32>, known: &[u32]) -> Vec<u32> {
         let list = |f| pids_by_type(f).unwrap_or_default().into_iter().filter(|p| *p != 0).collect::<Vec<u32>>();
-        let mut seed = list(ProcFilter::ByProgramGroup { pgrpid: pgid });
-        seed.sort_by_key(|p| *p != pgid);
+        let mut seed = pgid.map(|g| list(ProcFilter::ByProgramGroup { pgrpid: g })).unwrap_or_default();
+        seed.sort_by_key(|p| Some(*p) != pgid);
+        super::add_known(&mut seed, known);
         super::closure(seed, |p| list(ProcFilter::ByParentProcess { ppid: p }))
     }
 
@@ -96,7 +119,7 @@ mod sys {
         stat(pid).map(|(_, _, t)| t)
     }
 
-    pub fn members(pgid: u32) -> Vec<u32> {
+    pub fn members(pgid: Option<u32>, known: &[u32]) -> Vec<u32> {
         let all: Vec<(u32, u32, u32)> = std::fs::read_dir("/proc")
             .map(|d| {
                 d.filter_map(|e| e.ok()?.file_name().to_str()?.parse::<u32>().ok())
@@ -104,8 +127,9 @@ mod sys {
                     .collect()
             })
             .unwrap_or_default();
-        let mut seed: Vec<u32> = all.iter().filter(|(_, _, pg)| *pg == pgid).map(|(p, _, _)| *p).collect();
-        seed.sort_by_key(|p| *p != pgid);
+        let mut seed: Vec<u32> = all.iter().filter(|(_, _, pg)| Some(*pg) == pgid).map(|(p, _, _)| *p).collect();
+        seed.sort_by_key(|p| Some(*p) != pgid);
+        super::add_known(&mut seed, known);
         super::closure(seed, |p| all.iter().filter(|(_, pp, _)| *pp == p).map(|(c, _, _)| *c).collect())
     }
 
