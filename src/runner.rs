@@ -56,6 +56,13 @@ pub fn follow(pgid: u32, known: &[(u32, u64)]) -> Vec<(u32, u64)> {
     procs::members_with(pgid, &alive).into_iter().filter_map(|p| procs::start_time(p).map(|t| (p, t))).collect()
 }
 
+/// [`follow`] without the group: the processes in `known` that are still the processes recorded there, and their
+/// descendants. For a recorded call whose group id now names a group that is not the call's (its leader's pid reused).
+pub fn follow_known(known: &[(u32, u64)]) -> Vec<(u32, u64)> {
+    let alive: Vec<u32> = known.iter().filter(|(p, t)| procs::start_time(*p) == Some(*t)).map(|(p, _)| *p).collect();
+    procs::descendants_of(&alive).into_iter().filter_map(|p| procs::start_time(p).map(|t| (p, t))).collect()
+}
+
 /// What a call is held to while it runs.
 pub struct Limits {
     pub timeout: Duration,
@@ -253,7 +260,8 @@ async fn terminate(child: &mut Child, pgid: u32) -> Option<ExitStatus> {
     }
 }
 
-/// Kills a running call's whole group, and what it started outside it, at once (the session is ending).
+/// Kills a just-started call's group and its descendants, at once: nothing has been tracked yet, so a descendant that
+/// left the group and outlived its parent is not looked for ([`kill_call`] is the form that does).
 pub fn kill_now(pgid: u32) {
     kill_tree(pgid, &[]);
 }
@@ -262,6 +270,16 @@ pub fn kill_now(pgid: u32) {
 /// whether it had anything left to kill.
 pub fn kill_call(pgid: u32, known: &[(u32, u64)]) -> bool {
     kill_tree(pgid, known)
+}
+
+/// Kills the recorded members still the processes they were, and their descendants, and signals no group: for a
+/// recorded call whose group id now names another group. Whether anything was there to kill.
+pub fn kill_known(known: &[(u32, u64)]) -> bool {
+    let members = follow_known(known);
+    for &(p, started) in &members {
+        kill_if_same(p, started);
+    }
+    !members.is_empty()
 }
 
 /// Kills a call that was started but will never be supervised (a later stage of its pipeline failed to start), and
