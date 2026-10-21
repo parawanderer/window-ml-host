@@ -1102,6 +1102,35 @@ mod tests {
     }
 
     #[test]
+    fn a_running_warden_whose_directory_stops_being_private_exits_2() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_d, dir) = private_tmp();
+        assert!(private_dir(&dir));
+        let mut victim = sleeper();
+        // An orphan whose deadline is a minute away keeps the ledger, so the warden passes over it until something stops it.
+        let p = dead_hosts_ledger(&dir, &[entry(&victim, Some(now_ms() + 60_000))]);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let arg = p.to_string_lossy().into_owned();
+        std::thread::spawn(move || tx.send(warden_main(&[arg])));
+        // A thread that panicked drops its sender, which reads as Disconnected, not Timeout.
+        assert_eq!(
+            rx.recv_timeout(WARDEN_EVERY * 3),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout),
+            "the warden keeps watching an orphan whose deadline is ahead"
+        );
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
+        assert_eq!(
+            rx.recv_timeout(WARDEN_EVERY * 20),
+            Ok(2),
+            "a warden whose directory opened to others mid-run stops, with 2"
+        );
+        assert!(victim.try_wait().unwrap().is_none(), "and the group it names is left alone");
+        assert!(p.exists(), "and so is the ledger");
+        let _ = victim.kill();
+        let _ = victim.wait();
+    }
+
+    #[test]
     fn a_record_that_cannot_be_written_is_counted_as_dropped() {
         let (_d, dir) = private_tmp();
         assert!(private_dir(&dir));
