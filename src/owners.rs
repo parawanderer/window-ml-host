@@ -159,7 +159,7 @@ impl Ledger {
         let _ = std::fs::remove_file(&self.path);
     }
 
-    /// Records a call of this host that leaves the ledger with nobody to read its `done` ([`record_ended`]).
+    /// Records a call of this host that leaves the ledger with nobody to read its `done`: an ended record beside it.
     pub fn record_ended(&self, e: &Entry, cause: Cause, killed: bool) {
         record_ended(&self.path, e, cause, killed);
     }
