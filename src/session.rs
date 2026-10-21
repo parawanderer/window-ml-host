@@ -284,8 +284,13 @@ impl Session {
         let mut orphans = Vec::new();
         for c in st.running.values() {
             match c.owner_loss {
+                // Its `done` goes to a closed port, so what changed among the protected names is kept for the next
+                // session's `status`.
                 OwnerLoss::Kill => {
-                    runner::kill_call(c.entry.pgid, &c.meter.tracked());
+                    let killed = runner::kill_call(c.entry.pgid, &c.meter.tracked());
+                    if let Some(l) = &self.ledger {
+                        l.record_ended(&c.entry, owners::Cause::OwnerLost, killed);
+                    }
                 }
                 // The members the watchdog last saw go into the ledger, so the warden still finds a descendant that
                 // left the group once its parent has exited.
@@ -377,7 +382,8 @@ impl Session {
         v
     }
 
-    /// The owner table: every running call with its owner and footprint, and the orphans other host processes left.
+    /// The owner table: every running call with its owner and footprint, the orphans other host processes left, and the
+    /// ended records of calls nobody heard end, each returned once, as many as fit in the frame.
     fn status(&self) -> Value {
         let st = self.state.lock().unwrap();
         let mut running: Vec<Value> = st
@@ -397,7 +403,20 @@ impl Session {
             Some(dir) => owners::sweep(dir, self.ledger.as_ref()).orphans.iter().map(owners::orphan_json).collect(),
             None => vec![],
         };
-        json!({ "running": running, "orphans": orphans })
+        let mut v = json!({ "running": running, "orphans": orphans, "ended": [] });
+        if let Some(dir) = &self.host.owners_dir {
+            // The frame's room left after the rest, less a margin for the keys added below and the envelope.
+            let budget = MAX_OUT.saturating_sub(v.to_string().len() + 4096);
+            let e = owners::take_ended(dir, budget);
+            v["ended"] = Value::Array(e.records);
+            if e.more {
+                v["endedMore"] = json!(true);
+            }
+            if e.dropped > 0 {
+                v["endedDropped"] = json!(e.dropped);
+            }
+        }
+        v
     }
 
     fn configure(&self, a: &Map<String, Value>) -> Result<Value, Fail> {

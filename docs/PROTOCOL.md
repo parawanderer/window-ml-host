@@ -268,7 +268,8 @@ there. The `done` event follows with `cancelled: true`.
 
 ### `status`: the owner table
 
-`args: {}` → every running call of this session, and the orphans other host processes left:
+`args: {}` → every running call of this session, the orphans other host processes left, and the calls that ended with
+nobody to read their `done`:
 
 ```jsonc
 { "running": [{ "id": "c3", "pid": 4242, "owner": { "run": "…" }, "startedMs": 1760000000000,
@@ -276,13 +277,39 @@ there. The `done` event follows with `cancelled: true`.
                 "onOwnerLoss": { "policy": "kill" } }],
   "orphans": [{ "id": "c1", "pid": 4100, "owner": { "run": "…" }, "startedMs": 1760000000000,
                 "deadlineMs": 1760000600000, "footprint": 10485760,
-                "protectedChanged": [{ "root": "/Users/me/proj", "name": ".envrc", "change": "created" }] }] }
+                "protectedChanged": [{ "root": "/Users/me/proj", "name": ".envrc", "change": "created" }] }],
+  "ended": [{ "id": "c1", "owner": { "run": "…" }, "startedMs": 1760000000000, "deadlineMs": 1760000600000,
+              "endedMs": 1760000600140, "cause": "deadline", "killed": true,
+              "protectedChanged": [{ "root": "/Users/me/proj", "name": ".vscode", "change": "created" }] }] }
 ```
 
 `footprint` is the last measurement of the call's process group and its descendants; `pid` is the group's id. Reading
 `status` also sweeps: an orphan past its deadline is killed rather than listed. An orphan's `protectedChanged` is
 computed at the read, against the snapshot its `start` took (as on `done`, below): what changed so far. It is absent for
-an orphan an older host started. What an orphan changes between the last `status` and its kill is not reported.
+an orphan an older host started.
+
+`ended` lists each call that left the owner table with no `done` anyone could read, ONCE: the first `status` of any
+later session returns a record and deletes it, so no later one returns it again. `cause` is how it ended:
+
+| `cause` | What happened | `killed` |
+| --- | --- | --- |
+| `deadline` | an orphan's `orphanTimeoutMs` passed | whether anything of it was left to kill |
+| `owner-lost` | the port closed under `onOwnerLoss: "kill"` | the same |
+| `host-lost` | its host was killed outright under `"kill"`, and a warden or a later host swept it | the same |
+| `exited` | a sweep found nothing of it left: it ended on its own | `false` |
+| `not-ours` | its group id now names another process's group, which is never signalled | `false` |
+
+`protectedChanged` is the compare against the call's `start` snapshot, taken after the kill, with `done`'s bounds and
+`protectedChangedTruncated` sibling; absent for an entry an older host wrote (unknown, never "nothing"). `deadlineMs`
+is `null` for a call that was not an orphan. Records leave in `endedMs` order while the reply fits the 1 MiB frame;
+`endedMore: true` says some stayed for the next `status`. An unread record is kept 7 days, and at most 64 are kept,
+the oldest dropped first. Both bounds are guesses. A record the host cannot read as its own is dropped too.
+`endedDropped` counts every drop since the last `status`, and both keys are absent when there is nothing to say. A
+host older than 0.6.0 has no `ended` key. Its absence is unknown, never "nothing ended".
+
+Any later session with the same state directory consumes a record, so two browser profiles sharing one
+`wmlhost-owners-<uid>` can read each other's. `orphans` has the same property; the `owner` is how a reader tells its
+own.
 
 ### `read`: a range of held output
 
@@ -352,7 +379,13 @@ into a session of its own is followed through its descendants, never through `ps
 - **A host killed outright** (SIGKILL, Jetsam, the OOM killer) gets no EOF. Each host mirrors its table to a ledger file
   (`$WMLHOST_STATE_DIR`, else `wmlhost-owners-<uid>` in the temp directory, private) and starts a warden (`wmlhost warden
   <ledger>`, its own process group, no stdio) with its first call. The warden kills the dead host's calls, keeping orphans
-  until their deadlines, then exits. A new host sweeps dead hosts' ledgers too.
+  until their deadlines, then exits. A new host sweeps dead hosts' ledgers too. Nothing is swept, killed or read as a record from a state
+  directory that is not the user's own and private (0700): someone who could write a ledger there would name the
+  groups the user's host kills.
+- **Nothing leaves the table unreported.** A call that leaves it with no `done` anyone could read (killed with its port,
+  at its deadline, by a sweep, or found gone) leaves an `ended` record, `<host pid>-<host start>.<call id>.ended`, next to
+  its ledger. Sweeps hold an exclusive `flock` on `sweep.lock` in that directory, and a record is linked into place
+  no-replace, so each call has one record and one `status` returns it (`status`, above).
 - **A pid is never trusted alone.** A recorded group is killed only while its leader has the recorded start time, or the
   leader is gone and the group still has members (a group id is not reused while a member lives).
 - **Over the hub the owner is the caller.** Its presence gone for 30 s closes its session, as the port closing does
