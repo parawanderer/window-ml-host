@@ -641,13 +641,13 @@ pub fn harden_argv(argv: &[String], d: &CallDescription) -> Vec<String> {
     out
 }
 
-/// Applies a flag to the call: its effects, its path or directory value, and its flags on the call as a whole.
 /// Whether a flag's or primary's term acts on the path it takes, when it takes one, rather than on the command's
 /// targets: read, write and write-names (ruled 2026-10-21).
 fn names_its_path(t: &ProgramEffect) -> bool {
     matches!(t, ProgramEffect::Read | ProgramEffect::Write | ProgramEffect::WriteNames)
 }
 
+/// Applies a flag to the call: its effects, its path or directory value, and its flags on the call as a whole.
 fn apply(
     d: &mut CallDescription,
     terms: &mut Terms,
