@@ -22,18 +22,28 @@ pub struct RepoConfig {
 }
 
 /// Finds the repository containing `dir` (walking up to the first `.git`) and inspects its config. `None` when `dir`
-/// is in no repository.
+/// is in no repository, which the caller reports as runs-no-code: so only a `.git` that is certainly absent (NotFound)
+/// is passed over, and one that cannot be read is a repository whose config runs code.
 pub fn inspect(dir: &Path) -> Option<RepoConfig> {
-    let (root, dotgit) = dir.ancestors().find_map(|a| {
+    let (root, dotgit, md) = dir.ancestors().find_map(|a| {
         let p = a.join(".git");
-        std::fs::symlink_metadata(&p).ok().map(|_| (a.to_path_buf(), p))
+        match std::fs::symlink_metadata(&p) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            md => Some((a.to_path_buf(), p, md)),
+        }
     })?;
     let mut r = RepoConfig { root: root.clone(), runs_code: false, reasons: vec![] };
     let mut flag = |why: String| {
         r.runs_code = true;
         r.reasons.push(why);
     };
-    let md = std::fs::symlink_metadata(&dotgit).ok()?;
+    let md = match md {
+        Ok(md) => md,
+        Err(e) => {
+            flag(format!("{} cannot be read: {e}", dotgit.display()));
+            return Some(r);
+        }
+    };
     let gitdir = if md.file_type().is_symlink() {
         flag(".git is a symlink, so its config is wherever it points".into());
         return Some(r);
@@ -63,14 +73,26 @@ pub fn inspect(dir: &Path) -> Option<RepoConfig> {
         }
     };
     // A linked worktree keeps its shared config in the common dir, and may have its own config.worktree.
-    let common = std::fs::read_to_string(gitdir.join("commondir"))
-        .ok()
-        .map(|c| {
+    // Only a `commondir` that is NotFound (a main worktree) falls back to the gitdir; one that cannot be read or does
+    // not resolve would skip the shared config and report false, so it is runs-code with the reason.
+    let common = match std::fs::read_to_string(gitdir.join("commondir")) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => gitdir.clone(),
+        Err(e) => {
+            flag(format!("{} cannot be read: {e}", gitdir.join("commondir").display()));
+            return Some(r);
+        }
+        Ok(c) => {
             let c = PathBuf::from(c.trim());
-            if c.is_absolute() { c } else { gitdir.join(c) }
-        })
-        .and_then(|c| c.canonicalize().ok())
-        .unwrap_or_else(|| gitdir.clone());
+            let c = if c.is_absolute() { c } else { gitdir.join(c) };
+            match c.canonicalize() {
+                Ok(c) => c,
+                Err(_) => {
+                    flag(format!("commondir points at {}, which does not resolve", c.display()));
+                    return Some(r);
+                }
+            }
+        }
+    };
     let trusted: Vec<PathBuf> = [root.canonicalize().ok(), gitdir.canonicalize().ok(), common.canonicalize().ok()]
         .into_iter()
         .flatten()
@@ -321,6 +343,38 @@ mod tests {
         assert_eq!(r.root, root);
         assert!(!r.runs_code, "{:?}", r.reasons);
         assert_eq!(inspect(Path::new("/")), None);
+    }
+
+    #[test]
+    fn a_commondir_that_does_not_resolve_runs_code() {
+        // Falling back to the worktree's own gitdir would skip the shared config and report false.
+        let (_d, root) = repo_with("[core]\n\tbare = false\n");
+        std::fs::write(root.join(".git/commondir"), "../missing\n").unwrap();
+        let r = inspect(&root).unwrap();
+        assert!(r.runs_code);
+        assert!(r.reasons[0].contains("does not resolve"), "{:?}", r.reasons);
+    }
+
+    #[test]
+    fn a_commondir_that_cannot_be_read_runs_code() {
+        // Only NotFound means a main worktree; any other read error could hide a shared config.
+        let (_d, root) = repo_with("[core]\n\tbare = false\n");
+        std::fs::create_dir(root.join(".git/commondir")).unwrap();
+        let r = inspect(&root).unwrap();
+        assert!(r.runs_code);
+        assert!(r.reasons[0].contains("cannot be read"), "{:?}", r.reasons);
+    }
+
+    #[test]
+    fn a_dot_git_that_cannot_be_stat_is_not_no_repository() {
+        // No repository reads as runs-no-code, so only NotFound may pass a `.git` over. Beneath a file every
+        // `.git` stat fails ENOTDIR, which is not a proof of absence.
+        let d = tempfile::tempdir().unwrap();
+        let f = d.path().canonicalize().unwrap().join("file");
+        std::fs::write(&f, "x").unwrap();
+        let r = inspect(&f.join("dir")).expect("an unreadable .git is reported, not skipped");
+        assert!(r.runs_code);
+        assert!(r.reasons[0].contains("cannot be read"), "{:?}", r.reasons);
     }
 
     #[test]

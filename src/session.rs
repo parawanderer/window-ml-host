@@ -578,7 +578,9 @@ impl Session {
                      "secrets": env.secrets.values().collect::<Vec<_>>(),
                      "free": env::is_free(&env) },
             "repo": repo.as_ref().map(|r| json!({ "root": r.root, "reasons": r.reasons })),
-            "repoConfigRunsCode": repo.as_ref().map(|r| r.runs_code),
+            // No repository encloses the call, so no repository config runs code: false. null is kept for a fact
+            // the host could compute nothing of (PROTOCOL.md).
+            "repoConfigRunsCode": repo.as_ref().is_some_and(|r| r.runs_code),
             "paths": paths,
             "effects": "unknown",
             "mode": "host",

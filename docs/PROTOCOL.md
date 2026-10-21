@@ -111,7 +111,7 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
   "cwd": { "path": "/Users/me/src/proj", "inRoot": true },  // + "containsSecret" with walkCwd
   "env": { "set": ["LC_ALL"], "secrets": [], "free": true }, // names only; free: every name is on the FREE list
   "repo": { "root": "/Users/me/src/proj", "reasons": [] },  // null outside a git repository
-  "repoConfigRunsCode": false,                  // the repository's own config makes git run a program; null: no repository
+  "repoConfigRunsCode": false,                  // the repository's own config makes git run a program; false with no repository
   "paths": [{ "arg": 3, "given": "HEAD~1", "path": "/Users/me/src/proj/HEAD~1",
               "inRoot": true, "secret": false, "exists": false }],
   "effects": "unknown",                         // from the program manifest once one exists (root F); "unknown" until then
@@ -146,7 +146,9 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
   true for `core.fsmonitor`, `core.pager` other than `cat`, `core.hooksPath`, `core.sshCommand`, `core.askPass`,
   `core.gitProxy`, `diff.external`, `diff.*.textconv`, `diff.*.command`, any `filter.*`, `credential.helper`, an
   `alias.*` starting with `!`, `gpg.program`, `remote.*.uploadpack`/`receivepack`, and any include from outside the
-  repository; `reasons` lists each. The person's global config is not read.
+  repository; `reasons` lists each. A `.git` the host cannot stat, a worktree's `commondir` it cannot read or resolve,
+  or a config or include it cannot read, is `true` with the reason. With no repository around `cwd` (or `repoArg`) it is `false` and `repo` is `null`: there is no
+  repository config to run. The person's global config is not read.
 - **`env.free`**: every variable the call sets is one of `LANG`, `LC_*`, `TZ`, `NO_COLOR`, `COLUMNS`, or `TERM=dumb`.
 - **`secret`** is the host's name check (`.env`, `*.pem`, `id_*`, `.ssh/`, …; the list is `SECRET_PATTERNS` in
   `src/facts.rs`) on the resolved path and on the path as given.
