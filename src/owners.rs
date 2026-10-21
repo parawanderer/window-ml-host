@@ -227,9 +227,13 @@ fn host_alive(path: &Path) -> bool {
     writer_of(path).is_some_and(|(pid, start)| procs::start_time(pid) == Some(start))
 }
 
-/// Sweeps one ledger file if its host is gone; `None` if the host is alive or the name is not a ledger's.
+/// Sweeps one ledger file if its host is gone; `None` if the host is alive, the name is not a ledger's, or its directory
+/// is no longer private. Checked on every pass, not once: a warden runs for as long as an orphan's deadline.
 fn sweep_file(path: &Path) -> Option<Swept> {
     writer_of(path)?;
+    if !path.parent().is_some_and(private_dir) {
+        return None;
+    }
     if host_alive(path) {
         return None;
     }
@@ -296,6 +300,10 @@ pub fn warden_main(args: &[String]) -> i32 {
         }
         if !path.exists() {
             return 0;
+        }
+        if !path.parent().is_some_and(private_dir) {
+            eprintln!("wmlhost warden: {} is no longer private; stopping", path.display());
+            return 2;
         }
         sweep_file(&path);
     }
@@ -1075,6 +1083,20 @@ mod tests {
         assert!(got.records.is_empty() && got.dropped == 0);
         assert!(forged.exists(), "a record in a shared directory is neither returned nor deleted");
         assert_eq!(warden_main(&[p.to_string_lossy().into_owned()]), 2, "nor does a warden sweep it");
+        let _ = victim.kill();
+        let _ = victim.wait();
+    }
+
+    #[test]
+    fn a_directory_that_stops_being_private_is_not_swept_on_the_next_pass() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_d, dir) = private_tmp();
+        assert!(private_dir(&dir), "private when the warden started");
+        let mut victim = sleeper();
+        let p = dead_hosts_ledger(&dir, &[entry(&victim, None)]);
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(sweep_file(&p).is_none(), "the warden's pass reads a ledger from a directory now open to others");
+        assert!(victim.try_wait().unwrap().is_none(), "and the group it names is left alone");
         let _ = victim.kill();
         let _ = victim.wait();
     }
