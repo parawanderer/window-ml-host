@@ -356,6 +356,16 @@ mod tests {
     }
 
     #[test]
+    fn a_commondir_that_cannot_be_read_runs_code() {
+        // Only NotFound means a main worktree; any other read error could hide a shared config.
+        let (_d, root) = repo_with("[core]\n\tbare = false\n");
+        std::fs::create_dir(root.join(".git/commondir")).unwrap();
+        let r = inspect(&root).unwrap();
+        assert!(r.runs_code);
+        assert!(r.reasons[0].contains("cannot be read"), "{:?}", r.reasons);
+    }
+
+    #[test]
     fn a_dot_git_that_cannot_be_stat_is_not_no_repository() {
         // No repository reads as runs-no-code, so only NotFound may pass a `.git` over. Beneath a file every
         // `.git` stat fails ENOTDIR, which is not a proof of absence.
