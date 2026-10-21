@@ -1112,8 +1112,12 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         let arg = p.to_string_lossy().into_owned();
         std::thread::spawn(move || tx.send(warden_main(&[arg])));
-        std::thread::sleep(WARDEN_EVERY * 3);
-        assert!(rx.try_recv().is_err(), "the warden keeps watching an orphan whose deadline is ahead");
+        // A thread that panicked drops its sender, which reads as Disconnected, not Timeout.
+        assert_eq!(
+            rx.recv_timeout(WARDEN_EVERY * 3),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout),
+            "the warden keeps watching an orphan whose deadline is ahead"
+        );
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
         assert_eq!(
             rx.recv_timeout(WARDEN_EVERY * 20),
