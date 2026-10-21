@@ -195,9 +195,13 @@ pub struct Swept {
 
 /// Reads every ledger in `dir` whose host process is gone (its pid no longer names the process that wrote it): kills
 /// what has no deadline or is past it, keeps the rest as orphans, and rewrites or removes each file accordingly. A live
-/// host's ledger is never touched.
+/// host's ledger is never touched, and nothing is read from a directory that is not private ([`default_dir`]): a ledger
+/// someone else could write would name the groups this host kills.
 pub fn sweep(dir: &Path, own: Option<&Ledger>) -> Swept {
     let mut out = Swept::default();
+    if !private_dir(dir) {
+        return out;
+    }
     age_ended(dir);
     let Ok(rd) = std::fs::read_dir(dir) else { return out };
     for e in rd.flatten() {
@@ -281,8 +285,8 @@ pub fn warden_main(args: &[String]) -> i32 {
         eprintln!("usage: wmlhost warden <ledger>");
         return 2;
     };
-    if writer_of(&path).is_none() {
-        eprintln!("wmlhost warden: {} is not a ledger", path.display());
+    if writer_of(&path).is_none() || !path.parent().is_some_and(private_dir) {
+        eprintln!("wmlhost warden: {} is not a ledger in a private directory", path.display());
         return 2;
     }
     loop {
@@ -398,10 +402,15 @@ fn record_ended(ledger: &Path, e: &Entry, cause: Cause, killed: bool) {
     }
     let path = ledger.with_file_name(format!("{stem}.{}.ended", e.id));
     let tmp = ledger.with_file_name(format!("{stem}.{}.ended.tmp", e.id));
-    if std::fs::write(&tmp, ended_json(e, cause, killed).to_string()).is_ok() {
-        let _ = std::fs::hard_link(&tmp, &path);
-    }
+    let written =
+        std::fs::write(&tmp, ended_json(e, cause, killed).to_string()).and_then(|_| std::fs::hard_link(&tmp, &path));
     let _ = std::fs::remove_file(&tmp);
+    // An entry already recorded keeps its first record; any other failure loses this one, and the next `status` says so.
+    if written.is_err_and(|err| err.kind() != std::io::ErrorKind::AlreadyExists) {
+        if let Some(dir) = ledger.parent() {
+            count_dropped(dir, 1);
+        }
+    }
 }
 
 fn is_record(p: &Path) -> bool {
@@ -508,6 +517,9 @@ pub struct Ended {
 /// Takes the ended records in `dir` while they fit in `budget` bytes of JSON, consuming each one it returns.
 pub fn take_ended(dir: &Path, budget: usize) -> Ended {
     let mut out = Ended::default();
+    if !private_dir(dir) {
+        return out;
+    }
     let Ok(rd) = std::fs::read_dir(dir) else { return out };
     let _lock = lock(dir);
     let mut records: Vec<(u64, PathBuf, Value)> = Vec::new();
@@ -1038,6 +1050,46 @@ mod tests {
         assert_eq!(ids.len(), ENDED_MAX, "one aged out, then the oldest left over the count");
         assert!(!ids.contains(&"c0") && !ids.contains(&"c1"), "{ids:?}");
         assert_eq!(got.dropped, 2);
+        let _ = c.kill();
+        let _ = c.wait();
+    }
+
+    #[test]
+    fn nothing_is_swept_or_taken_from_a_directory_that_is_not_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_d, dir) = private_tmp();
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
+        // Someone else's ledger naming one of our live groups, with its true start time: it must not be killed.
+        let mut victim = sleeper();
+        let p = dead_hosts_ledger(&dir, &[entry(&victim, None)]);
+        let forged = dir.join("9-9.c1.ended");
+        let rec = json!({ "id": "c1", "owner": {}, "startedMs": 1, "deadlineMs": null, "endedMs": 2,
+                          "cause": "exited", "killed": false });
+        std::fs::write(&forged, rec.to_string()).unwrap();
+        let s = sweep(&dir, None);
+        assert!(s.killed.is_empty() && s.orphans.is_empty());
+        assert!(victim.try_wait().unwrap().is_none(), "a group named by a ledger in a shared directory was killed");
+        assert!(p.exists(), "and the ledger is left as it was");
+        let got = take_ended(&dir, usize::MAX);
+        assert!(got.records.is_empty() && got.dropped == 0);
+        assert!(forged.exists(), "a record in a shared directory is neither returned nor deleted");
+        assert_eq!(warden_main(&[p.to_string_lossy().into_owned()]), 2, "nor does a warden sweep it");
+        let _ = victim.kill();
+        let _ = victim.wait();
+    }
+
+    #[test]
+    fn a_record_that_cannot_be_written_is_counted_as_dropped() {
+        let (_d, dir) = private_tmp();
+        assert!(private_dir(&dir));
+        let ledger = dir.join("1-1.json");
+        let mut c = sleeper();
+        std::fs::create_dir(dir.join("1-1.c1.ended.tmp")).unwrap();
+        record_ended(&ledger, &entry(&c, None), Cause::Exited, false);
+        let got = take_ended(&dir, usize::MAX);
+        assert!(got.records.is_empty());
+        assert_eq!(got.dropped, 1);
         let _ = c.kill();
         let _ = c.wait();
     }

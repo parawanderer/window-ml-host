@@ -379,7 +379,9 @@ into a session of its own is followed through its descendants, never through `ps
 - **A host killed outright** (SIGKILL, Jetsam, the OOM killer) gets no EOF. Each host mirrors its table to a ledger file
   (`$WMLHOST_STATE_DIR`, else `wmlhost-owners-<uid>` in the temp directory, private) and starts a warden (`wmlhost warden
   <ledger>`, its own process group, no stdio) with its first call. The warden kills the dead host's calls, keeping orphans
-  until their deadlines, then exits. A new host sweeps dead hosts' ledgers too.
+  until their deadlines, then exits. A new host sweeps dead hosts' ledgers too. Nothing is swept, killed or read as a record from a state
+  directory that is not the user's own and private (0700): someone who could write a ledger there would name the
+  groups the user's host kills.
 - **Nothing leaves the table unreported.** A call that leaves it with no `done` anyone could read (killed with its port,
   at its deadline, by a sweep, or found gone) leaves an `ended` record, `<host pid>-<host start>.<call id>.ended`, next to
   its ledger. Sweeps hold an exclusive `flock` on `sweep.lock` in that directory, and a record is linked into place
