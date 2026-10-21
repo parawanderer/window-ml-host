@@ -4,6 +4,7 @@ use std::fs;
 use std::path::Path;
 
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use window_ml_host::manifest::{Direction, Manifest, Network, ProgramEffect, describe_call, harden_argv, in_range};
 
 // --- program manifest vectors ---
@@ -62,6 +63,40 @@ fn all_nine_programs_have_a_manifest_and_a_calls_file() {
         .collect();
     calls.sort();
     assert_eq!(calls, PROGRAMS);
+}
+
+/// The copy's hash, held by window-ml's `tests/program-manifest.test.mjs` too: a change to a manifest or call fixture
+/// on either side fails both suites until the copy and both pins move together.
+const VECTOR_PIN: &str = "18075fc660564baa5db258a2a7279cdb4def08fdf403b3247501e3abb2b6bcba";
+
+/// The agreed input (lanes 10 and 11, 2026-10-21): every `calls/*.json` and `manifests/*.json` by that name, sorted
+/// bytewise, one `<sha256 of the raw bytes>  <name>\n` line each (shasum's format), and the sha256 of those lines.
+fn vector_hash() -> String {
+    let mut names: Vec<String> = ["calls", "manifests"]
+        .iter()
+        .flat_map(|kind| {
+            fs::read_dir(dir().join(kind))
+                .unwrap()
+                .map(move |e| format!("{kind}/{}", e.unwrap().file_name().to_string_lossy()))
+        })
+        .filter(|n| n.ends_with(".json"))
+        .collect();
+    names.sort();
+    let lines: String = names
+        .iter()
+        .map(|n| format!("{}  {n}\n", hex::encode(Sha256::digest(fs::read(dir().join(n)).unwrap()))))
+        .collect();
+    hex::encode(Sha256::digest(lines.as_bytes()))
+}
+
+#[test]
+fn the_vector_copy_matches_the_pin_window_ml_holds() {
+    assert_eq!(
+        vector_hash(),
+        VECTOR_PIN,
+        "vectors/program-manifests/ changed: copy the same files from window-ml, then update VECTOR_PIN here, the PIN \
+         file, and window-ml's pin to the new hash in step"
+    );
 }
 
 #[test]
@@ -136,7 +171,7 @@ fn every_term_sits_in_its_own_slot_of_the_inventory() {
 fn every_effect_term_the_host_reads_is_exercised_by_a_vector() {
     let recorded = recorded_effects();
     // No vector manifest says `{"network": {"direction": "write"}}`: none of the nine programs only sends. It is held
-    // by `a_send_only_network_term_describes_as_a_write` below until window-ml's vectors gain one.
+    // by `a_change_only_network_term_describes_as_a_write` below until window-ml's vectors gain one.
     let without_vector = [ProgramEffect::Network(Network { direction: Some(Direction::Write) })];
     for term in ProgramEffect::ALL {
         let seen = recorded.iter().any(|e| shows(&term, e));
@@ -149,12 +184,36 @@ fn every_effect_term_the_host_reads_is_exercised_by_a_vector() {
 }
 
 #[test]
-fn a_send_only_network_term_describes_as_a_write() {
+fn a_change_only_network_term_describes_as_a_write() {
     let mut m = load("manifests", "cat");
     m["command"]["effects"] = json!([{ "network": { "direction": "write" } }]);
     let manifest: Manifest = serde_json::from_value(m).unwrap();
     let d = describe_call(&["cat".to_string()], &manifest, None, &[]);
     assert_eq!(d.effects.to_json(), json!(["write:net:*"]));
+}
+
+fn argv(a: &[&str]) -> Vec<String> {
+    a.iter().map(|s| s.to_string()).collect()
+}
+
+// No shipped flag or primary both takes a path and claims write-names (find's -delete takes no value), so these two
+// hold the rule on a synthetic manifest: a term that names the path it acts on applies to that path (ruled 2026-10-21).
+#[test]
+fn a_path_valued_flags_write_names_applies_to_its_value_not_the_operands() {
+    let mut m = load("manifests", "cat");
+    m["command"]["flags"]["-o"] = json!({ "value": true, "valueIsPath": "write", "effects": ["write-names"] });
+    let manifest: Manifest = serde_json::from_value(m).unwrap();
+    let d = describe_call(&argv(&["cat", "-o", "out", "in"]), &manifest, None, &[]);
+    assert_eq!(d.effects.to_json(), json!(["read:fs:in:?:?", "write-names:fs:out:?:?", "write:fs:out:?:?"]));
+}
+
+#[test]
+fn a_path_taking_find_primarys_write_names_applies_to_its_argument_not_the_start_points() {
+    let mut m = load("manifests", "find");
+    m["command"]["primaries"]["-newer"] = json!({ "args": 1, "argIsPath": "write", "effects": ["write-names"] });
+    let manifest: Manifest = serde_json::from_value(m).unwrap();
+    let d = describe_call(&argv(&["find", "dir", "-newer", "ref"]), &manifest, None, &[]);
+    assert_eq!(d.effects.to_json(), json!(["read:fs:dir:?:?", "write-names:fs:ref:?:?", "write:fs:ref:?:?"]));
 }
 
 #[test]

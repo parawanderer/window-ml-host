@@ -67,9 +67,9 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for OrderedMap<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Direction {
-    /// Receives.
+    /// Reads the remote resource (`git fetch`, whatever its transport sends).
     Read,
-    /// Sends.
+    /// Changes the remote resource (`git push`); one that only fetches is a read, whatever it sends (EFFECTS.md).
     Write,
     /// Both; what a `network` term without a direction means.
     Both,
@@ -641,6 +641,12 @@ pub fn harden_argv(argv: &[String], d: &CallDescription) -> Vec<String> {
     out
 }
 
+/// Whether a flag's or primary's term acts on the path it takes, when it takes one, rather than on the command's
+/// targets: read, write and write-names (ruled 2026-10-21).
+fn names_its_path(t: &ProgramEffect) -> bool {
+    matches!(t, ProgramEffect::Read | ProgramEffect::Write | ProgramEffect::WriteNames)
+}
+
 /// Applies a flag to the call: its effects, its path or directory value, and its flags on the call as a whole.
 fn apply(
     d: &mut CallDescription,
@@ -654,10 +660,10 @@ fn apply(
         let msg = format!("{name} can make {} do what no manifest describes", d.program);
         unknown(d, msg);
     }
-    // A flag's read/write applies to its own path value when it has one (`--output=f`), else to the command's
-    // targets (`git push -u` writes the repository's config).
+    // A flag's read/write/write-names applies to its own path value when it has one (`--output=f`), else to the
+    // command's targets (`git push -u` writes the repository's config).
     for t in &f.effects {
-        if f.value_is_path.is_some() && matches!(t, ProgramEffect::Read | ProgramEffect::Write) {
+        if f.value_is_path.is_some() && names_its_path(t) {
             continue;
         }
         terms.push((t.clone(), Targets::Command));
@@ -668,6 +674,9 @@ fn apply(
         } else {
             let split = v.split.map(str::to_string);
             d.path_args.push(PathArg { arg: v.arg, split: split.clone(), role, walk: false });
+            if f.effects.contains(&ProgramEffect::WriteNames) {
+                terms.push((ProgramEffect::WriteNames, Targets::Arg(v.arg, split.clone())));
+            }
             let term = if role == Role::Read { ProgramEffect::Read } else { ProgramEffect::Write };
             terms.push((term, Targets::Arg(v.arg, split)));
         }
@@ -870,7 +879,7 @@ fn parse_find(argv: &[String], start: usize, cmd: &CommandSpec, d: &mut CallDesc
             unknown(d, format!("{a} can make find do what no manifest describes"));
         }
         for t in &p.effects {
-            if p.arg_is_path.is_some() && matches!(t, ProgramEffect::Read | ProgramEffect::Write) {
+            if p.arg_is_path.is_some() && names_its_path(t) {
                 continue;
             }
             terms.push((t.clone(), Targets::Command));
@@ -897,6 +906,9 @@ fn parse_find(argv: &[String], start: usize, cmd: &CommandSpec, d: &mut CallDesc
         }
         if let (Some(role), true) = (p.arg_is_path, n > 0) {
             d.path_args.push(PathArg { arg: i + 1, split: None, role, walk: false });
+            if p.effects.contains(&ProgramEffect::WriteNames) {
+                terms.push((ProgramEffect::WriteNames, Targets::Arg(i + 1, None)));
+            }
             let term = if role == Role::Read { ProgramEffect::Read } else { ProgramEffect::Write };
             terms.push((term, Targets::Arg(i + 1, None)));
         }
