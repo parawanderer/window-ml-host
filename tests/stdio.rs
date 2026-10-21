@@ -1740,3 +1740,84 @@ fn a_live_orphan_in_status_reports_what_changed_so_far() {
     assert_eq!(changes(&o["protectedChanged"]), vec![(".vscode".into(), "created".into())], "{st}");
     next.close();
 }
+
+// --- the ended record: a call nobody heard end, reported once to the next session ---
+
+#[test]
+fn an_orphan_killed_at_its_deadline_is_reported_once_to_the_next_session() {
+    let (_d, r) = root();
+    let state = tempfile::tempdir().unwrap();
+    let dir = state.path().join("owners");
+    let mut h = Host::start_in(&dir, &[]);
+    h.ok("configure", json!({ "roots": [r] }));
+    let owner = json!({ "run": "r7", "step": 2 });
+    marker_call(&mut h, &r, 30, json!({ "owner": owner, "onOwnerLoss": "orphan", "orphanTimeoutMs": 1500 }));
+    h.close();
+    // After the port closed, with no session to ask `status`: the change K3b leaves unreported.
+    std::fs::create_dir(r.join(".vscode")).unwrap();
+    std::thread::sleep(Duration::from_millis(3500));
+
+    let mut next = Host::start_in(&dir, &[]);
+    let st = next.ok("status", json!({}));
+    assert_eq!(st["orphans"], json!([]), "killed at its deadline: {st}");
+    let ended = st["ended"].as_array().unwrap();
+    assert_eq!(ended.len(), 1, "{st}");
+    let e = &ended[0];
+    assert_eq!((e["cause"].as_str(), e["killed"].as_bool()), (Some("deadline"), Some(true)), "{e}");
+    assert_eq!(e["owner"], owner);
+    assert!(e["deadlineMs"].as_u64().unwrap() <= e["endedMs"].as_u64().unwrap(), "{e}");
+    assert_eq!(changes(&e["protectedChanged"]), vec![(".vscode".into(), "created".into())], "{e}");
+    let again = next.ok("status", json!({}));
+    assert_eq!(again["ended"], json!([]), "returned once: {again}");
+    next.close();
+    let mut third = Host::start_in(&dir, &[]);
+    assert_eq!(third.ok("status", json!({}))["ended"], json!([]), "and to no later session");
+    third.close();
+}
+
+#[test]
+fn a_call_killed_with_its_port_is_reported_to_the_next_session() {
+    let (_d, r) = root();
+    let state = tempfile::tempdir().unwrap();
+    let dir = state.path().join("owners");
+    let mut h = Host::start_in(&dir, &[]);
+    h.ok("configure", json!({ "roots": [r] }));
+    marker_call(&mut h, &r, 30, json!({ "owner": { "run": "r8" } }));
+    // While the call runs (the sandbox may refuse the call itself this name): `done` would have reported it.
+    std::fs::create_dir(r.join(".vscode")).unwrap();
+    h.close();
+    let mut next = Host::start_in(&dir, &[]);
+    let st = next.ok("status", json!({}));
+    let ended = st["ended"].as_array().unwrap();
+    assert_eq!(ended.len(), 1, "{st}");
+    assert_eq!(ended[0]["cause"], "owner-lost", "{st}");
+    assert_eq!(ended[0]["deadlineMs"], json!(null));
+    assert_eq!(changes(&ended[0]["protectedChanged"]), vec![(".vscode".into(), "created".into())]);
+    next.close();
+}
+
+#[test]
+fn a_session_with_nothing_ended_lists_an_empty_ended() {
+    let mut h = Host::start();
+    let st = h.ok("status", json!({}));
+    assert_eq!(st["ended"], json!([]), "present and empty: absent means an older host: {st}");
+    assert!(st.get("endedMore").is_none() && st.get("endedDropped").is_none());
+    h.close();
+}
+
+#[test]
+fn a_sandboxed_call_cannot_touch_the_state_dir() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    let dir = h.state.as_ref().unwrap().path().join("owners");
+    assert!(dir.is_dir(), "the host made its state dir");
+    h.ok("configure", json!({ "roots": [r] }));
+    let forged = dir.join("1-1.c1.ended");
+    let (_, d) = h.run(json!({ "argv": ["sh", "-c", format!("echo '{{}}' > '{}'", forged.display())], "cwd": r }));
+    assert_ne!(d["code"], 0, "{d}");
+    assert!(!forged.exists(), "a sandboxed call wrote into the ledger directory");
+    h.close();
+}

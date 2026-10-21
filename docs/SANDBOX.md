@@ -61,6 +61,7 @@ sandbox that does not start fails the job instead of taking the fail-closed path
 | `held_output_is_hidden_from_children` | `cat $TMPDIR/../../out/*` | |
 | `a_protected_path_created_during_the_call_…` | macOS: `mkdir .vscode && echo > .vscode/tasks.json` | Linux (absent envelope): the same call SUCCEEDS (the gap below, pinned by the test) |
 | `write_roots_withholds_make_dir_so_envrc_cannot_appear_as_a_directory` (sibling under `write: "roots"`) | macOS and Linux-with-Landlock: the same `mkdir .vscode` is denied | Linux-without-Landlock: the call is `SandboxFailed` (`can_hold`), never run wide |
+| `a_sandboxed_call_cannot_touch_the_state_dir` | `echo > <state dir>/1-1.c1.ended` (a forged `ended` record) | |
 | `write_none_lets_the_call_write_only_its_temp_dir` | `touch inside` under `write: "none"` | a write and read in `$TMPDIR` under `write: "none"` |
 | `exec_program_only_lets_the_call_run_only_its_program` | `sh -c 'ls'` under `exec: "program-only"` (ls is not in the set) | `sh -c 'echo … > work/out.txt'` under `exec: "program-only"` (in an existing directory) |
 | `an_absent_envelope_is_todays_floor_and_done_says_so` | | `touch inside` with no envelope; `done.envelope` is `{ write: "today", exec: "any" }` |
