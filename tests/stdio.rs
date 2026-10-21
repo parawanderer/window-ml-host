@@ -622,7 +622,8 @@ fn a_plain_repository_runs_no_code_and_a_plain_directory_is_no_repository() {
     h.ok("configure", json!({ "roots": [r, plain] }));
     assert_eq!(h.ok("spawn", json!({ "argv": ["true"], "cwd": r }))["repoConfigRunsCode"], false);
     let f = h.ok("spawn", json!({ "argv": ["true"], "cwd": plain }));
-    assert_eq!(f["repoConfigRunsCode"], Value::Null);
+    // No repository encloses cwd, so no repository config runs code: false, not null (null is "could not tell").
+    assert_eq!(f["repoConfigRunsCode"], false);
     assert_eq!(f["repo"], Value::Null);
     h.close();
 }

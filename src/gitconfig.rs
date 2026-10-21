@@ -22,18 +22,28 @@ pub struct RepoConfig {
 }
 
 /// Finds the repository containing `dir` (walking up to the first `.git`) and inspects its config. `None` when `dir`
-/// is in no repository.
+/// is in no repository, which the caller reports as runs-no-code: so only a `.git` that is certainly absent (NotFound)
+/// is passed over, and one that cannot be read is a repository whose config runs code.
 pub fn inspect(dir: &Path) -> Option<RepoConfig> {
-    let (root, dotgit) = dir.ancestors().find_map(|a| {
+    let (root, dotgit, md) = dir.ancestors().find_map(|a| {
         let p = a.join(".git");
-        std::fs::symlink_metadata(&p).ok().map(|_| (a.to_path_buf(), p))
+        match std::fs::symlink_metadata(&p) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            md => Some((a.to_path_buf(), p, md)),
+        }
     })?;
     let mut r = RepoConfig { root: root.clone(), runs_code: false, reasons: vec![] };
     let mut flag = |why: String| {
         r.runs_code = true;
         r.reasons.push(why);
     };
-    let md = std::fs::symlink_metadata(&dotgit).ok()?;
+    let md = match md {
+        Ok(md) => md,
+        Err(e) => {
+            flag(format!("{} cannot be read: {e}", dotgit.display()));
+            return Some(r);
+        }
+    };
     let gitdir = if md.file_type().is_symlink() {
         flag(".git is a symlink, so its config is wherever it points".into());
         return Some(r);
@@ -321,6 +331,18 @@ mod tests {
         assert_eq!(r.root, root);
         assert!(!r.runs_code, "{:?}", r.reasons);
         assert_eq!(inspect(Path::new("/")), None);
+    }
+
+    #[test]
+    fn a_dot_git_that_cannot_be_stat_is_not_no_repository() {
+        // No repository reads as runs-no-code, so only NotFound may pass a `.git` over. Beneath a file every
+        // `.git` stat fails ENOTDIR, which is not a proof of absence.
+        let d = tempfile::tempdir().unwrap();
+        let f = d.path().canonicalize().unwrap().join("file");
+        std::fs::write(&f, "x").unwrap();
+        let r = inspect(&f.join("dir")).expect("an unreadable .git is reported, not skipped");
+        assert!(r.runs_code);
+        assert!(r.reasons[0].contains("cannot be read"), "{:?}", r.reasons);
     }
 
     #[test]
