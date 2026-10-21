@@ -146,8 +146,8 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
   true for `core.fsmonitor`, `core.pager` other than `cat`, `core.hooksPath`, `core.sshCommand`, `core.askPass`,
   `core.gitProxy`, `diff.external`, `diff.*.textconv`, `diff.*.command`, any `filter.*`, `credential.helper`, an
   `alias.*` starting with `!`, `gpg.program`, `remote.*.uploadpack`/`receivepack`, and any include from outside the
-  repository; `reasons` lists each. A `.git` the host cannot stat, or a config or include it cannot read, is `true`
-  with the reason. With no repository around `cwd` (or `repoArg`) it is `false` and `repo` is `null`: there is no
+  repository; `reasons` lists each. A `.git` the host cannot stat, a worktree's `commondir` it cannot read or resolve,
+  or a config or include it cannot read, is `true` with the reason. With no repository around `cwd` (or `repoArg`) it is `false` and `repo` is `null`: there is no
   repository config to run. The person's global config is not read.
 - **`env.free`**: every variable the call sets is one of `LANG`, `LC_*`, `TZ`, `NO_COLOR`, `COLUMNS`, or `TERM=dumb`.
 - **`secret`** is the host's name check (`.env`, `*.pem`, `id_*`, `.ssh/`, …; the list is `SECRET_PATTERNS` in

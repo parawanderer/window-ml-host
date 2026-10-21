@@ -73,14 +73,26 @@ pub fn inspect(dir: &Path) -> Option<RepoConfig> {
         }
     };
     // A linked worktree keeps its shared config in the common dir, and may have its own config.worktree.
-    let common = std::fs::read_to_string(gitdir.join("commondir"))
-        .ok()
-        .map(|c| {
+    // Only a `commondir` that is NotFound (a main worktree) falls back to the gitdir; one that cannot be read or does
+    // not resolve would skip the shared config and report false, so it is runs-code with the reason.
+    let common = match std::fs::read_to_string(gitdir.join("commondir")) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => gitdir.clone(),
+        Err(e) => {
+            flag(format!("{} cannot be read: {e}", gitdir.join("commondir").display()));
+            return Some(r);
+        }
+        Ok(c) => {
             let c = PathBuf::from(c.trim());
-            if c.is_absolute() { c } else { gitdir.join(c) }
-        })
-        .and_then(|c| c.canonicalize().ok())
-        .unwrap_or_else(|| gitdir.clone());
+            let c = if c.is_absolute() { c } else { gitdir.join(c) };
+            match c.canonicalize() {
+                Ok(c) => c,
+                Err(_) => {
+                    flag(format!("commondir points at {}, which does not resolve", c.display()));
+                    return Some(r);
+                }
+            }
+        }
+    };
     let trusted: Vec<PathBuf> = [root.canonicalize().ok(), gitdir.canonicalize().ok(), common.canonicalize().ok()]
         .into_iter()
         .flatten()
@@ -331,6 +343,16 @@ mod tests {
         assert_eq!(r.root, root);
         assert!(!r.runs_code, "{:?}", r.reasons);
         assert_eq!(inspect(Path::new("/")), None);
+    }
+
+    #[test]
+    fn a_commondir_that_does_not_resolve_runs_code() {
+        // Falling back to the worktree's own gitdir would skip the shared config and report false.
+        let (_d, root) = repo_with("[core]\n\tbare = false\n");
+        std::fs::write(root.join(".git/commondir"), "../missing\n").unwrap();
+        let r = inspect(&root).unwrap();
+        assert!(r.runs_code);
+        assert!(r.reasons[0].contains("does not resolve"), "{:?}", r.reasons);
     }
 
     #[test]
