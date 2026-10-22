@@ -478,6 +478,58 @@ fn the_sandbox_confines_writes_to_the_roots() {
 }
 
 #[test]
+fn a_confined_call_that_runs_wmlhost_or_a_sandbox_tool_reaches_no_withheld_path() {
+    // The call may exec any program, `wmlhost` and the sandbox tools included. None of them may widen what the
+    // call's own sandbox withholds: Seatbelt refuses a second `sandbox_apply`, Landlock and bubblewrap only narrow,
+    // and a second host's call is the confined host's child. Found by the red-team session (2026-10-22).
+    let (_d, r) = root();
+    let (_o, outside) = root();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    // Positive control: the confinement holds both ways, so the vectors below cannot pass vacuously.
+    let (_, d) = h.run(json!({ "argv": ["touch", "inside"], "cwd": r }));
+    assert_eq!(d["code"], 0, "{}", text(&h.read_all(&d["stderr"])));
+    let (_, d) = h.run(json!({ "argv": ["touch", outside.join("pwned-ctl")], "cwd": r }));
+    assert_ne!(d["code"], 0, "{d}");
+    let wml = env!("CARGO_BIN_EXE_wmlhost");
+    let o = outside.display();
+    // A second host inside the call, told the outside is a root and not to sandbox: its frames, written ahead, one
+    // file each, since the host answers concurrently and `spawn` must follow `configure`. Its first spawn is `c1`.
+    for (seq, call, args) in [
+        (1, "configure", json!({ "roots": [r, outside], "sandbox": false })),
+        (2, "spawn", json!({ "argv": ["touch", outside.join("pwned-v3")], "cwd": outside })),
+        (3, "start", json!({ "id": "c1" })),
+    ] {
+        let b = serde_json::to_vec(&json!({ "seq": seq, "call": call, "args": args })).unwrap();
+        std::fs::write(r.join(format!("f{seq}")), [&(b.len() as u32).to_ne_bytes()[..], &b].concat()).unwrap();
+    }
+    let ruleset = format!(r#"{{"abi":1,"exec":[],"writeEdit":[],"writeFiles":[],"writeTrees":["{o}"]}}"#);
+    let vectors = [
+        format!("/usr/bin/sandbox-exec -p '(version 1)(allow default)' touch {o}/pwned-v1"),
+        format!("{wml} exec-under '{ruleset}' -- touch {o}/pwned-v2"),
+        format!(
+            "(cat f1; sleep 1; cat f2; sleep 1; cat f3; sleep 2) | WMLHOST_STATE_DIR=\"$TMPDIR/owners\" {wml} \
+             chrome-extension://abcdefghijklmnopabcdefghijklmnop/ > second.out"
+        ),
+        format!("bwrap --bind / / touch {o}/pwned-v4"),
+        format!("HOME={o} {wml} install --extension-id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+    ];
+    for script in &vectors {
+        // A vector may fail for any reason; what matters is that nothing appears outside.
+        let (_, d) = h.run(json!({ "argv": ["sh", "-c", script], "cwd": r }));
+        let names: Vec<_> = std::fs::read_dir(&outside).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert!(names.is_empty(), "{script} wrote outside the roots: {names:?} {d}");
+    }
+    // The second host did run and answer, and its call ended failed: the outside stayed withheld from it.
+    let second = text(&std::fs::read(r.join("second.out")).unwrap());
+    assert!(second.contains(r#""event":"done""#) && second.contains(r#""ok":false"#), "{second}");
+    h.close();
+}
+
+#[test]
 fn the_sandbox_keeps_files_that_run_code_later_read_only() {
     let (_d, r) = root();
     assert!(Command::new("git").args(["init", "-q"]).current_dir(&r).status().unwrap().success());
