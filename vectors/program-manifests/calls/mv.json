@@ -17,11 +17,13 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -30,7 +32,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "mv",
         "a",
@@ -53,11 +55,13 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -66,7 +70,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "mv",
         "-f",
@@ -90,11 +94,13 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -103,7 +109,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "mv",
         "-i",
@@ -127,11 +133,13 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -140,7 +148,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "mv",
         "-n",
@@ -164,11 +172,13 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -177,7 +187,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "mv",
         "-v",
@@ -201,11 +211,13 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -214,7 +226,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "mv",
         "-fv",
@@ -239,15 +251,18 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -256,7 +271,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "mv",
         "a",
@@ -279,11 +294,13 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -292,7 +309,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "mv",
         "a",
@@ -314,11 +331,13 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -327,7 +346,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "mv",
         "a",
@@ -350,11 +369,13 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -363,7 +384,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "mv",
         "--",
@@ -384,11 +405,13 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -397,7 +420,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "mv",
         "a",
@@ -418,11 +441,13 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -431,7 +456,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "mv",
         "-t",
@@ -452,11 +477,13 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -465,7 +492,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "mv",
         "-b",
@@ -486,11 +513,13 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -499,7 +528,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "mv",
         "-u",

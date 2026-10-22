@@ -346,7 +346,7 @@ pub struct CommandSpec {
     /// Effects also fall on the directory the command acts in and on the repository's root.
     #[serde(default)]
     pub repo_wide: bool,
-    /// Operands are git pathspecs: one starting with `:` makes the call unknown.
+    /// Operands are git pathspecs: one starting with `:`, or holding `*`, `?`, `[` or `\\`, makes the call unknown.
     #[serde(default)]
     pub pathspecs: bool,
 }
@@ -723,6 +723,11 @@ fn apply(
     }
 }
 
+/// Whether git may read a pathspec as something other than the one path it spells: `:` magic, or a glob or escape git expands.
+fn not_literal_pathspec(a: &str) -> bool {
+    a.starts_with(':') || a.contains(['*', '?', '[', '\\'])
+}
+
 /// Options-then-operands. Returns the operand indices, the path start a flag set, and the index of a subcommand name
 /// when the command has subcommands and one was reached before any operand.
 fn parse_options(
@@ -739,8 +744,8 @@ fn parse_options(
     while i < argv.len() {
         let a = argv[i].as_str();
         if after_terminator {
-            if cmd.pathspecs && a.starts_with(':') {
-                unknown(d, format!("pathspec {a:?} is magic, not a path"));
+            if cmd.pathspecs && not_literal_pathspec(a) {
+                unknown(d, format!("pathspec {a:?} is magic or a glob, not a path"));
             }
             operands.push(i);
             i += 1;
@@ -765,8 +770,8 @@ fn parse_options(
             if cmd.subcommands.is_some() && operands.is_empty() {
                 return Parsed { operands, paths_from, sub: Some(i) };
             }
-            if cmd.pathspecs && a.starts_with(':') {
-                unknown(d, format!("pathspec {a:?} is magic, not a path"));
+            if cmd.pathspecs && not_literal_pathspec(a) {
+                unknown(d, format!("pathspec {a:?} is magic or a glob, not a path"));
             }
             operands.push(i);
             i += 1;

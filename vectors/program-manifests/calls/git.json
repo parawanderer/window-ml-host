@@ -2544,11 +2544,13 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -2557,7 +2559,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "git",
         "--no-pager",
@@ -2584,11 +2586,13 @@
       "pathArgs": [
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 4,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -2597,7 +2601,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "git",
         "--no-pager",
@@ -2625,11 +2629,13 @@
       "pathArgs": [
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 4,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -2638,7 +2644,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "git",
         "--no-pager",
@@ -2666,11 +2672,13 @@
       "pathArgs": [
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 4,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -2679,7 +2687,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "git",
         "--no-pager",
@@ -2707,11 +2715,13 @@
       "pathArgs": [
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 4,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -2720,7 +2730,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "git",
         "--no-pager",
@@ -2748,11 +2758,13 @@
       "pathArgs": [
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 4,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -2761,7 +2773,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "git",
         "--no-pager",
@@ -2789,11 +2801,13 @@
       "pathArgs": [
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 4,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -2802,7 +2816,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "git",
         "--no-pager",
@@ -2830,11 +2844,13 @@
       "pathArgs": [
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 4,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -2843,7 +2859,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "git",
         "--no-pager",
@@ -2872,15 +2888,18 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 4,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -2889,7 +2908,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "git",
         "--no-pager",
@@ -2912,11 +2931,13 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         }
       ],
       "actsOnDir": false,
@@ -2925,7 +2946,7 @@
         0
       ],
       "echoes": false,
-      "recursive": false,
+      "recursive": true,
       "hardened": [
         "git",
         "--no-pager",
@@ -2948,10 +2969,43 @@
       "pathArgs": [
         {
           "arg": 3,
-          "role": "read"
+          "role": "read",
+          "walk": true
         },
         {
           "arg": 4,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "mv",
+        "--made-up",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "*.ts"
+      ],
+      "note": "a glob pathspec: git removes every match, so not one path: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
           "role": "read"
         }
       ],
@@ -2965,9 +3019,133 @@
       "hardened": [
         "git",
         "--no-pager",
+        "rm",
+        "*.ts"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "a?.ts"
+      ],
+      "note": "a ? glob pathspec: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "a?.ts"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "[ab].ts"
+      ],
+      "note": "a [ glob pathspec: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "[ab].ts"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--",
+        "src/*.ts"
+      ],
+      "note": "a glob after the terminator is still a glob: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "--",
+        "src/*.ts"
+      ]
+    },
+    {
+      "argv": [
+        "git",
         "mv",
-        "--made-up",
-        "a",
+        "a\\*",
+        "b"
+      ],
+      "note": "a backslash escape: git reads a\\* as the name a*, not this path: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "mv",
+        "a\\*",
         "b"
       ]
     }

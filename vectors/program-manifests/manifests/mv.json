@@ -15,6 +15,7 @@
     ],
     "paths": "operands",
     "noPaths": "nothing",
+    "recursive": true,
     "terminator": "--",
     "clusters": true,
     "optionsFirst": true,

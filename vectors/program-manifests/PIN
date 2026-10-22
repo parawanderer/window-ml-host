@@ -1,2 +1,2 @@
-window-ml 9b0197d7 (feat/rm-mv-manifests): src/shell/manifests/*.json -> manifests/, tests/fixtures/program-calls/*.json -> calls/
-sha256 0eaaf117599059894497bdfc012862b9406ef9792d0d5114de978456c190adaa (tests/manifest_vectors.rs VECTOR_PIN; window-ml holds the same pin)
+window-ml 2c3b47a7 (feat/rm-mv-manifests): src/shell/manifests/*.json -> manifests/, tests/fixtures/program-calls/*.json -> calls/
+sha256 e9a0d8e8599460c1e6b21a2a39bde023c2ccca96acc8b6aae7d04324c02d1cf4 (tests/manifest_vectors.rs VECTOR_PIN; window-ml holds the same pin)

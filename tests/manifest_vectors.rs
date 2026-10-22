@@ -47,7 +47,7 @@ fn every_vector_call_describes_as_recorded() {
             assert_eq!(json!(harden_argv(&argv, &d)), c["hardened"], "hardened: {who}");
         }
     }
-    assert_eq!(total, 305);
+    assert_eq!(total, 310);
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn all_thirteen_programs_have_a_manifest_and_a_calls_file() {
 
 /// The copy's hash, held by window-ml's `tests/program-manifest.test.mjs` too: a change to a manifest or call fixture
 /// on either side fails both suites until the copy and both pins move together.
-const VECTOR_PIN: &str = "0eaaf117599059894497bdfc012862b9406ef9792d0d5114de978456c190adaa";
+const VECTOR_PIN: &str = "e9a0d8e8599460c1e6b21a2a39bde023c2ccca96acc8b6aae7d04324c02d1cf4";
 
 /// The agreed input (lanes 10 and 11, 2026-10-21): every `calls/*.json` and `manifests/*.json` by that name, sorted
 /// bytewise, one `<sha256 of the raw bytes>  <name>\n` line each (shasum's format), and the sha256 of those lines.

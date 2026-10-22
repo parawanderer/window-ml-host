@@ -1495,6 +1495,7 @@
         ],
         "paths": "operands",
         "noPaths": "nothing",
+        "recursive": true,
         "terminator": "--end-of-options",
         "clusters": true,
         "dashIsPath": true,
