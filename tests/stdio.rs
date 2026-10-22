@@ -480,8 +480,10 @@ fn the_sandbox_confines_writes_to_the_roots() {
 #[test]
 fn a_confined_call_that_runs_wmlhost_or_a_sandbox_tool_reaches_no_withheld_path() {
     // The call may exec any program, `wmlhost` and the sandbox tools included. None of them may widen what the
-    // call's own sandbox withholds: Seatbelt refuses a second `sandbox_apply`, Landlock and bubblewrap only narrow,
-    // and a second host's call is the confined host's child. Found by the red-team session (2026-10-22).
+    // call's own sandbox withholds: the host's profile refuses a second `sandbox_apply`, Landlock and bubblewrap only
+    // narrow, and a second host's call is the confined host's child. Found by the red-team session (2026-10-22).
+    // Which vectors reach their write: macOS the second host and `install` (`sandbox-exec` dies in `sandbox_apply`,
+    // `exec-under` is Linux-only, there is no `bwrap`); Linux all but `sandbox-exec`, which is absent.
     let (_d, r) = root();
     let (_o, outside) = root();
     let mut h = Host::start();
@@ -497,11 +499,13 @@ fn a_confined_call_that_runs_wmlhost_or_a_sandbox_tool_reaches_no_withheld_path(
     let wml = env!("CARGO_BIN_EXE_wmlhost");
     let o = outside.display();
     // A second host inside the call, told the outside is a root and not to sandbox: its frames, written ahead, one
-    // file each, since the host answers concurrently and `spawn` must follow `configure`. Its first spawn is `c1`.
+    // file each. The host answers concurrently, so each is sent only once the previous answer is out (`w` waits on
+    // the output, never on wall time); stdin stays open until `done` is. Its first spawn is `c1`.
     for (seq, call, args) in [
-        (1, "configure", json!({ "roots": [r, outside], "sandbox": false })),
-        (2, "spawn", json!({ "argv": ["touch", outside.join("pwned-v3")], "cwd": outside })),
-        (3, "start", json!({ "id": "c1" })),
+        (1, "hello", json!({})),
+        (2, "configure", json!({ "roots": [r, outside], "sandbox": false })),
+        (3, "spawn", json!({ "argv": ["touch", outside.join("pwned-v3")], "cwd": outside })),
+        (4, "start", json!({ "id": "c1" })),
     ] {
         let b = serde_json::to_vec(&json!({ "seq": seq, "call": call, "args": args })).unwrap();
         std::fs::write(r.join(format!("f{seq}")), [&(b.len() as u32).to_ne_bytes()[..], &b].concat()).unwrap();
@@ -511,7 +515,9 @@ fn a_confined_call_that_runs_wmlhost_or_a_sandbox_tool_reaches_no_withheld_path(
         format!("/usr/bin/sandbox-exec -p '(version 1)(allow default)' touch {o}/pwned-v1"),
         format!("{wml} exec-under '{ruleset}' -- touch {o}/pwned-v2"),
         format!(
-            "(cat f1; sleep 1; cat f2; sleep 1; cat f3; sleep 2) | WMLHOST_STATE_DIR=\"$TMPDIR/owners\" {wml} \
+            "w() {{ i=0; until grep -aq \"$1\" second.out || [ $i -ge 600 ]; do sleep 0.1; i=$((i+1)); done; }}; \
+             : > second.out; (cat f1; w '\"seq\":1'; cat f2; w '\"seq\":2'; cat f3; w '\"seq\":3'; cat f4; \
+             w '\"event\":\"done\"') | WMLHOST_STATE_DIR=\"$TMPDIR/owners\" {wml} \
              chrome-extension://abcdefghijklmnopabcdefghijklmnop/ > second.out"
         ),
         format!("bwrap --bind / / touch {o}/pwned-v4"),
@@ -524,8 +530,20 @@ fn a_confined_call_that_runs_wmlhost_or_a_sandbox_tool_reaches_no_withheld_path(
         assert!(names.is_empty(), "{script} wrote outside the roots: {names:?} {d}");
     }
     // The second host did run and answer, and its call ended failed: the outside stayed withheld from it.
-    let second = text(&std::fs::read(r.join("second.out")).unwrap());
-    assert!(second.contains(r#""event":"done""#) && second.contains(r#""ok":false"#), "{second}");
+    let (out, mut frames) = (std::fs::read(r.join("second.out")).unwrap(), vec![]);
+    let mut rest = &out[..];
+    while rest.len() >= 4 {
+        let n = u32::from_ne_bytes(rest[..4].try_into().unwrap()) as usize;
+        frames.push(serde_json::from_slice::<Value>(&rest[4..4 + n]).unwrap());
+        rest = &rest[4 + n..];
+    }
+    let done = frames.iter().find(|f| f["event"] == "done" && f["id"] == "c1");
+    assert_eq!(done.map(|d| &d["ok"]), Some(&json!(false)), "{frames:?}");
+    if cfg!(target_os = "macos") {
+        // Its own probe is a second `sandbox-exec`, refused inside the profile: it reports no sandbox (SANDBOX.md).
+        let hello = frames.iter().find(|f| f["seq"] == 1).expect("hello answered");
+        assert_eq!(hello["value"]["sandbox"]["available"], false, "{hello}");
+    }
     h.close();
 }
 

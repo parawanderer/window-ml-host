@@ -74,7 +74,7 @@ sandbox that does not start fails the job instead of taking the fail-closed path
 | `write_roots_withholds_remove_dir_so_a_top_level_dir_cannot_be_dropped` | `rmdir scratchdir` under `write: "roots"` | |
 | `write_roots_withholds_refer_so_mcp_json_cannot_be_moved_in` | `mv elsewhere/x .mcp.json` under `write: "roots"` | |
 | `an_envelope_on_an_unsandboxed_call_is_refused_not_misreported` | `start` with an envelope and `sandbox: false` (`SandboxFailed`) | the same call without one; `done.envelope` is `{ write: "today", … }` |
-| `a_confined_call_that_runs_wmlhost_or_a_sandbox_tool_reaches_no_withheld_path` | from inside a sandboxed call: `sandbox-exec` with `(allow default)`, `wmlhost exec-under` granting the outside, a second `wmlhost` configured with the outside as a root and `sandbox: false`, `bwrap --bind / /`, `wmlhost install` with `HOME` outside (nothing appears outside; the second host's call ends `ok: false`) | `touch inside` (the control) |
+| `a_confined_call_that_runs_wmlhost_or_a_sandbox_tool_reaches_no_withheld_path` | from inside a sandboxed call: `sandbox-exec` with `(allow default)`, `wmlhost exec-under` granting the outside, a second `wmlhost` configured with the outside as a root and `sandbox: false`, `bwrap --bind / /`, `wmlhost install` with `HOME` outside (nothing appears outside; the second host's call ends `ok: false`). On macOS only the second host and `install` reach their write (`sandbox-exec` dies in `sandbox_apply`, `exec-under` is Linux-only, no `bwrap`); on Linux all but the absent `sandbox-exec` | `touch inside` (the control) |
 | `exec_unders_failure_is_spoken_in_the_shape_sandbox_failed_listens_for` | `wmlhost exec-under` with an unenforceable ruleset exits 2, stderr head `wmlhost exec-under:` | |
 
 Each enforcement test was checked to FAIL against a weakened profile (writes and network allowed; the hooks deny
@@ -177,10 +177,11 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
   person approved by name. Flagged to window-ml's `SHELL.md` as an open question.
 - **`sysctl-read` is allowed in full** on macOS (`sandbox-runtime` lists names). It discloses machine facts such as the
   hostname, not files.
-- **A host started inside another sandbox reports `sandboxed: false`, `placement: "host-plain"`.** Its own probe is a
-  second `sandbox-exec`, which Seatbelt refuses inside a profile, so it fails closed and its calls ask; they still
+- **On macOS, a host started inside the host's sandbox reports `sandboxed: false`, `placement: "host-plain"`.** Its
+  own probe is a second `sandbox-exec`, which the profile refuses, so it fails closed and its calls ask; they still
   inherit the outer confinement, which the facts do not describe. A policy must not read `host-plain` as "nothing
-  confines this call" in either direction. Found by the red-team session, 2026-10-22.
+  confines this call". On Linux the probe is a nested `bwrap`, which may start, so the inner host may report
+  `host-sandbox`; its calls are then inside both. Found by the red-team session, 2026-10-22.
 - **The child reopens its arguments by name**, so a symlink swapped between `spawn` (facts) and `start` can redirect it.
   The sandbox bounds where that redirect can WRITE; on the plain host nothing does, and every call asks there anyway.
 
