@@ -133,7 +133,7 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
   the program manifests, which the host will also read.
 - **A path is resolved with `realpath` against `cwd`.** One that does not exist yet is its deepest existing ancestor's
   realpath plus the rest, and is never `inRoot` if the rest contains `..`. A symlink is followed, so one pointing out of
-  a root is `inRoot: false`. When the last component is itself a symlink (no trailing `/`), the fact adds `link`, the
+  a root is `inRoot: false`. When the last component is itself a symlink (a trailing `/` included), the fact adds `link`, the
   link's own path (its parent's realpath plus its name), and `inRoot` and `secret` hold for the link too: `rm top`
   removes the link `top`, wherever its target is (window-ml #990's review, 2026-10-22).
 - **`walk: true`** on a `pathArgs` entry (a recursive reader: `rg`, `find`, `ls -R`) adds `containsSecret`: `true` if
