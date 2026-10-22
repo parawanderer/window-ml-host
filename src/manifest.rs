@@ -984,6 +984,10 @@ fn finish_command(
     if d.dir_arg.is_some() && cmd.paths != Paths::Word(PathsWord::Repo) && !cmd.repo_wide {
         unknown(d, "a directory flag on a command that does not act on a repository".into());
     }
+    // The host resolves operands against the cwd; git resolves them against the -C directory (and composes repeated -C).
+    if d.dir_arg.is_some() && cmd.repo_wide && !paths.is_empty() {
+        unknown(d, "a directory flag moves where the operands resolve".into());
+    }
     if cmd.effects.contains(&ProgramEffect::Unknown) {
         let path = std::iter::once(d.program.as_str()).chain(d.subcommand.iter().map(String::as_str));
         let msg = format!("{} is described as unknown", path.collect::<Vec<_>>().join(" "));

@@ -547,6 +547,55 @@
         "--recursive",
         "dir"
       ]
+    },
+    {
+      "argv": [
+        "rm",
+        ""
+      ],
+      "note": "an empty operand",
+      "described": true,
+      "effects": [
+        "write-names:fs::?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "rm",
+        ""
+      ]
+    },
+    {
+      "argv": [
+        "rm",
+        "-r"
+      ],
+      "note": "-r with no operand",
+      "described": true,
+      "effects": [],
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "rm",
+        "-r"
+      ]
     }
   ]
 }
