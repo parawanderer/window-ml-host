@@ -521,8 +521,15 @@ fn a_confined_call_that_runs_wmlhost_or_a_sandbox_tool_reaches_no_withheld_path(
              chrome-extension://abcdefghijklmnopabcdefghijklmnop/ > second.out"
         ),
         format!("bwrap --bind / / touch {o}/pwned-v4"),
+        // Not a copy of the parent's read-only bind: a fresh writable bind of the withheld path itself.
+        format!("bwrap --bind / / --bind {o} {o} touch {o}/pwned-v5"),
         format!("HOME={o} {wml} install --extension-id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     ];
+    // Whether a nested bwrap starts at all decides whether the two bwrap vectors reach their write; said, not assumed.
+    let (_, d) = h.run(json!({ "argv": ["sh", "-c", "bwrap --bind / / true"], "cwd": r }));
+    if cfg!(target_os = "linux") && std::env::var("WMLHOST_REQUIRE_SANDBOX").as_deref() == Ok("1") {
+        assert_eq!(d["code"], 0, "a nested bwrap must start here, or the bwrap vectors test nothing: {d}");
+    }
     for script in &vectors {
         // A vector may fail for any reason; what matters is that nothing appears outside.
         let (_, d) = h.run(json!({ "argv": ["sh", "-c", script], "cwd": r }));
