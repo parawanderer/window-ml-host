@@ -637,12 +637,23 @@ impl Session {
                 Some(_) => return fail("BadRequest", "pathArgs[].split is a non-empty string"),
             };
             let r = facts::resolve_path(given, cwd);
-            let secret = facts::looks_secret(&r.path) || facts::looks_secret(Path::new(given));
+            // A symlink's own place: a names write acts on the link, a reader on its target. Both must be in a root.
+            let link = facts::link_of(given, cwd);
+            let link_in_root = match &link {
+                None => true,
+                Some(Ok(l)) => facts::in_roots(l, roots),
+                Some(Err(_)) => false,
+            };
+            let link_secret = matches!(&link, Some(Ok(l)) if facts::looks_secret(l));
+            let secret = facts::looks_secret(&r.path) || facts::looks_secret(Path::new(given)) || link_secret;
             let mut fact = json!({
                 "arg": i, "given": given, "path": r.path,
-                "inRoot": r.clean && facts::in_roots(&r.path, roots),
+                "inRoot": r.clean && facts::in_roots(&r.path, roots) && link_in_root,
                 "secret": secret, "exists": r.exists,
             });
+            if let Some(l) = &link {
+                fact["link"] = json!(l.as_ref().unwrap_or_else(|p| p));
+            }
             // A recursive reader's argument: what lies beneath it, which it reads without naming.
             if e.get("walk") == Some(&Value::Bool(true)) {
                 fact["containsSecret"] = json!(walk::contains_secret(&r.path, walk::WALK_CAP));

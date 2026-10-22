@@ -9,7 +9,8 @@ use window_ml_host::manifest::{Direction, Manifest, Network, ProgramEffect, desc
 
 // --- program manifest vectors ---
 
-const PROGRAMS: [&str; 9] = ["cat", "find", "git", "head", "jq", "ls", "rg", "tail", "wc"];
+const PROGRAMS: [&str; 13] =
+    ["cat", "find", "git", "head", "jq", "ls", "mv", "rg", "rm", "rmdir", "tail", "unlink", "wc"];
 
 fn dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("vectors/program-manifests")
@@ -46,11 +47,11 @@ fn every_vector_call_describes_as_recorded() {
             assert_eq!(json!(harden_argv(&argv, &d)), c["hardened"], "hardened: {who}");
         }
     }
-    assert_eq!(total, 227);
+    assert_eq!(total, 325);
 }
 
 #[test]
-fn all_nine_programs_have_a_manifest_and_a_calls_file() {
+fn all_thirteen_programs_have_a_manifest_and_a_calls_file() {
     let mut names: Vec<String> = fs::read_dir(dir().join("manifests"))
         .unwrap()
         .map(|e| e.unwrap().path().file_stem().unwrap().to_string_lossy().into_owned())
@@ -67,7 +68,7 @@ fn all_nine_programs_have_a_manifest_and_a_calls_file() {
 
 /// The copy's hash, held by window-ml's `tests/program-manifest.test.mjs` too: a change to a manifest or call fixture
 /// on either side fails both suites until the copy and both pins move together.
-const VECTOR_PIN: &str = "18075fc660564baa5db258a2a7279cdb4def08fdf403b3247501e3abb2b6bcba";
+const VECTOR_PIN: &str = "9deeb830d82eefec2674eb6e2bcc48dbc8c90a8c14503de8b9260b9d60bd1b7c";
 
 /// The agreed input (lanes 10 and 11, 2026-10-21): every `calls/*.json` and `manifests/*.json` by that name, sorted
 /// bytewise, one `<sha256 of the raw bytes>  <name>\n` line each (shasum's format), and the sha256 of those lines.
@@ -129,7 +130,7 @@ fn in_range_matches_the_reference_cases() {
 
 // --- the effect vocabulary, enumerated ---
 
-/// Every recorded call's effects across the nine programs: `None` for the top element (`"unknown"`).
+/// Every recorded call's effects across the thirteen programs: `None` for the top element (`"unknown"`).
 fn recorded_effects() -> Vec<Option<Vec<String>>> {
     let mut out = Vec::new();
     for program in PROGRAMS {
@@ -170,7 +171,7 @@ fn every_term_sits_in_its_own_slot_of_the_inventory() {
 #[test]
 fn every_effect_term_the_host_reads_is_exercised_by_a_vector() {
     let recorded = recorded_effects();
-    // No vector manifest says `{"network": {"direction": "write"}}`: none of the nine programs only sends. It is held
+    // No vector manifest says `{"network": {"direction": "write"}}`: none of the thirteen programs only sends. It is held
     // by `a_change_only_network_term_describes_as_a_write` below until window-ml's vectors gain one.
     let without_vector = [ProgramEffect::Network(Network { direction: Some(Direction::Write) })];
     for term in ProgramEffect::ALL {

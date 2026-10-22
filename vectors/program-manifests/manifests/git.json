@@ -43,7 +43,11 @@
       "--literal-pathspecs": {},
       "--glob-pathspecs": {},
       "--noglob-pathspecs": {},
-      "--icase-pathspecs": {},
+      "--icase-pathspecs": {
+        "effects": [
+          "unknown"
+        ]
+      },
       "--no-optional-locks": {},
       "--no-lazy-fetch": {},
       "--no-advice": {},
@@ -1462,6 +1466,54 @@
             "runner": true,
             "value": true
           }
+        }
+      },
+      "rm": {
+        "effects": [
+          "write-names"
+        ],
+        "paths": "operands",
+        "noPaths": "nothing",
+        "recursive": true,
+        "terminator": "--end-of-options",
+        "clusters": true,
+        "dashIsPath": true,
+        "repoWide": true,
+        "pathspecs": true,
+        "flags": {
+          "-f": {},
+          "--force": {},
+          "-n": {},
+          "--dry-run": {},
+          "-q": {},
+          "--quiet": {},
+          "--cached": {},
+          "--ignore-unmatch": {},
+          "-r": {
+            "recursive": true
+          }
+        }
+      },
+      "mv": {
+        "effects": [
+          "write-names"
+        ],
+        "paths": "operands",
+        "noPaths": "nothing",
+        "recursive": true,
+        "terminator": "--end-of-options",
+        "clusters": true,
+        "dashIsPath": true,
+        "repoWide": true,
+        "pathspecs": true,
+        "flags": {
+          "-f": {},
+          "--force": {},
+          "-k": {},
+          "-n": {},
+          "--dry-run": {},
+          "-v": {},
+          "--verbose": {}
         }
       }
     },

@@ -1,0 +1,269 @@
+{
+  "program": "rmdir",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "rmdir",
+        "d"
+      ],
+      "note": "one directory",
+      "described": true,
+      "effects": [
+        "write-names:fs:d:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "rmdir",
+        "d"
+      ]
+    },
+    {
+      "argv": [
+        "rmdir",
+        "d",
+        "e"
+      ],
+      "note": "two",
+      "described": true,
+      "effects": [
+        "write-names:fs:d:?:?",
+        "write-names:fs:e:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        },
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "rmdir",
+        "d",
+        "e"
+      ]
+    },
+    {
+      "argv": [
+        "rmdir",
+        "-v",
+        "d"
+      ],
+      "note": "-v",
+      "described": true,
+      "effects": [
+        "write-names:fs:d:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "rmdir",
+        "-v",
+        "d"
+      ]
+    },
+    {
+      "argv": [
+        "rmdir",
+        "--",
+        "-d"
+      ],
+      "note": "after --, a file name",
+      "described": true,
+      "effects": [
+        "write-names:fs:-d:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "rmdir",
+        "--",
+        "-d"
+      ]
+    },
+    {
+      "argv": [
+        "rmdir",
+        "-"
+      ],
+      "note": "a lone - is a name",
+      "described": true,
+      "effects": [
+        "write-names:fs:-:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "rmdir",
+        "-"
+      ]
+    },
+    {
+      "argv": [
+        "rmdir",
+        "-p",
+        "a/b/c"
+      ],
+      "note": "-p removes the parents too: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "rmdir",
+        "-p",
+        "a/b/c"
+      ]
+    },
+    {
+      "argv": [
+        "rmdir",
+        "d",
+        "-p"
+      ],
+      "note": "an option after an operand: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "rmdir",
+        "d",
+        "-p"
+      ]
+    },
+    {
+      "argv": [
+        "rmdir",
+        "--ignore-fail-on-non-empty",
+        "d"
+      ],
+      "note": "GNU only: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "rmdir",
+        "--ignore-fail-on-non-empty",
+        "d"
+      ]
+    },
+    {
+      "argv": [
+        "rmdir",
+        "."
+      ],
+      "note": "the cwd itself",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "rmdir",
+        "."
+      ]
+    }
+  ]
+}

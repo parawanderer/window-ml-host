@@ -1,0 +1,30 @@
+{
+  "program": "mv",
+  "version": {
+    "range": "*",
+    "args": [],
+    "pattern": ""
+  },
+  "okCodes": [
+    0
+  ],
+  "echoes": false,
+  "command": {
+    "effects": [
+      "write-names"
+    ],
+    "paths": "operands",
+    "noPaths": "nothing",
+    "recursive": true,
+    "terminator": "--",
+    "clusters": true,
+    "optionsFirst": true,
+    "dashIsPath": true,
+    "flags": {
+      "-f": {},
+      "-i": {},
+      "-n": {},
+      "-v": {}
+    }
+  }
+}

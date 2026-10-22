@@ -1,0 +1,540 @@
+{
+  "program": "mv",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "mv",
+        "a",
+        "b"
+      ],
+      "note": "a rename: both names",
+      "described": true,
+      "effects": [
+        "write-names:fs:a:?:?",
+        "write-names:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "mv",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "mv",
+        "-f",
+        "a",
+        "b"
+      ],
+      "note": "-f",
+      "described": true,
+      "effects": [
+        "write-names:fs:a:?:?",
+        "write-names:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "mv",
+        "-f",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "mv",
+        "-i",
+        "a",
+        "b"
+      ],
+      "note": "-i",
+      "described": true,
+      "effects": [
+        "write-names:fs:a:?:?",
+        "write-names:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "mv",
+        "-i",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "mv",
+        "-n",
+        "a",
+        "b"
+      ],
+      "note": "-n",
+      "described": true,
+      "effects": [
+        "write-names:fs:a:?:?",
+        "write-names:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "mv",
+        "-n",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "mv",
+        "-v",
+        "a",
+        "b"
+      ],
+      "note": "-v",
+      "described": true,
+      "effects": [
+        "write-names:fs:a:?:?",
+        "write-names:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "mv",
+        "-v",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "mv",
+        "-fv",
+        "a",
+        "b"
+      ],
+      "note": "a cluster",
+      "described": true,
+      "effects": [
+        "write-names:fs:a:?:?",
+        "write-names:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "mv",
+        "-fv",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "mv",
+        "a",
+        "b",
+        "dir"
+      ],
+      "note": "into a directory: the destination is named",
+      "described": true,
+      "effects": [
+        "write-names:fs:a:?:?",
+        "write-names:fs:b:?:?",
+        "write-names:fs:dir:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "mv",
+        "a",
+        "b",
+        "dir"
+      ]
+    },
+    {
+      "argv": [
+        "mv",
+        "a",
+        "dir/"
+      ],
+      "note": "a trailing slash",
+      "described": true,
+      "effects": [
+        "write-names:fs:a:?:?",
+        "write-names:fs:dir/:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "mv",
+        "a",
+        "dir/"
+      ]
+    },
+    {
+      "argv": [
+        "mv",
+        "a",
+        "."
+      ],
+      "note": "into the cwd",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "mv",
+        "a",
+        "."
+      ]
+    },
+    {
+      "argv": [
+        "mv",
+        "--",
+        "-a",
+        "-b"
+      ],
+      "note": "after --, file names",
+      "described": true,
+      "effects": [
+        "write-names:fs:-a:?:?",
+        "write-names:fs:-b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "mv",
+        "--",
+        "-a",
+        "-b"
+      ]
+    },
+    {
+      "argv": [
+        "mv",
+        "a",
+        "b",
+        "-f"
+      ],
+      "note": "an option after an operand: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "mv",
+        "a",
+        "b",
+        "-f"
+      ]
+    },
+    {
+      "argv": [
+        "mv",
+        "-t",
+        "dir",
+        "a"
+      ],
+      "note": "-t is GNU only: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "mv",
+        "-t",
+        "dir",
+        "a"
+      ]
+    },
+    {
+      "argv": [
+        "mv",
+        "-b",
+        "a",
+        "b"
+      ],
+      "note": "-b is GNU only: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "mv",
+        "-b",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "mv",
+        "-u",
+        "a",
+        "b"
+      ],
+      "note": "-u differs between implementations: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "mv",
+        "-u",
+        "a",
+        "b"
+      ]
+    }
+  ]
+}
