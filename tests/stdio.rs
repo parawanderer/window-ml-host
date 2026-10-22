@@ -521,8 +521,24 @@ fn a_confined_call_that_runs_wmlhost_or_a_sandbox_tool_reaches_no_withheld_path(
              chrome-extension://abcdefghijklmnopabcdefghijklmnop/ > second.out"
         ),
         format!("bwrap --bind / / touch {o}/pwned-v4"),
+        // A new bind of the withheld path itself; bwrap and the kernel keep it read-only (the controls below show it
+        // mounts, so the refusal is the write's). Then an explicit read-write remount of it.
+        format!("bwrap --bind / / --bind {o} {o} touch {o}/pwned-v5"),
+        format!("bwrap --bind / / --cap-add ALL sh -c 'mount -o remount,bind,rw {o} && touch {o}/pwned-v6'"),
         format!("HOME={o} {wml} install --extension-id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     ];
+    // Whether a nested bwrap starts, and mounts the re-bind, decides whether the bwrap vectors reach their write.
+    if cfg!(target_os = "linux") && std::env::var("WMLHOST_REQUIRE_SANDBOX").as_deref() == Ok("1") {
+        for control in ["bwrap --bind / / true".to_string(), format!("bwrap --bind / / --bind {o} {o} true")] {
+            let (_, d) = h.run(json!({ "argv": ["sh", "-c", control], "cwd": r }));
+            assert_eq!(
+                d["code"],
+                0,
+                "{control} must run here, or a bwrap vector tests nothing: {}",
+                text(&h.read_all(&d["stderr"]))
+            );
+        }
+    }
     for script in &vectors {
         // A vector may fail for any reason; what matters is that nothing appears outside.
         let (_, d) = h.run(json!({ "argv": ["sh", "-c", script], "cwd": r }));
