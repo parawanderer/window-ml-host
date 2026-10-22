@@ -337,6 +337,18 @@ pub struct CommandSpec {
     pub recursive: bool,
     /// Arguments inserted right after this command's name.
     pub harden: Option<Vec<String>>,
+    /// An argument starting with `-` after an operand, `--` included, makes the call unknown (GNU permutes, BSD stops).
+    #[serde(default)]
+    pub options_first: bool,
+    /// A lone `-` is a file name: it stays a path operand.
+    #[serde(default)]
+    pub dash_is_path: bool,
+    /// Effects also fall on the directory the command acts in and on the repository's root.
+    #[serde(default)]
+    pub repo_wide: bool,
+    /// Operands are git pathspecs: one starting with `:` makes the call unknown.
+    #[serde(default)]
+    pub pathspecs: bool,
 }
 
 /// The versions a manifest was written against and how the host reads the version.
@@ -586,9 +598,14 @@ pub fn describe_call(argv: &[String], m: &Manifest, version: Option<&str>, env_s
             None => argv[i].clone(),
         }
     };
+    let repo_wide = cmd.repo_wide;
     let mut command_targets: Vec<String> = operand_paths.iter().map(|i| argv[*i].clone()).collect();
     if d.acts_on_dir {
         command_targets.push(d.dir_arg.map_or(".".to_string(), |a| argv[a].clone()));
+    }
+    if repo_wide {
+        command_targets.push(d.dir_arg.map_or(".".to_string(), |a| argv[a].clone()));
+        command_targets.push(".".to_string());
     }
     let mut keys: Vec<String> = Vec::new();
     for (term, targets) in &terms {
@@ -722,7 +739,15 @@ fn parse_options(
     while i < argv.len() {
         let a = argv[i].as_str();
         if after_terminator {
+            if cmd.pathspecs && a.starts_with(':') {
+                unknown(d, format!("pathspec {a:?} is magic, not a path"));
+            }
             operands.push(i);
+            i += 1;
+            continue;
+        }
+        if cmd.options_first && !operands.is_empty() && a != "-" && a.starts_with('-') {
+            unknown(d, format!("{a} follows an operand: GNU reads it as an option, BSD as a file name"));
             i += 1;
             continue;
         }
@@ -739,6 +764,9 @@ fn parse_options(
         if a == "-" || !a.starts_with('-') {
             if cmd.subcommands.is_some() && operands.is_empty() {
                 return Parsed { operands, paths_from, sub: Some(i) };
+            }
+            if cmd.pathspecs && a.starts_with(':') {
+                unknown(d, format!("pathspec {a:?} is magic, not a path"));
             }
             operands.push(i);
             i += 1;
@@ -939,14 +967,16 @@ fn finish_command(
         Paths::From(f) => operands.get(paths_from.unwrap_or(f.operands_from)..).unwrap_or(&[]).to_vec(),
         Paths::Word(_) => Vec::new(),
     };
-    paths.retain(|i| argv[*i] != "-");
+    if !cmd.dash_is_path {
+        paths.retain(|i| argv[*i] != "-");
+    }
     for i in &paths {
         d.path_args.push(PathArg { arg: *i, split: None, role: Role::Read, walk: false });
     }
     let none = cmd.paths == Paths::Word(PathsWord::None);
     d.acts_on_dir =
         cmd.paths == Paths::Word(PathsWord::Repo) || (paths.is_empty() && cmd.no_paths == Some(NoPaths::Cwd) && !none);
-    if d.dir_arg.is_some() && cmd.paths != Paths::Word(PathsWord::Repo) {
+    if d.dir_arg.is_some() && cmd.paths != Paths::Word(PathsWord::Repo) && !cmd.repo_wide {
         unknown(d, "a directory flag on a command that does not act on a repository".into());
     }
     if cmd.effects.contains(&ProgramEffect::Unknown) {

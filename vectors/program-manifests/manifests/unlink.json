@@ -1,0 +1,25 @@
+{
+  "program": "unlink",
+  "version": {
+    "range": "*",
+    "args": [],
+    "pattern": ""
+  },
+  "okCodes": [
+    0
+  ],
+  "echoes": false,
+  "command": {
+    "effects": [
+      "write-names"
+    ],
+    "paths": "operands",
+    "noPaths": "nothing",
+    "terminator": "--",
+    "clusters": false,
+    "optionsFirst": true,
+    "dashIsPath": true,
+    "maxOperands": 1,
+    "flags": {}
+  }
+}

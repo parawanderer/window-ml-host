@@ -1959,6 +1959,1017 @@
         "--no-textconv",
         "a.ts"
       ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "a.txt"
+      ],
+      "note": "git rm: the file, the directory it acts in and the repository root",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "-f",
+        "a.txt"
+      ],
+      "note": "git rm -f",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "-f",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--force",
+        "a.txt"
+      ],
+      "note": "git rm --force",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "--force",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "-n",
+        "a.txt"
+      ],
+      "note": "git rm -n, a dry run, claimed as the real thing",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "-n",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--dry-run",
+        "a.txt"
+      ],
+      "note": "git rm --dry-run",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "--dry-run",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "-q",
+        "a.txt"
+      ],
+      "note": "git rm -q",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "-q",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--quiet",
+        "a.txt"
+      ],
+      "note": "git rm --quiet",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "--quiet",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--cached",
+        "a.txt"
+      ],
+      "note": "git rm --cached, the index only, claimed as the real thing",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "--cached",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--ignore-unmatch",
+        "a.txt"
+      ],
+      "note": "git rm --ignore-unmatch",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "--ignore-unmatch",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "-r",
+        "dir"
+      ],
+      "note": "git rm -r: the operand is walked",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:dir:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "-r",
+        "dir"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "-rf",
+        "dir"
+      ],
+      "note": "git rm, a cluster",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:dir:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "-rf",
+        "dir"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--",
+        "-x"
+      ],
+      "note": "git rm after --: a dash-leading name is a path",
+      "described": true,
+      "effects": [
+        "write-names:fs:-x:?:?",
+        "write-names:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "--",
+        "-x"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--end-of-options",
+        "-x"
+      ],
+      "note": "git rm after --end-of-options",
+      "described": true,
+      "effects": [
+        "write-names:fs:-x:?:?",
+        "write-names:fs:.:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "--end-of-options",
+        "-x"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        ":/foo"
+      ],
+      "note": "pathspec magic is relative to the repository root: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        ":/foo"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--pathspec-from-file=list.txt"
+      ],
+      "note": "the operands come from a file: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "--pathspec-from-file=list.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "-C",
+        "sub",
+        "rm",
+        "a.txt"
+      ],
+      "note": "git -C: the directory it acts in is sub",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a.txt:?:?",
+        "write-names:fs:sub:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "-C",
+        "sub",
+        "rm",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--made-up",
+        "a"
+      ],
+      "note": "an unlisted flag: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "rm",
+        "--made-up",
+        "a"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "a",
+        "b"
+      ],
+      "note": "git mv: both names, the directory and the repository root",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a:?:?",
+        "write-names:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "mv",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "-f",
+        "a",
+        "b"
+      ],
+      "note": "git mv -f",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a:?:?",
+        "write-names:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        },
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "mv",
+        "-f",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "--force",
+        "a",
+        "b"
+      ],
+      "note": "git mv --force",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a:?:?",
+        "write-names:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        },
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "mv",
+        "--force",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "-k",
+        "a",
+        "b"
+      ],
+      "note": "git mv -k",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a:?:?",
+        "write-names:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        },
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "mv",
+        "-k",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "-n",
+        "a",
+        "b"
+      ],
+      "note": "git mv -n",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a:?:?",
+        "write-names:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        },
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "mv",
+        "-n",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "--dry-run",
+        "a",
+        "b"
+      ],
+      "note": "git mv --dry-run",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a:?:?",
+        "write-names:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        },
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "mv",
+        "--dry-run",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "-v",
+        "a",
+        "b"
+      ],
+      "note": "git mv -v",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a:?:?",
+        "write-names:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        },
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "mv",
+        "-v",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "--verbose",
+        "a",
+        "b"
+      ],
+      "note": "git mv --verbose",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a:?:?",
+        "write-names:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        },
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "mv",
+        "--verbose",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "a",
+        "b",
+        "dir"
+      ],
+      "note": "git mv into a directory",
+      "described": true,
+      "effects": [
+        "write-names:fs:.:?:?",
+        "write-names:fs:a:?:?",
+        "write-names:fs:b:?:?",
+        "write-names:fs:dir:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "read"
+        },
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "mv",
+        "a",
+        "b",
+        "dir"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        ":/a",
+        "b"
+      ],
+      "note": "pathspec magic: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "mv",
+        ":/a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "--made-up",
+        "a",
+        "b"
+      ],
+      "note": "an unlisted flag: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        },
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "mv",
+        "--made-up",
+        "a",
+        "b"
+      ]
     }
   ]
 }

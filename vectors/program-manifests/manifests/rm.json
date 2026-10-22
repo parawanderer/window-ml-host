@@ -1,0 +1,35 @@
+{
+  "program": "rm",
+  "version": {
+    "range": "*",
+    "args": [],
+    "pattern": ""
+  },
+  "okCodes": [
+    0
+  ],
+  "echoes": false,
+  "command": {
+    "effects": [
+      "write-names"
+    ],
+    "paths": "operands",
+    "noPaths": "nothing",
+    "terminator": "--",
+    "clusters": true,
+    "optionsFirst": true,
+    "dashIsPath": true,
+    "flags": {
+      "-d": {},
+      "-f": {},
+      "-i": {},
+      "-v": {},
+      "-r": {
+        "recursive": true
+      },
+      "-R": {
+        "recursive": true
+      }
+    }
+  }
+}

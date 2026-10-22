@@ -1,2 +1,2 @@
-window-ml 3f98f690 (main; find.json last changed by #788, a6826b00): src/shell/manifests/*.json -> manifests/, tests/fixtures/program-calls/*.json -> calls/
-sha256 18075fc660564baa5db258a2a7279cdb4def08fdf403b3247501e3abb2b6bcba (tests/manifest_vectors.rs VECTOR_PIN; window-ml holds the same pin)
+window-ml 9b0197d7 (feat/rm-mv-manifests): src/shell/manifests/*.json -> manifests/, tests/fixtures/program-calls/*.json -> calls/
+sha256 0eaaf117599059894497bdfc012862b9406ef9792d0d5114de978456c190adaa (tests/manifest_vectors.rs VECTOR_PIN; window-ml holds the same pin)

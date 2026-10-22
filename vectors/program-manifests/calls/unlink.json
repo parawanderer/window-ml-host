@@ -1,0 +1,257 @@
+{
+  "program": "unlink",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "unlink",
+        "a.txt"
+      ],
+      "note": "one file",
+      "described": true,
+      "effects": [
+        "write-names:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "unlink",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "unlink",
+        "dir/a.txt"
+      ],
+      "note": "a nested file",
+      "described": true,
+      "effects": [
+        "write-names:fs:dir/a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "unlink",
+        "dir/a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "unlink",
+        "--",
+        "-x"
+      ],
+      "note": "after --, a file name",
+      "described": true,
+      "effects": [
+        "write-names:fs:-x:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "unlink",
+        "--",
+        "-x"
+      ]
+    },
+    {
+      "argv": [
+        "unlink",
+        "-"
+      ],
+      "note": "a lone - is a name",
+      "described": true,
+      "effects": [
+        "write-names:fs:-:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "unlink",
+        "-"
+      ]
+    },
+    {
+      "argv": [
+        "unlink",
+        "a",
+        "b"
+      ],
+      "note": "two operands: both implementations refuse, unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        },
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "unlink",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "unlink",
+        "-f",
+        "a"
+      ],
+      "note": "unlink takes no option: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "unlink",
+        "-f",
+        "a"
+      ]
+    },
+    {
+      "argv": [
+        "unlink",
+        "--version"
+      ],
+      "note": "GNU only: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "unlink",
+        "--version"
+      ]
+    },
+    {
+      "argv": [
+        "unlink",
+        "a",
+        "-x"
+      ],
+      "note": "an option after an operand: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "unlink",
+        "a",
+        "-x"
+      ]
+    },
+    {
+      "argv": [
+        "unlink",
+        "../x"
+      ],
+      "note": "outside the cwd",
+      "described": true,
+      "effects": [
+        "write-names:fs:../x:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "unlink",
+        "../x"
+      ]
+    }
+  ]
+}
