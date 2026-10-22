@@ -43,7 +43,11 @@
       "--literal-pathspecs": {},
       "--glob-pathspecs": {},
       "--noglob-pathspecs": {},
-      "--icase-pathspecs": {},
+      "--icase-pathspecs": {
+        "effects": [
+          "unknown"
+        ]
+      },
       "--no-optional-locks": {},
       "--no-lazy-fetch": {},
       "--no-advice": {},

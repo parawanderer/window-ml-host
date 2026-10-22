@@ -3148,6 +3148,76 @@
         "a\\*",
         "b"
       ]
+    },
+    {
+      "argv": [
+        "git",
+        "--icase-pathspecs",
+        "rm",
+        "Secret.ts"
+      ],
+      "note": "--icase-pathspecs: on a case-sensitive host Secret.ts matches secret.ts, a name the host never resolved: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "--icase-pathspecs",
+        "rm",
+        "Secret.ts"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "--icase-pathspecs",
+        "mv",
+        "Secret.ts",
+        "other.ts"
+      ],
+      "note": "--icase-pathspecs on mv: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 4,
+          "role": "read",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "git",
+        "--no-pager",
+        "--icase-pathspecs",
+        "mv",
+        "Secret.ts",
+        "other.ts"
+      ]
     }
   ]
 }
