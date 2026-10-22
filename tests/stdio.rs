@@ -650,6 +650,30 @@ fn a_walked_argument_or_cwd_reports_the_secrets_beneath_it() {
 }
 
 #[test]
+fn a_symlink_argument_reports_the_link_and_both_ends_must_be_in_a_root() {
+    let (_d, r) = root();
+    let (_o, out) = root();
+    std::fs::create_dir_all(r.join("src/gen")).unwrap();
+    std::os::unix::fs::symlink(r.join("src/gen"), r.join("top")).unwrap();
+    std::os::unix::fs::symlink(r.join("src/gen"), out.join("in")).unwrap();
+    std::os::unix::fs::symlink(r.join("src/gen"), r.join(".env")).unwrap();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let spawn =
+        |h: &mut Host, a: &str| h.ok("spawn", json!({ "argv": ["rm", a], "cwd": r, "pathArgs": [{ "arg": 1 }] }));
+    let f = spawn(&mut h, "top");
+    // rm removes the link /top, a top-level name, though its target is nested: the worker places both.
+    assert_eq!(f["paths"][0]["path"], json!(r.join("src/gen")));
+    assert_eq!(f["paths"][0]["link"], json!(r.join("top")));
+    assert_eq!(f["paths"][0]["inRoot"], true);
+    let f = spawn(&mut h, out.join("in").to_str().unwrap());
+    assert_eq!(f["paths"][0]["inRoot"], false, "a link outside the roots to a target inside them");
+    assert_eq!(spawn(&mut h, ".env")["paths"][0]["secret"], true, "a link named like a secret");
+    assert!(spawn(&mut h, "src/gen")["paths"][0].get("link").is_none(), "not a link");
+    h.close();
+}
+
+#[test]
 fn env_free_is_true_only_for_the_free_list() {
     let (_d, r) = root();
     let mut h = Host::start();

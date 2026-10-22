@@ -64,6 +64,19 @@ pub fn resolve_path(given: &str, cwd: &Path) -> Resolved {
     Resolved { path: joined, exists: false, clean: false }
 }
 
+/// When `given`'s last component is a symlink (no trailing `/`, which follows it): the link itself, as its parent's
+/// realpath plus its name. `resolve_path` reports the target; a names write (`rm`, `mv`, `unlink`) removes or renames
+/// the link, which may sit elsewhere among the roots (a top-level name). `Err` with the unresolved path when the
+/// parent does not resolve, which is never in a root.
+pub fn link_of(given: &str, cwd: &Path) -> Option<Result<PathBuf, PathBuf>> {
+    let joined = if Path::new(given).is_absolute() { PathBuf::from(given) } else { cwd.join(given) };
+    if given.ends_with('/') || !std::fs::symlink_metadata(&joined).ok()?.file_type().is_symlink() {
+        return None;
+    }
+    let (Some(parent), Some(name)) = (joined.parent(), joined.file_name()) else { return Some(Err(joined)) };
+    Some(parent.canonicalize().map(|p| p.join(name)).map_err(|_| joined.clone()))
+}
+
 /// A pinned file is hashed only up to this size; a larger one has no hash, so no pin can match it.
 pub const MAX_PIN_BYTES: u64 = 16 << 20;
 
@@ -206,6 +219,20 @@ mod tests {
         std::fs::create_dir(root.join("sub")).unwrap();
         let r = resolve_path("sub/../sub", &root);
         assert_eq!(r, Resolved { path: root.join("sub"), exists: true, clean: true });
+    }
+
+    #[test]
+    fn a_symlinks_link_is_where_it_sits_not_its_target() {
+        let d = tempfile::tempdir().unwrap();
+        let root = real(&d);
+        std::fs::create_dir_all(root.join("src/gen")).unwrap();
+        std::os::unix::fs::symlink(root.join("src/gen"), root.join("top")).unwrap();
+        assert_eq!(resolve_path("top", &root).path, root.join("src/gen"));
+        assert_eq!(link_of("top", &root), Some(Ok(root.join("top"))));
+        assert_eq!(link_of("./top", &root), Some(Ok(root.join("top"))));
+        assert_eq!(link_of("top/", &root), None, "a trailing / follows the link");
+        assert_eq!(link_of("src/gen", &root), None, "not a link");
+        assert_eq!(link_of("missing", &root), None);
     }
 
     #[test]
