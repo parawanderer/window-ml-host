@@ -42,13 +42,25 @@ pub struct Entry {
     /// The call's members as last seen, each with its start time ([`runner::follow`]): how a descendant that left the
     /// group and outlived the leader is still found. Empty in a ledger an older host wrote.
     pub members: Vec<(u32, u64)>,
+    /// A group a session started itself and declared with `register`, not one this host spawned. The host is not its
+    /// parent: it never sees an exit status, and it signals the group only while the group is still the recorded one.
+    pub registered: bool,
 }
 
 impl Entry {
     fn to_json(&self) -> Value {
-        json!({ "id": self.id, "pgid": self.pgid, "start": self.start, "owner": self.owner,
+        let mut v = json!({ "id": self.id, "pgid": self.pgid, "start": self.start, "owner": self.owner,
                 "startedMs": self.started_ms, "deadlineMs": self.deadline_ms, "memoryBound": self.memory_bound,
-                "protected": self.protected, "members": self.members })
+                "protected": self.protected, "members": self.members });
+        if self.registered {
+            v["kind"] = json!("registered");
+        }
+        v
+    }
+
+    /// `"registered"` or `"spawned"`, as `status`, `owner` and the ended record name it.
+    pub fn kind(&self) -> &'static str {
+        if self.registered { "registered" } else { "spawned" }
     }
 
     fn from_json(v: &Value) -> Option<Entry> {
@@ -62,6 +74,7 @@ impl Entry {
             memory_bound: v["memoryBound"].as_u64().unwrap_or(0),
             protected: serde_json::from_value(v["protected"].clone()).ok().flatten(),
             members: serde_json::from_value(v["members"].clone()).unwrap_or_default(),
+            registered: v["kind"] == "registered",
         })
     }
 }
@@ -69,7 +82,7 @@ impl Entry {
 /// Whether the recorded group id still names the call's group: its leader is the same process, or the leader is gone
 /// and the group still has members. False when the leader's pid now names another process: the group under that id is
 /// then someone else's, and is never signalled or followed for the call.
-fn group_is_ours(e: &Entry) -> bool {
+pub fn group_is_ours(e: &Entry) -> bool {
     match procs::start_time(e.pgid) {
         Some(t) => e.start == Some(t),
         None => group_alive(e.pgid),
@@ -84,7 +97,7 @@ pub fn still_ours(e: &Entry) -> bool {
 
 /// A recorded call's members now: [`runner::follow`] while its group is ours, else only its recorded members that are
 /// still those processes, and their descendants.
-fn members_of(e: &Entry) -> Vec<(u32, u64)> {
+pub fn members_of(e: &Entry) -> Vec<(u32, u64)> {
     if group_is_ours(e) { runner::follow(e.pgid, &e.members) } else { runner::follow_known(&e.members) }
 }
 
@@ -217,6 +230,28 @@ pub fn sweep(dir: &Path, own: Option<&Ledger>) -> Swept {
     out
 }
 
+/// Every row of every ledger in `dir` but `own`: the running calls of the other live hosts and the orphans of hosts
+/// that are gone. Read, never swept. Empty for a directory that is not private, as [`sweep`] is: a ledger someone
+/// else could write would name owners for groups that are not theirs.
+pub fn other_rows(dir: &Path, own: Option<&Ledger>) -> Vec<Entry> {
+    if !private_dir(dir) {
+        return vec![];
+    }
+    let Ok(rd) = std::fs::read_dir(dir) else { return vec![] };
+    rd.flatten()
+        .map(|e| e.path())
+        .filter(|p| !own.is_some_and(|l| l.path == *p) && p.extension().is_some_and(|x| x == "json"))
+        .filter(|p| writer_of(p).is_some())
+        .flat_map(|p| {
+            std::fs::read(&p)
+                .ok()
+                .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+                .and_then(|v| v.as_array().map(|a| a.iter().filter_map(Entry::from_json).collect::<Vec<_>>()))
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
 /// The host process a ledger file belongs to, from its name `<pid>-<start>.json`.
 fn writer_of(path: &Path) -> Option<(u32, u64)> {
     let (p, t) = path.file_stem()?.to_str()?.split_once('-')?;
@@ -312,8 +347,13 @@ pub fn warden_main(args: &[String]) -> i32 {
 /// An orphan as `status` reports it. `protectedChanged` is computed now, against the snapshot its `start` took: what
 /// changed among the protected names so far, `[]` when nothing; absent when an older host wrote the entry.
 pub fn orphan_json(e: &Entry) -> Value {
+    let members = members_of(e);
     let mut v = json!({ "id": e.id, "pid": e.pgid, "owner": e.owner, "startedMs": e.started_ms,
-                        "deadlineMs": e.deadline_ms, "footprint": members_of(e).iter().filter_map(|(p, _)| procs::footprint(*p)).sum::<u64>() });
+                        "deadlineMs": e.deadline_ms, "footprint": members.iter().filter_map(|(p, _)| procs::footprint(*p)).sum::<u64>(),
+                        "cpuMs": members.iter().filter_map(|(p, _)| procs::cpu_ns(*p)).sum::<u64>() / 1_000_000 });
+    if e.registered {
+        v["kind"] = json!("registered");
+    }
     if let Some(s) = &e.protected {
         let r = tripwire::report(s);
         v["protectedChanged"] = r.json();
@@ -390,6 +430,9 @@ fn safe_id(id: &str) -> bool {
 fn ended_json(e: &Entry, cause: Cause, killed: bool) -> Value {
     let mut v = json!({ "id": e.id, "owner": e.owner, "startedMs": e.started_ms, "deadlineMs": e.deadline_ms,
                         "endedMs": now_ms(), "cause": cause.word(), "killed": killed });
+    if e.registered {
+        v["kind"] = json!("registered");
+    }
     if let Some(s) = &e.protected {
         let r = tripwire::report(s);
         v["protectedChanged"] = r.json();
@@ -477,8 +520,9 @@ fn read_record(p: &Path) -> Option<Value> {
     }
     let v: Value = serde_json::from_slice(&std::fs::read(p).ok()?).ok()?;
     let o = v.as_object()?;
-    const KEYS: [&str; 9] = [
+    const KEYS: [&str; 10] = [
         "id",
+        "kind",
         "owner",
         "startedMs",
         "deadlineMs",
@@ -500,6 +544,11 @@ fn read_record(p: &Path) -> Option<Value> {
     let mut out = json!({ "id": id, "owner": o.get("owner")?.clone(), "startedMs": o.get("startedMs")?.as_u64()?,
                           "deadlineMs": deadline, "endedMs": o.get("endedMs")?.as_u64()?, "cause": cause,
                           "killed": o.get("killed")?.as_bool()? });
+    match o.get("kind") {
+        None => {}
+        Some(k) if k == "registered" => out["kind"] = json!("registered"),
+        Some(_) => return None,
+    }
     if let Some(c) = o.get("protectedChanged") {
         out["protectedChanged"] = Value::Array(c.as_array()?.clone());
     }
@@ -581,6 +630,7 @@ mod tests {
             memory_bound: 0,
             protected: None,
             members: Vec::new(),
+            registered: false,
         }
     }
 

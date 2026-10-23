@@ -31,6 +31,8 @@ pub const WATCH_EVERY: Duration = Duration::from_millis(100);
 pub struct Meter {
     pub now: AtomicU64,
     pub peak: AtomicU64,
+    /// The CPU time of the members at the last sample ([`procs::cpu_ns`]), in milliseconds: measured, never bounded.
+    pub cpu_ms: AtomicU64,
     /// The call's members at the last sample, each with its start time ([`follow`]): what a kill reaches besides the
     /// group, once a descendant that left it has been reparented away from the call.
     tracked: Mutex<Vec<(u32, u64)>>,
@@ -45,6 +47,18 @@ impl Meter {
     /// The members seen at the last sample, with their start times.
     pub fn tracked(&self) -> Vec<(u32, u64)> {
         self.tracked.lock().unwrap().clone()
+    }
+
+    /// Takes one sample of `members`: their summed footprint and CPU time, and the members themselves for the next
+    /// kill or follow. Returns the footprint. A member that exited since the last sample takes its CPU time with it
+    /// unless a member reaped it, so the figure can fall; the reader sees the time of what is alive.
+    pub fn sample(&self, members: Vec<(u32, u64)>) -> u64 {
+        let bytes = members.iter().filter_map(|(p, _)| procs::footprint(*p)).sum();
+        let cpu: u64 = members.iter().filter_map(|(p, _)| procs::cpu_ns(*p)).sum();
+        self.cpu_ms.store(cpu / 1_000_000, Ordering::Relaxed);
+        *self.tracked.lock().unwrap() = members;
+        self.record(bytes);
+        bytes
     }
 }
 
@@ -99,6 +113,8 @@ pub struct Outcome {
     pub killed: Option<&'static str>,
     /// The highest footprint the watchdog measured, in bytes.
     pub peak_footprint: u64,
+    /// The CPU time of the call's members at the watchdog's last sample, in milliseconds.
+    pub cpu_ms: u64,
     pub memory_bound: u64,
     pub duration_ms: u64,
     /// `None` when the stdout went on to the next stage of a pipeline ([`Running::take_stdout`]).
@@ -181,11 +197,7 @@ async fn watchdog(pgid: u32, bound: u64, meter: Arc<Meter>) {
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         tick.tick().await;
-        let members = follow(pgid, &meter.tracked());
-        let bytes = members.iter().filter_map(|(p, _)| procs::footprint(*p)).sum();
-        *meter.tracked.lock().unwrap() = members;
-        meter.record(bytes);
-        if bytes > bound {
+        if meter.sample(follow(pgid, &meter.tracked())) > bound {
             return;
         }
     }
@@ -241,11 +253,27 @@ pub async fn finish(
         cancelled,
         killed,
         peak_footprint: meter.peak.load(Ordering::Relaxed),
+        cpu_ms: meter.cpu_ms.load(Ordering::Relaxed),
         memory_bound,
         duration_ms: started.elapsed().as_millis() as u64,
         stdout,
         stderr,
     }
+}
+
+/// SIGTERM to a group the host did not start: `pgid`, then SIGKILL to what is left after [`KILL_GRACE`] through `kill`,
+/// which checks the group is still the one recorded. Used for a registered group, which has no child to wait on.
+pub async fn terminate_group(pgid: u32, still_there: impl Fn() -> bool, kill: impl Fn() -> bool) -> bool {
+    signal_group(pgid, Signal::TERM);
+    let end = Instant::now() + KILL_GRACE;
+    while Instant::now() < end {
+        if !still_there() {
+            return true;
+        }
+        tokio::time::sleep(WATCH_EVERY).await;
+    }
+    kill();
+    true
 }
 
 /// SIGTERM to the group, then SIGKILL after [`KILL_GRACE`].

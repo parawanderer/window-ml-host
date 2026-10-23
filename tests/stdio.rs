@@ -1932,3 +1932,178 @@ fn a_sandboxed_call_cannot_touch_the_state_dir() {
     assert!(!forged.exists(), "a sandboxed call wrote into the ledger directory");
     h.close();
 }
+
+// --- register: a group a session started itself, owned by what the connection declares ---
+
+/// A process group this test starts itself, as a harness would: `sh -c <script>` leading a group of its own.
+fn own_group(script: &str) -> Child {
+    use std::os::unix::process::CommandExt;
+    Command::new("sh").args(["-c", script]).process_group(0).spawn().unwrap()
+}
+
+/// SIGKILL to a group this test started, and its reaping.
+fn kill_group(mut c: Child) {
+    let _ = Command::new("kill").args(["-KILL", &format!("-{}", c.id())]).status();
+    let _ = c.wait();
+}
+
+/// The pid of `parent`'s child, once it has one.
+fn child_of(parent: u32) -> u32 {
+    let end = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let out = Command::new("pgrep").args(["-P", &parent.to_string()]).output().unwrap();
+        if let Some(p) = text(&out.stdout).lines().next().and_then(|l| l.trim().parse().ok()) {
+            return p;
+        }
+        assert!(std::time::Instant::now() < end, "{parent} never started a child");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn a_registered_group_is_a_row_its_members_answer_owner_and_its_end_is_a_done() {
+    let mut h = Host::start();
+    let hello = h.ok("hello", json!({}));
+    assert_eq!(hello["owners"]["register"], true, "{hello}");
+    assert!(hello["cpu"]["metric"].is_string(), "{hello}");
+    let g = own_group("sleep 30 & wait");
+    let leader = g.id();
+    let sleeper = child_of(leader);
+    let owner = json!({ "session": "abc123", "harness": "claude-code" });
+    let r = h.ok("register", json!({ "pgid": leader, "owner": owner }));
+    let id = r["id"].as_str().unwrap().to_string();
+    assert_eq!(r["pid"], leader);
+    let st = h.ok("status", json!({}));
+    let row = st["running"].as_array().unwrap().iter().find(|c| c["id"] == json!(id)).cloned().expect("listed");
+    assert_eq!(row["kind"], "registered");
+    assert_eq!(row["owner"], owner);
+    assert!(row["cpuMs"].is_u64(), "{row}");
+    // The leader and a descendant both answer with the declared owner; this test process is in no row.
+    for pid in [leader, sleeper] {
+        let o = h.ok("owner", json!({ "pid": pid }));
+        assert_eq!(o["owner"], owner, "{pid}: {o}");
+        assert_eq!(
+            (o["kind"].as_str(), o["host"].as_str(), o["id"].as_str()),
+            (Some("registered"), Some("this"), Some(&*id))
+        );
+    }
+    assert_eq!(h.ok("owner", json!({ "pid": std::process::id() })), json!({ "owner": null }), "nobody's");
+    // The group ends by another hand: the host is not its parent, so `done` says it ended and nothing of how.
+    kill_group(g);
+    let d = h.done(&id);
+    assert_eq!(d["registered"], true, "{d}");
+    assert_eq!((d["code"].clone(), d["ok"].clone(), d["killed"].clone()), (Value::Null, Value::Null, Value::Null));
+    assert!(d["cpuMs"].is_u64(), "{d}");
+    assert_eq!(h.ok("status", json!({}))["running"], json!([]));
+    h.close();
+}
+
+#[test]
+fn register_refuses_the_host_s_own_group_init_a_gone_group_a_bad_owner_and_a_group_already_owned() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    let owner = json!({ "session": "s" });
+    let bad = |h: &mut Host, args: Value| h.call("register", args).unwrap_err().0;
+    // The host runs in this test's group: registering it would let the port closing kill the host and its parent.
+    let mine = Command::new("ps").args(["-o", "pgid=", "-p", &std::process::id().to_string()]).output().unwrap();
+    let mine: u32 = text(&mine.stdout).trim().parse().unwrap();
+    assert_eq!(bad(&mut h, json!({ "pgid": mine, "owner": owner })), "BadRequest");
+    assert_eq!(bad(&mut h, json!({ "pgid": 1, "owner": owner })), "BadRequest");
+    let mut gone = Command::new("true").spawn().unwrap();
+    let gone_id = gone.id();
+    gone.wait().unwrap();
+    assert_eq!(bad(&mut h, json!({ "pgid": gone_id, "owner": owner })), "BadRequest");
+    let g = own_group("sleep 30");
+    for o in [Value::Null, json!("s"), json!({ "s": "x".repeat(2000) })] {
+        assert_eq!(bad(&mut h, json!({ "pgid": g.id(), "owner": o })), "BadRequest", "owner {o}");
+    }
+    h.ok("register", json!({ "pgid": g.id(), "owner": owner }));
+    assert_eq!(bad(&mut h, json!({ "pgid": g.id(), "owner": owner })), "BadRequest", "registered twice");
+    // A group this host spawned is already its row, and a second host sharing the state dir sees the first's rows.
+    h.ok("configure", json!({ "roots": [r], "sandbox": false }));
+    let f = h.ok("spawn", json!({ "argv": ["sleep", "30"], "cwd": r }));
+    let started = h.ok("start", json!({ "id": f["id"] }));
+    assert_eq!(bad(&mut h, json!({ "pgid": started["pid"], "owner": owner })), "BadRequest");
+    let dir = h.state.as_ref().unwrap().path().join("owners");
+    let mut other = Host::start_in(&dir, &[]);
+    assert_eq!(bad(&mut other, json!({ "pgid": g.id(), "owner": owner })), "BadRequest", "another host's row");
+    let o = other.ok("owner", json!({ "pid": g.id() }));
+    assert_eq!((o["owner"].clone(), o["host"].as_str()), (owner.clone(), Some("other")), "{o}");
+    other.close();
+    h.close();
+    // Registered under the default policy, so it died with the port.
+    let mut g = g;
+    assert!(!g.wait().unwrap().success());
+}
+
+#[test]
+fn a_registered_group_dies_with_its_port_by_default_and_an_orphan_is_listed_to_the_next_host() {
+    let state = tempfile::tempdir().unwrap();
+    let dir = state.path().join("owners");
+    let mut h = Host::start_in(&dir, &[]);
+    let killed = own_group("sleep 30");
+    let kept = own_group("sleep 30");
+    let owner = json!({ "session": "s2", "harness": "claude-code" });
+    h.ok("register", json!({ "pgid": killed.id(), "owner": owner }));
+    h.ok("register", json!({ "pgid": kept.id(), "owner": owner, "onOwnerLoss": "orphan", "orphanTimeoutMs": 60_000 }));
+    let (killed_pid, kept_pid) = (killed.id(), kept.id());
+    h.close();
+    let mut next = Host::start_in(&dir, &[]);
+    let st = next.ok("status", json!({}));
+    let orphans = st["orphans"].as_array().unwrap();
+    assert_eq!(orphans.len(), 1, "{st}");
+    assert_eq!((orphans[0]["pid"].as_u64(), orphans[0]["kind"].as_str()), (Some(kept_pid as u64), Some("registered")));
+    assert!(orphans[0]["cpuMs"].is_u64(), "{st}");
+    let ended = st["ended"].as_array().unwrap();
+    let rec = ended.iter().find(|e| e["cause"] == "owner-lost").unwrap_or_else(|| panic!("{st}"));
+    assert_eq!((rec["kind"].as_str(), rec["killed"].as_bool()), (Some("registered"), Some(true)));
+    let o = next.ok("owner", json!({ "pid": kept_pid }));
+    assert_eq!((o["host"].as_str(), o["orphan"].as_bool()), (Some("other"), Some(true)), "{o}");
+    next.close();
+    // Reaped here: the test is their parent, so a killed one is a zombie until waited for.
+    let mut killed = killed;
+    let status = killed.wait().unwrap();
+    assert!(!status.success(), "the registered group was killed when its port closed");
+    assert!(Command::new("kill").args(["-0", &kept_pid.to_string()]).status().unwrap().success(), "the orphan runs");
+    let _ = killed_pid;
+    kill_group(kept);
+}
+
+#[test]
+fn a_registered_group_past_its_memory_bound_is_killed_and_one_cancelled_ends_with_it() {
+    let mut h = Host::start();
+    let mut c = {
+        use std::os::unix::process::CommandExt;
+        let a = allocator(1024);
+        Command::new(&a[0]).args(&a[1..]).process_group(0).spawn().unwrap()
+    };
+    let bound: u64 = 128 << 20;
+    let r = h.ok("register", json!({ "pgid": c.id(), "owner": { "session": "s" }, "memoryBound": bound }));
+    let d = h.done(r["id"].as_str().unwrap());
+    assert_eq!(d["killed"], "oom", "{d}");
+    let peak = d["peakFootprint"].as_u64().unwrap();
+    assert!(peak > bound && peak < 768 << 20, "killed soon after the bound: {peak}");
+    assert!(!c.wait().unwrap().success());
+
+    let g = own_group("sleep 30");
+    let r = h.ok("register", json!({ "pgid": g.id(), "owner": { "session": "s" } }));
+    let id = r["id"].as_str().unwrap().to_string();
+    assert_eq!(h.ok("cancel", json!({ "id": id })), json!({ "signalled": true }));
+    let d = h.done(&id);
+    assert_eq!(d["cancelled"], true, "{d}");
+    let mut g = g;
+    assert!(!g.wait().unwrap().success(), "a cancelled group is signalled");
+    h.close();
+}
+
+#[test]
+fn a_spawned_call_s_done_carries_its_cpu_time() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r], "sandbox": false }));
+    let (_, d) = h.run(json!({ "argv": ["perl", "-e", "my $t = time + 2; while (time < $t) {}"], "cwd": r }));
+    assert_eq!(d["ok"], true, "{d}");
+    let cpu = d["cpuMs"].as_u64().unwrap();
+    assert!(cpu >= 500, "about a second of spinning, sampled every 100 ms: {cpu} ms");
+    h.close();
+}
