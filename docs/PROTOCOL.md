@@ -38,11 +38,12 @@ the host answers each as it finishes, not in order. A message that is not an obj
 `args: {}` → the host's identity and what it can do. Safe to call any time.
 
 ```jsonc
-{ "host": "window-ml-host", "version": "0.3.0", "protocol": 1, "platform": "macos",
+{ "host": "window-ml-host", "version": "0.7.0", "protocol": 1, "platform": "macos",
   "sandbox": { "kind": "seatbelt", "available": true, "landlockAbi": null },  // kind: "seatbelt" | "bwrap" | null; "reason" when unavailable; landlockAbi: number | null (Linux only)
   "modes": ["host"],                                                // "container" appears once a runner exists
-  "owners": { "ledger": true },                                     // false: the owner table is in memory only (see "Owners")
-  "memory": { "metric": "phys_footprint", "enforcer": "watchdog", "everyMs": 100 } }
+  "owners": { "ledger": true, "register": true },                   // ledger false: the table is in memory only; register false over the hub (see "Owners")
+  "memory": { "metric": "phys_footprint", "enforcer": "watchdog", "everyMs": 100 },
+  "cpu": { "metric": "user+system, with reaped children" } }        // what `cpuMs` counts: measured, never bounded
 ```
 
 Over the hub (`docs/HUB.md`) `hello` adds `"transport": "hub"` and `"hub": { "roots": [...], "callers": 2, "revocationsAgeMs": 3600000, "events": true }`:
@@ -270,24 +271,73 @@ the person the names a command will receive instead of a pattern a shell would e
 `args: { "id": "c3" }` → `{ "signalled": true }`. SIGTERM to the process group, SIGKILL two seconds later if it is still
 there. The `done` event follows with `cancelled: true`.
 
+### `register`: own a process group this connection started
+
+```jsonc
+args:  { "pgid": 51234,                                   // a process group this connection started itself
+         "owner": { "session": "…", "harness": "claude-code", "run": "…", "step": 3 },  // required, at most 1 KiB of JSON
+         "memoryBound": 4294967296,                       // optional, as for spawn
+         "onOwnerLoss": "orphan", "orphanTimeoutMs": 60000 }   // optional, as for spawn
+value: { "id": "r4", "pid": 51234, "memoryBound": 4294967296, "onOwnerLoss": { "policy": "kill" } }
+```
+
+A group the host did NOT spawn becomes a row of its owner table (window-ml's `SHELL.md`, the ruling of 2026-10-23), so
+"whose process is this" is answered for it as for a spawn. Ownership is DECLARED, never observed: the host verifies
+nothing about who started the group. The row answers with the `owner` this connection declared and is bound to this
+connection: the port closing is its owner going, under the same `onOwnerLoss` as a spawn (killed by default, an orphan
+with a deadline otherwise), with the same `ended` records. A harness with no native port holds a `wmlhost serve`
+session open over stdio; that process exiting is its owner going. `configure` is not needed; without it the bound and
+the policy take their defaults.
+
+The host is not the group's parent. It samples the group, its recorded members and their descendants every 100 ms, as
+it does a spawn's; holds it to its memory bound (`killed: "oom"`); answers `cancel` (SIGTERM, then SIGKILL after 2 s);
+and signals it only while the group id still names the recorded group (its leader's start time, as a ledger entry is
+judged). When nothing of it is left, a `done` follows with `"registered": true`, `code`, `signal` and `ok` all `null`
+(the host never sees an exit status), and `killed`, `cancelled`, `durationMs`, `peakFootprint`, `memoryBound`, `cpuMs`.
+A registered row counts toward the 32 running calls.
+
+Refused with `BadRequest`, and nothing else checked: a `pgid` of 1 or less; a group this host cannot signal (gone, or
+another user's); a group that holds this host or any of its ancestors (the port closing would kill the browser); a
+group that is already a row of this host's table or of any ledger in the state directory; an `owner` that is not an
+object of at most 1 KiB. Over the hub the call is `Refused` with `reason: "scope"` before its arguments are read: a
+remote principal registering a group here would hold a kill over any process of this user.
+
+### `owner`: whose process is this
+
+```jsonc
+args:  { "pid": 51240 }
+value: { "owner": { "session": "…" }, "id": "r4", "kind": "registered", "pgid": 51234, "host": "this", "orphan": false }
+value: { "owner": null }                                  // no row reaches it: nobody's, and that is the answer
+```
+
+The pid is looked for in each row's members as the watchdog follows them (the group, recorded members still the same
+process, and every descendant): this connection's rows first (`host: "this"`), then, over native messaging only, every
+other host's rows in the state directory, live hosts' running calls and gone hosts' orphans (`host: "other"`; `orphan`
+says which). Over the hub only the caller's own rows are read. Nothing is scanned beyond the rows: a process no row
+reaches is nobody's.
+
 ### `status`: the owner table
 
-`args: {}` → every running call of this session, the orphans other host processes left, and the calls that ended with
+`args: {}` → every running call of this session (spawned and registered), the orphans other host processes left, and the calls that ended with
 nobody to read their `done`:
 
 ```jsonc
 { "running": [{ "id": "c3", "pid": 4242, "owner": { "run": "…" }, "startedMs": 1760000000000,
                 "memoryBound": 4294967296, "footprint": 52428800, "peakFootprint": 61865984,
-                "onOwnerLoss": { "policy": "kill" } }],
+                "cpuMs": 1520, "kind": "spawned", "onOwnerLoss": { "policy": "kill" } }],
   "orphans": [{ "id": "c1", "pid": 4100, "owner": { "run": "…" }, "startedMs": 1760000000000,
-                "deadlineMs": 1760000600000, "footprint": 10485760,
+                "deadlineMs": 1760000600000, "footprint": 10485760, "cpuMs": 40,
                 "protectedChanged": [{ "root": "/Users/me/proj", "name": ".envrc", "change": "created" }] }],
   "ended": [{ "id": "c1", "owner": { "run": "…" }, "startedMs": 1760000000000, "deadlineMs": 1760000600000,
               "endedMs": 1760000600140, "cause": "deadline", "killed": true,
               "protectedChanged": [{ "root": "/Users/me/proj", "name": ".vscode", "change": "created" }] }] }
 ```
 
-`footprint` is the last measurement of the call's process group and its descendants; `pid` is the group's id. Reading
+`footprint` is the last measurement of the call's process group and its descendants; `pid` is the group's id. `cpuMs`
+is the CPU time (user and system) of the members alive at that measurement, each with the children it has reaped: a
+member that exited takes its time with it unless a member reaped it, so it can fall. It is measured and never bounded.
+`kind` is `"spawned"` or `"registered"` (`register`); an orphan's and an ended record's `kind` is present only for a
+registered one. Reading
 `status` also sweeps: an orphan past its deadline is killed rather than listed. An orphan's `protectedChanged` is
 computed at the read, against the snapshot its `start` took (as on `done`, below): what changed so far. It is absent for
 an orphan an older host started.
@@ -337,6 +387,7 @@ An `offset` past the end returns zero bytes with `eof: true`. Bytes, not text: o
   "timedOut": false, "cancelled": false, "durationMs": 31,
   "killed": null,                             // "oom": past its memory bound, the whole call was killed (SIGKILL, no grace)
   "peakFootprint": 61865984, "memoryBound": 4294967296,      // bytes; the peak the watchdog measured
+  "cpuMs": 31,                                               // CPU time at the watchdog's last sample (`status`)
   "envelope": { "write": "today", "exec": "any" },           // the scope the host APPLIED ("today" when the worker sent none)
   "protectedChanged": [],                                    // protected names that changed during the call (below)
   "stdout": { "ptr": "out:…", "size": 812, "sha256": "…", "truncated": false },   // { "piped": true } for a non-last `pipe` stage
@@ -394,7 +445,8 @@ into a session of its own is followed through its descendants, never through `ps
   leader is gone and the group still has members (a group id is not reused while a member lives).
 - **Over the hub the owner is the caller.** Its presence gone for 30 s closes its session, as the port closing does
   here, and only its calls meet their `onOwnerLoss`: each caller has its own table (`docs/HUB.md`).
-- The host owns what it spawned and nothing else.
+- The host owns what it spawned and what a connection on this machine declared to it with `register`, and nothing
+  else. A process neither reaches is nobody's (`owner`).
 
 **The memory bound** is on physical footprint, summed over the call's group and descendants, sampled every 100 ms. Past
 it the call is killed and `done` says `killed: "oom"`. A call allocating faster than the bound per interval overshoots by

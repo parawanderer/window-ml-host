@@ -39,6 +39,18 @@ pub fn footprint(pid: u32) -> Option<u64> {
     sys::footprint(pid)
 }
 
+/// One process's CPU time in nanoseconds, user and system, its own plus that of the children it has reaped; `None` once
+/// it is gone. A child is counted once: while it lives by itself, after its parent reaps it in the parent's figure. A
+/// child reparented away and reaped by `init` takes its time with it.
+pub fn cpu_ns(pid: u32) -> Option<u64> {
+    sys::cpu_ns(pid)
+}
+
+/// A process's parent; `None` once it is gone.
+pub fn parent(pid: u32) -> Option<u32> {
+    sys::parent(pid)
+}
+
 /// The summed footprint of a call's members, and the members measured.
 pub fn call_footprint(pgid: u32) -> (u64, Vec<u32>) {
     let pids = members(pgid);
@@ -50,6 +62,9 @@ pub fn call_footprint(pgid: u32) -> (u64, Vec<u32>) {
 pub fn metric() -> &'static str {
     sys::METRIC
 }
+
+/// What `hello` says the CPU fact counts.
+pub const CPU_METRIC: &str = "user+system, with reaped children";
 
 /// Appends each of `known` the seed does not already hold.
 fn add_known(seed: &mut Vec<u32>, known: &[u32]) {
@@ -100,6 +115,24 @@ mod sys {
     pub fn footprint(pid: u32) -> Option<u64> {
         pidrusage::<RUsageInfoV2>(i32::try_from(pid).ok()?).ok().map(|r| r.ri_phys_footprint)
     }
+
+    /// Mach absolute time units to nanoseconds: 125/3 on Apple silicon, 1/1 on Intel. Read as a constant because
+    /// `mach_timebase_info` needs `unsafe`; `a_busy_child_s_cpu_time_tracks_the_wall_clock` fails if it is ever wrong.
+    #[cfg(target_arch = "aarch64")]
+    const TIMEBASE: (u64, u64) = (125, 3);
+    #[cfg(not(target_arch = "aarch64"))]
+    const TIMEBASE: (u64, u64) = (1, 1);
+
+    pub fn cpu_ns(pid: u32) -> Option<u64> {
+        let r = pidrusage::<RUsageInfoV2>(i32::try_from(pid).ok()?).ok()?;
+        let ticks = r.ri_user_time + r.ri_system_time + r.ri_child_user_time + r.ri_child_system_time;
+        Some((ticks as u128 * TIMEBASE.0 as u128 / TIMEBASE.1 as u128) as u64)
+    }
+
+    pub fn parent(pid: u32) -> Option<u32> {
+        let b = pidinfo::<BSDInfo>(i32::try_from(pid).ok()?, 0).ok()?;
+        (b.pbi_pid == pid).then_some(b.pbi_ppid)
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -117,6 +150,18 @@ mod sys {
 
     pub fn start_time(pid: u32) -> Option<u64> {
         stat(pid).map(|(_, _, t)| t)
+    }
+
+    pub fn parent(pid: u32) -> Option<u32> {
+        stat(pid).map(|(pp, _, _)| pp)
+    }
+
+    /// utime, stime, cutime and cstime (fields 14 to 17 of `/proc/<pid>/stat`), in clock ticks.
+    pub fn cpu_ns(pid: u32) -> Option<u64> {
+        let s = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        let f: Vec<&str> = s.get(s.rfind(')')? + 1..)?.split_whitespace().collect();
+        let ticks: u64 = (11..15).map(|i| f.get(i)?.parse::<u64>().ok()).sum::<Option<u64>>()?;
+        Some(ticks.saturating_mul(1_000_000_000) / rustix::param::clock_ticks_per_second().max(1))
     }
 
     pub fn members(pgid: Option<u32>, known: &[u32]) -> Vec<u32> {
@@ -178,11 +223,36 @@ mod tests {
     }
 
     #[test]
+    fn a_child_s_parent_is_this_process() {
+        let mut c = std::process::Command::new("sleep").arg("5").spawn().unwrap();
+        assert_eq!(parent(c.id()), Some(std::process::id()));
+        let _ = c.kill();
+        let _ = c.wait();
+    }
+
+    #[test]
+    fn a_busy_child_s_cpu_time_tracks_the_wall_clock() {
+        // One core spinning for a second: its CPU time is about a second. A wrong unit (Mach ticks read as nanoseconds,
+        // clock ticks as milliseconds) is off by 24x or more, far outside the band.
+        let mut c = std::process::Command::new("sh").args(["-c", "while :; do :; done"]).spawn().unwrap();
+        let t0 = std::time::Instant::now();
+        let before = cpu_ns(c.id()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        let spent = cpu_ns(c.id()).unwrap() - before;
+        let wall = t0.elapsed().as_nanos() as u64;
+        let _ = c.kill();
+        let _ = c.wait();
+        assert!(spent > wall / 3 && spent < wall * 3 / 2, "cpu {spent} ns over {wall} ns of wall clock");
+    }
+
+    #[test]
     fn a_gone_process_has_no_start_time_or_footprint() {
         let mut c = std::process::Command::new("true").spawn().unwrap();
         let pid = c.id();
         c.wait().unwrap();
         assert_eq!(start_time(pid), None);
         assert_eq!(footprint(pid), None);
+        assert_eq!(cpu_ns(pid), None);
+        assert_eq!(parent(pid), None);
     }
 }

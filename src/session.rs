@@ -287,7 +287,12 @@ impl Session {
                 // Its `done` goes to a closed port, so what changed among the protected names is kept for the next
                 // session's `status`.
                 OwnerLoss::Kill => {
-                    let killed = runner::kill_call(c.entry.pgid, &c.meter.tracked());
+                    // A registered group is not the host's child: signalled only while it is still the recorded group.
+                    let killed = if c.entry.registered {
+                        owners::kill_if_ours(&Entry { members: c.meter.tracked(), ..c.entry.clone() })
+                    } else {
+                        runner::kill_call(c.entry.pgid, &c.meter.tracked())
+                    };
                     if let Some(l) = &self.ledger {
                         l.record_ended(&c.entry, owners::Cause::OwnerLost, killed);
                     }
@@ -304,7 +309,11 @@ impl Session {
         } else {
             // No ledger and no warden to keep the deadline: an orphan would outlive its owner unseen, so it goes too.
             orphans.iter().for_each(|e| {
-                runner::kill_call(e.pgid, &e.members);
+                if e.registered {
+                    owners::kill_if_ours(e);
+                } else {
+                    runner::kill_call(e.pgid, &e.members);
+                }
             });
         }
     }
@@ -346,6 +355,14 @@ impl Session {
             "read" => self.read(args),
             "release" => self.release(args),
             "status" => Ok(self.status()),
+            // A remote principal registering a group on this machine would hold a kill over any process of this
+            // user, through owner loss and the memory bound: refused before its arguments are read.
+            "register" if matches!(self.host.transport, Transport::Hub { .. }) => {
+                return self.send(json!({ "seq": seq, "error": { "code": "Refused", "reason": "scope",
+                    "message": "register is not offered over the hub: only a connection on this machine may declare its processes" } }));
+            }
+            "register" => self.register_group(args),
+            "owner" => self.owner_of(args),
             other => fail("BadRequest", format!("unknown call {other:?}")),
         };
         match answer {
@@ -368,7 +385,9 @@ impl Session {
             "platform": std::env::consts::OS,
             "sandbox": sandbox,
             "modes": ["host"],
-            "owners": { "ledger": self.ledger.is_some() },
+            "owners": { "ledger": self.ledger.is_some(),
+                        "register": !matches!(self.host.transport, Transport::Hub { .. }) },
+            "cpu": { "metric": procs::CPU_METRIC },
             "memory": { "metric": procs::metric(), "enforcer": "watchdog", "everyMs": runner::WATCH_EVERY.as_millis() as u64 },
         });
         if let Transport::Hub { roots, callers, revocations_since, events } = &self.host.transport {
@@ -394,6 +413,8 @@ impl Session {
                         "startedMs": c.entry.started_ms, "memoryBound": c.entry.memory_bound,
                         "footprint": c.meter.now.load(std::sync::atomic::Ordering::Relaxed),
                         "peakFootprint": c.meter.peak.load(std::sync::atomic::Ordering::Relaxed),
+                        "cpuMs": c.meter.cpu_ms.load(std::sync::atomic::Ordering::Relaxed),
+                        "kind": c.entry.kind(),
                         "onOwnerLoss": c.owner_loss.json() })
             })
             .collect();
@@ -867,16 +888,20 @@ impl Session {
             memory_bound: p.memory_bound,
             protected: Some(protected.clone()),
             members: Vec::new(),
+            registered: false,
         };
         let mut st = self.state.lock().unwrap();
         if st.closed {
             runner::kill_now(pid);
             return (cancel, meter);
         }
-        st.running.insert(
-            id.to_string(),
-            Call { entry, cancel: cancel.clone(), meter: meter.clone(), owner_loss: p.owner_loss },
-        );
+        self.add_row(&mut st, Call { entry, cancel: cancel.clone(), meter: meter.clone(), owner_loss: p.owner_loss });
+        (cancel, meter)
+    }
+
+    /// Puts a row in the owner table and its ledger, and starts the warden with the first row.
+    fn add_row(&self, st: &mut State, call: Call) {
+        st.running.insert(call.entry.id.clone(), call);
         if let Some(l) = &self.ledger {
             l.write(&st.entries());
             if !st.warden {
@@ -886,7 +911,151 @@ impl Session {
                 }
             }
         }
-        (cancel, meter)
+    }
+
+    /// `register`: a process group this connection started itself becomes a row of the owner table, owned by what the
+    /// connection declares and bound to this connection, as a spawn is to its port (SHELL.md, the ruling of
+    /// 2026-10-23). The host verifies nothing about who started it ([`crate::register::refusal`] lists what it does
+    /// refuse) and is not its parent: the group is watched by sampling until nothing of it is left, held to its memory
+    /// bound, and its `done` carries no exit status.
+    fn register_group(self: &Arc<Self>, a: &Map<String, Value>) -> Result<Value, Fail> {
+        let pgid = opt_u64(a, "pgid")?
+            .and_then(|p| u32::try_from(p).ok())
+            .ok_or_else(|| Fail("BadRequest", "pgid is a process group id".into()))?;
+        let owner = match a.get("owner") {
+            Some(o @ Value::Object(_)) if o.to_string().len() <= MAX_OWNER_BYTES => o.clone(),
+            _ => return fail("BadRequest", format!("owner is an object of at most {MAX_OWNER_BYTES} bytes")),
+        };
+        if let Some(why) = crate::register::refusal(pgid) {
+            return fail("BadRequest", why);
+        }
+        let others = match &self.host.owners_dir {
+            Some(dir) => owners::other_rows(dir, self.ledger.as_ref()),
+            None => vec![],
+        };
+        let mut st = self.state.lock().unwrap();
+        let owned = |e: &Entry| e.pgid == pgid && owners::still_ours(e);
+        if st.running.values().any(|c| owned(&c.entry)) || others.iter().any(owned) {
+            return fail("BadRequest", format!("process group {pgid} is already a row of an owner table"));
+        }
+        if st.closed {
+            return fail("BadRequest", "the port is closing");
+        }
+        if st.running.len() >= MAX_RUNNING {
+            return fail("Busy", format!("{MAX_RUNNING} calls are already running"));
+        }
+        let (bound, max, loss) = match &st.config {
+            Some(c) => (c.memory_bound, c.memory_max, c.owner_loss),
+            None => (DEFAULT_MEMORY_BOUND, DEFAULT_MEMORY_MAX, OwnerLoss::Kill),
+        };
+        let memory_bound = opt_u64(a, "memoryBound")?.unwrap_or(bound).clamp(MIN_MEMORY_BOUND, max);
+        let owner_loss = OwnerLoss::parse(a.get("onOwnerLoss"), opt_u64(a, "orphanTimeoutMs")?, loss)?;
+        let id = format!("r{}", st.next_id);
+        st.next_id += 1;
+        let entry = Entry {
+            id: id.clone(),
+            pgid,
+            start: procs::start_time(pgid),
+            owner,
+            started_ms: owners::now_ms(),
+            deadline_ms: None,
+            memory_bound,
+            protected: None,
+            members: Vec::new(),
+            registered: true,
+        };
+        let cancel = Arc::new(Notify::new());
+        let meter = Arc::new(Meter::default());
+        // The first sample before the answer, so a `status` or `owner` right after it already sees the members.
+        meter.sample(owners::members_of(&entry));
+        self.add_row(&mut st, Call { entry: entry.clone(), cancel: cancel.clone(), meter: meter.clone(), owner_loss });
+        drop(st);
+        self.watch_registered(entry, cancel, meter);
+        Ok(json!({ "id": id, "pid": pgid, "memoryBound": memory_bound, "onOwnerLoss": owner_loss.json() }))
+    }
+
+    /// Samples a registered group until nothing of it is left, it passes its memory bound (killed, `killed: "oom"`),
+    /// or `cancel` (SIGTERM, then SIGKILL after the grace), then sends its `done`.
+    fn watch_registered(self: &Arc<Self>, entry: Entry, cancel: Arc<Notify>, meter: Arc<Meter>) {
+        let s = self.clone();
+        tokio::spawn(async move {
+            let started = Instant::now();
+            let now = |m: &Meter| Entry { members: m.tracked(), ..entry.clone() };
+            let mut tick = tokio::time::interval(runner::WATCH_EVERY);
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            let (mut killed, mut cancelled) = (None, false);
+            loop {
+                tokio::select! {
+                    _ = tick.tick() => {
+                        let members = owners::members_of(&now(&meter));
+                        if members.is_empty() {
+                            break;
+                        }
+                        if meter.sample(members) > entry.memory_bound {
+                            killed = Some("oom");
+                            owners::kill_if_ours(&now(&meter));
+                            break;
+                        }
+                    }
+                    _ = cancel.notified() => {
+                        cancelled = true;
+                        if owners::group_is_ours(&now(&meter)) {
+                            runner::terminate_group(
+                                entry.pgid,
+                                || owners::still_ours(&now(&meter)),
+                                || owners::kill_if_ours(&now(&meter)),
+                            )
+                            .await;
+                        } else {
+                            owners::kill_if_ours(&now(&meter));
+                        }
+                        break;
+                    }
+                }
+            }
+            {
+                let mut st = s.state.lock().unwrap();
+                st.running.remove(&entry.id);
+                if let Some(l) = s.ledger.as_ref().filter(|_| !st.closed) {
+                    l.write(&st.entries());
+                }
+            }
+            use std::sync::atomic::Ordering::Relaxed;
+            s.send(json!({ "event": "done", "id": entry.id, "registered": true,
+                "code": null, "signal": null, "ok": null,
+                "timedOut": false, "cancelled": cancelled, "durationMs": started.elapsed().as_millis() as u64,
+                "killed": killed, "peakFootprint": meter.peak.load(Relaxed), "memoryBound": entry.memory_bound,
+                "cpuMs": meter.cpu_ms.load(Relaxed) }));
+        });
+    }
+
+    /// `owner`: whose process `pid` is, by the owner tables and the descendant walk each row already does, never by
+    /// `ps`: this connection's rows, then (over native messaging only) every other host's rows in the state directory.
+    /// A process no row reaches is nobody's, and that is the answer.
+    fn owner_of(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
+        let pid = opt_u64(a, "pid")?
+            .and_then(|p| u32::try_from(p).ok())
+            .filter(|p| *p > 0)
+            .ok_or_else(|| Fail("BadRequest", "pid is a process id".into()))?;
+        let holds = |e: &Entry| owners::members_of(e).iter().any(|(p, _)| *p == pid);
+        let answer = |e: &Entry, host: &str| {
+            json!({ "owner": e.owner, "id": e.id, "kind": e.kind(), "pgid": e.pgid, "host": host,
+                    "orphan": e.deadline_ms.is_some() })
+        };
+        let mine: Vec<Entry> = {
+            let st = self.state.lock().unwrap();
+            st.running.values().map(|c| Entry { members: c.meter.tracked(), ..c.entry.clone() }).collect()
+        };
+        if let Some(e) = mine.iter().find(|e| holds(e)) {
+            return Ok(answer(e, "this"));
+        }
+        // Over the hub a caller is answered from its own table only: the other rows name other people's sessions.
+        if let (Transport::Native, Some(dir)) = (&self.host.transport, &self.host.owners_dir) {
+            if let Some(e) = owners::other_rows(dir, self.ledger.as_ref()).iter().find(|e| holds(e)) {
+                return Ok(answer(e, "other"));
+            }
+        }
+        Ok(json!({ "owner": null }))
     }
 
     /// Sees a started call to its end in the background, then sends its `done`.
@@ -1009,7 +1178,7 @@ fn done_event(
         "code": o.code, "signal": o.signal,
         "ok": o.code == Some(0),
         "timedOut": o.timed_out, "cancelled": o.cancelled, "durationMs": o.duration_ms,
-        "killed": o.killed, "peakFootprint": o.peak_footprint, "memoryBound": o.memory_bound,
+        "killed": o.killed, "peakFootprint": o.peak_footprint, "memoryBound": o.memory_bound, "cpuMs": o.cpu_ms,
         "envelope": envelope.json(),
         "protectedChanged": changed.json(),
         "stdout": o.stdout.as_ref().map_or_else(|| json!({ "piped": true }), stream), "stderr": stream(&o.stderr),
@@ -1135,8 +1304,54 @@ fn opt_bool(a: &Map<String, Value>, k: &str) -> Result<Option<bool>, Fail> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_OUT, sandbox_refusal, too_large};
-    use serde_json::json;
+    use super::*;
+    use serde_json::Value;
+
+    // --- register over the hub: refused before anything is looked at ---
+
+    /// One call to a fresh session of `transport`, over an in-memory pipe; its answer.
+    async fn one_call(transport: Transport, call: Value) -> Value {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host {
+            sandbox: Availability { kind: None, program: None, available: false, reason: None, landlock_abi: None },
+            secrets: Box::new(NoSecrets),
+            store: Arc::new(Store::create(dir.path()).unwrap()),
+            host_env: Box::new(|_| None),
+            owners_dir: Some(dir.path().join("owners")),
+            warden: None,
+            transport,
+        };
+        let (mut to_host, host_in) = tokio::io::duplex(1 << 20);
+        let (host_out, mut from_host) = tokio::io::duplex(1 << 20);
+        let served = tokio::spawn(serve(host_in, host_out, host));
+        framing::write_frame(&mut to_host, &serde_json::to_vec(&call).unwrap()).await.unwrap();
+        let body = framing::read_frame(&mut from_host).await.unwrap().unwrap();
+        drop(to_host);
+        let _ = served.await;
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    #[tokio::test]
+    async fn register_over_the_hub_is_refused_with_reason_scope_and_answered_natively() {
+        let hub = Transport::Hub {
+            roots: None,
+            callers: 1,
+            revocations_since: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            events: false,
+        };
+        // pgid 1 would be BadRequest if the arguments were read: the refusal comes first.
+        let call = json!({ "seq": 1, "call": "register", "args": { "pgid": 1, "owner": { "session": "s" } } });
+        let v = one_call(hub.clone(), call.clone()).await;
+        assert_eq!(
+            (v["error"]["code"].as_str(), v["error"]["reason"].as_str()),
+            (Some("Refused"), Some("scope")),
+            "{v}"
+        );
+        let v = one_call(Transport::Native, call).await;
+        assert_eq!(v["error"]["code"], "BadRequest", "natively the arguments are read: {v}");
+        let hello = one_call(hub, json!({ "seq": 2, "call": "hello" })).await;
+        assert_eq!(hello["value"]["owners"]["register"], false, "{hello}");
+    }
 
     // --- a message past the native limit ---
 

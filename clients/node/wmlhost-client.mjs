@@ -184,6 +184,19 @@ export class HostClient {
   cancel(id) { return this.call("cancel", { id }); }
   /** Deletes held output early. */
   release(ptr) { return this.call("release", { ptr }); }
+  /** The owner table: `{ running, orphans, ended }` (PROTOCOL.md, `status`). */
+  status() { return this.call("status"); }
+  /**
+   * Declares a process group this connection started itself, owned by `owner` and bound to this connection: it is
+   * killed when the connection closes unless `opts.onOwnerLoss` is `"orphan"`. Resolves `{ id, pid, memoryBound,
+   * onOwnerLoss }`; a `done` event with `registered: true` follows when nothing of the group is left.
+   * @param {number} pgid
+   * @param {object} owner e.g. `{ session, harness, run?, step? }`
+   * @param {{ memoryBound?: number, onOwnerLoss?: "kill" | "orphan", orphanTimeoutMs?: number }} [opts]
+   */
+  register(pgid, owner, opts = {}) { return this.call("register", { pgid, owner, ...opts }); }
+  /** Whose process `pid` is: `{ owner, id, kind, pgid, host, orphan }`, or `{ owner: null }` when no row reaches it. */
+  owner(pid) { return this.call("owner", { pid }); }
 
   /**
    * Reads a held output pointer to its end, in ranges, and returns the bytes.
