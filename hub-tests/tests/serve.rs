@@ -176,6 +176,7 @@ impl Desktop {
                 owners_dir: None,
                 warden: None,
                 transport,
+                home: None,
             })
         });
         let publisher = Publisher { identity: self.state.keys().unwrap().unwrap().identity, chain: self.chain.clone() };
