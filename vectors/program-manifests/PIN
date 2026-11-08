@@ -1,2 +1,2 @@
-window-ml 3bd776f9 (feat/rm-mv-manifests): src/shell/manifests/*.json -> manifests/, tests/fixtures/program-calls/*.json -> calls/
-sha256 9deeb830d82eefec2674eb6e2bcc48dbc8c90a8c14503de8b9260b9d60bd1b7c (tests/manifest_vectors.rs VECTOR_PIN; window-ml holds the same pin)
+window-ml bc19f7fe (feat/gh-manifest, #1538): src/shell/manifests/*.json -> manifests/, tests/fixtures/program-calls/*.json -> calls/; adds gh.json to both
+sha256 08a37cf2ef1a64a6fc319c9940c25df5327ea2e377cf8d09611380ee355c0768 (tests/manifest_vectors.rs VECTOR_PIN; window-ml holds the same pin)

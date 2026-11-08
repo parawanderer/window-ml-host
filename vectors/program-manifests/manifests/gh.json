@@ -1,0 +1,3310 @@
+{
+  "program": "gh",
+  "version": {
+    "range": ">=2.40.0 <3",
+    "args": [
+      "--version"
+    ],
+    "pattern": "^gh version (\\d+\\.\\d+(?:\\.\\d+)?)"
+  },
+  "okCodes": [
+    0
+  ],
+  "echoes": false,
+  "env": [
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "GH_ENTERPRISE_TOKEN",
+    "GITHUB_ENTERPRISE_TOKEN",
+    "GH_HOST",
+    "GH_REPO",
+    "GH_CONFIG_DIR",
+    "XDG_CONFIG_HOME",
+    "GH_EDITOR",
+    "GIT_EDITOR",
+    "VISUAL",
+    "EDITOR",
+    "GH_BROWSER",
+    "BROWSER",
+    "GH_PAGER",
+    "PAGER",
+    "GH_DEBUG",
+    "DEBUG",
+    "GH_PATH",
+    "GH_TELEMETRY",
+    "GH_PROMPT_DISABLED",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "no_proxy",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_EXTERNAL_DIFF",
+    "GIT_PAGER",
+    "GIT_SSH",
+    "GIT_SSH_COMMAND",
+    "GIT_ASKPASS",
+    "GIT_EXEC_PATH",
+    "GIT_CONFIG",
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_SYSTEM",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_PROXY_COMMAND"
+  ],
+  "command": {
+    "effects": [],
+    "paths": "none",
+    "flags": {
+      "--version": {},
+      "--help": {}
+    },
+    "subcommands": {
+      "help": {
+        "effects": [],
+        "paths": "none",
+        "maxOperands": 2,
+        "flags": {}
+      },
+      "api": {
+        "effects": [
+          "read",
+          {
+            "network": {
+              "direction": "read"
+            }
+          }
+        ],
+        "paths": "repo",
+        "maxOperands": 1,
+        "clusters": true,
+        "flags": {
+          "--allow-escape-sequences": {},
+          "--cache": {
+            "value": true
+          },
+          "--field": {
+            "value": true,
+            "effects": [
+              "unknown"
+            ]
+          },
+          "-F": {
+            "value": true,
+            "effects": [
+              "unknown"
+            ]
+          },
+          "--header": {
+            "value": true,
+            "effects": [
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ]
+          },
+          "-H": {
+            "value": true,
+            "effects": [
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ]
+          },
+          "--hostname": {
+            "value": true,
+            "effects": [
+              "unknown"
+            ]
+          },
+          "--include": {},
+          "-i": {},
+          "--input": {
+            "value": true,
+            "valueIsPath": "read",
+            "effects": [
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ]
+          },
+          "--jq": {
+            "value": true
+          },
+          "-q": {
+            "value": true
+          },
+          "--method": {
+            "value": true,
+            "effects": [
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ]
+          },
+          "-X": {
+            "value": true,
+            "effects": [
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ]
+          },
+          "--paginate": {},
+          "--preview": {
+            "value": true
+          },
+          "-p": {
+            "value": true
+          },
+          "--raw-field": {
+            "value": true,
+            "effects": [
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ]
+          },
+          "-f": {
+            "value": true,
+            "effects": [
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ]
+          },
+          "--silent": {},
+          "--slurp": {},
+          "--template": {
+            "value": true
+          },
+          "-t": {
+            "value": true
+          },
+          "--verbose": {
+            "echoes": true
+          },
+          "--help": {}
+        }
+      },
+      "auth": {
+        "effects": [],
+        "paths": "none",
+        "flags": {
+          "--help": {}
+        },
+        "subcommands": {
+          "status": {
+            "effects": [
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "none",
+            "clusters": true,
+            "flags": {
+              "--active": {},
+              "-a": {},
+              "--hostname": {
+                "value": true,
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-h": {
+                "value": true,
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--jq": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--no-refresh": {},
+              "--show-token": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-t": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--template": {
+                "value": true
+              },
+              "--help": {}
+            }
+          },
+          "token": {
+            "effects": [
+              "unknown"
+            ],
+            "paths": "none",
+            "flags": {}
+          },
+          "login": {
+            "effects": [
+              "unknown"
+            ],
+            "paths": "none",
+            "flags": {}
+          },
+          "logout": {
+            "effects": [
+              "unknown"
+            ],
+            "paths": "none",
+            "flags": {}
+          },
+          "refresh": {
+            "effects": [
+              "unknown"
+            ],
+            "paths": "none",
+            "flags": {}
+          },
+          "setup-git": {
+            "effects": [
+              "unknown"
+            ],
+            "paths": "none",
+            "flags": {}
+          }
+        }
+      },
+      "alias": {
+        "effects": [],
+        "paths": "none",
+        "flags": {
+          "--help": {}
+        },
+        "subcommands": {
+          "set": {
+            "effects": [
+              "unknown"
+            ],
+            "paths": "none",
+            "flags": {}
+          }
+        }
+      },
+      "config": {
+        "effects": [],
+        "paths": "none",
+        "flags": {
+          "--help": {}
+        },
+        "subcommands": {
+          "set": {
+            "effects": [
+              "unknown"
+            ],
+            "paths": "none",
+            "flags": {}
+          }
+        }
+      },
+      "extension": {
+        "effects": [],
+        "paths": "none",
+        "flags": {
+          "--help": {}
+        },
+        "subcommands": {
+          "install": {
+            "effects": [
+              "unknown"
+            ],
+            "paths": "none",
+            "flags": {}
+          }
+        }
+      },
+      "label": {
+        "effects": [],
+        "paths": "none",
+        "flags": {
+          "--help": {}
+        },
+        "subcommands": {
+          "list": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--limit": {
+                "value": true
+              },
+              "-L": {
+                "value": true
+              },
+              "--order": {
+                "value": true
+              },
+              "--search": {
+                "value": true
+              },
+              "-S": {
+                "value": true
+              },
+              "--sort": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          }
+        }
+      },
+      "pr": {
+        "effects": [],
+        "paths": "none",
+        "flags": {
+          "--help": {}
+        },
+        "subcommands": {
+          "view": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--comments": {},
+              "-c": {},
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "list": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--app": {
+                "value": true
+              },
+              "--assignee": {
+                "value": true
+              },
+              "-a": {
+                "value": true
+              },
+              "--author": {
+                "value": true
+              },
+              "-A": {
+                "value": true
+              },
+              "--base": {
+                "value": true
+              },
+              "-B": {
+                "value": true
+              },
+              "--draft": {},
+              "-d": {},
+              "--head": {
+                "value": true
+              },
+              "-H": {
+                "value": true
+              },
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--label": {
+                "value": true
+              },
+              "-l": {
+                "value": true
+              },
+              "--limit": {
+                "value": true
+              },
+              "-L": {
+                "value": true
+              },
+              "--search": {
+                "value": true
+              },
+              "-S": {
+                "value": true
+              },
+              "--state": {
+                "value": true
+              },
+              "-s": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "diff": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--allow-escape-sequences": {},
+              "--color": {
+                "value": true
+              },
+              "--exclude": {
+                "value": true
+              },
+              "-e": {
+                "value": true
+              },
+              "--name-only": {},
+              "--patch": {},
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "checks": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "repo",
+            "okCodes": [
+              8
+            ],
+            "clusters": true,
+            "flags": {
+              "--fail-fast": {},
+              "--interval": {
+                "value": true
+              },
+              "-i": {
+                "value": true
+              },
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--required": {},
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--watch": {},
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "status": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--conflict-status": {},
+              "-c": {},
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "create": {
+            "effects": [
+              "read",
+              "write",
+              "runs-code",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--assignee": {
+                "value": true
+              },
+              "-a": {
+                "value": true
+              },
+              "--attach": {
+                "value": true
+              },
+              "--base": {
+                "value": true
+              },
+              "-B": {
+                "value": true
+              },
+              "--body": {
+                "value": true
+              },
+              "-b": {
+                "value": true
+              },
+              "--body-file": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "-F": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "--draft": {},
+              "-d": {},
+              "--dry-run": {},
+              "--editor": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-e": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--fill": {},
+              "-f": {},
+              "--fill-first": {},
+              "--fill-verbose": {},
+              "--head": {
+                "value": true
+              },
+              "-H": {
+                "value": true
+              },
+              "--label": {
+                "value": true
+              },
+              "-l": {
+                "value": true
+              },
+              "--milestone": {
+                "value": true
+              },
+              "-m": {
+                "value": true
+              },
+              "--no-maintainer-edit": {},
+              "--project": {
+                "value": true
+              },
+              "-p": {
+                "value": true
+              },
+              "--recover": {
+                "value": true
+              },
+              "--reviewer": {
+                "value": true
+              },
+              "-r": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-T": {
+                "value": true
+              },
+              "--title": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "merge": {
+            "effects": [
+              "read",
+              "write",
+              "runs-code",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--admin": {},
+              "--author-email": {
+                "value": true
+              },
+              "-A": {
+                "value": true
+              },
+              "--auto": {},
+              "--body": {
+                "value": true
+              },
+              "-b": {
+                "value": true
+              },
+              "--body-file": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "-F": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "--delete-branch": {},
+              "-d": {},
+              "--disable-auto": {},
+              "--match-head-commit": {
+                "value": true
+              },
+              "--merge": {},
+              "-m": {},
+              "--rebase": {},
+              "-r": {},
+              "--squash": {},
+              "-s": {},
+              "--subject": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "checkout": {
+            "effects": [
+              "read",
+              "write",
+              "runs-code",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--branch": {
+                "value": true
+              },
+              "-b": {
+                "value": true
+              },
+              "--detach": {},
+              "--force": {},
+              "-f": {},
+              "--recurse-submodules": {},
+              "--worktree": {
+                "value": true
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "close": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--comment": {
+                "value": true
+              },
+              "-c": {
+                "value": true
+              },
+              "--delete-branch": {},
+              "-d": {},
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "edit": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--add-assignee": {
+                "value": true
+              },
+              "--add-label": {
+                "value": true
+              },
+              "--add-project": {
+                "value": true
+              },
+              "--add-reviewer": {
+                "value": true
+              },
+              "--attach": {
+                "value": true
+              },
+              "--base": {
+                "value": true
+              },
+              "-B": {
+                "value": true
+              },
+              "--body": {
+                "value": true
+              },
+              "-b": {
+                "value": true
+              },
+              "--body-file": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "-F": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "--milestone": {
+                "value": true
+              },
+              "-m": {
+                "value": true
+              },
+              "--remove-assignee": {
+                "value": true
+              },
+              "--remove-label": {
+                "value": true
+              },
+              "--remove-milestone": {},
+              "--remove-project": {
+                "value": true
+              },
+              "--remove-reviewer": {
+                "value": true
+              },
+              "--title": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "comment": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--attach": {
+                "value": true
+              },
+              "--body": {
+                "value": true
+              },
+              "-b": {
+                "value": true
+              },
+              "--body-file": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "-F": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "--create-if-none": {},
+              "--delete-last": {},
+              "--edit-last": {},
+              "--editor": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-e": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--yes": {},
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "review": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--approve": {},
+              "-a": {},
+              "--body": {
+                "value": true
+              },
+              "-b": {
+                "value": true
+              },
+              "--body-file": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "-F": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "--comment": {},
+              "-c": {},
+              "--request-changes": {},
+              "-r": {},
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "reopen": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--comment": {
+                "value": true
+              },
+              "-c": {
+                "value": true
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "ready": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--undo": {},
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          }
+        }
+      },
+      "issue": {
+        "effects": [],
+        "paths": "none",
+        "flags": {
+          "--help": {}
+        },
+        "subcommands": {
+          "view": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--comments": {},
+              "-c": {},
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "list": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--app": {
+                "value": true
+              },
+              "--assignee": {
+                "value": true
+              },
+              "-a": {
+                "value": true
+              },
+              "--author": {
+                "value": true
+              },
+              "-A": {
+                "value": true
+              },
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--label": {
+                "value": true
+              },
+              "-l": {
+                "value": true
+              },
+              "--limit": {
+                "value": true
+              },
+              "-L": {
+                "value": true
+              },
+              "--mention": {
+                "value": true
+              },
+              "--milestone": {
+                "value": true
+              },
+              "-m": {
+                "value": true
+              },
+              "--search": {
+                "value": true
+              },
+              "-S": {
+                "value": true
+              },
+              "--state": {
+                "value": true
+              },
+              "-s": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--type": {
+                "value": true
+              },
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "create": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--assignee": {
+                "value": true
+              },
+              "-a": {
+                "value": true
+              },
+              "--attach": {
+                "value": true
+              },
+              "--blocked-by": {
+                "value": true
+              },
+              "--blocking": {
+                "value": true
+              },
+              "--body": {
+                "value": true
+              },
+              "-b": {
+                "value": true
+              },
+              "--body-file": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "-F": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "--editor": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-e": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--label": {
+                "value": true
+              },
+              "-l": {
+                "value": true
+              },
+              "--milestone": {
+                "value": true
+              },
+              "-m": {
+                "value": true
+              },
+              "--parent": {
+                "value": true
+              },
+              "--project": {
+                "value": true
+              },
+              "-p": {
+                "value": true
+              },
+              "--recover": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-T": {
+                "value": true
+              },
+              "--title": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--type": {
+                "value": true
+              },
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "edit": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--add-assignee": {
+                "value": true
+              },
+              "--add-blocked-by": {
+                "value": true
+              },
+              "--add-blocking": {
+                "value": true
+              },
+              "--add-label": {
+                "value": true
+              },
+              "--add-project": {
+                "value": true
+              },
+              "--add-sub-issue": {
+                "value": true
+              },
+              "--attach": {
+                "value": true
+              },
+              "--body": {
+                "value": true
+              },
+              "-b": {
+                "value": true
+              },
+              "--body-file": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "-F": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "--milestone": {
+                "value": true
+              },
+              "-m": {
+                "value": true
+              },
+              "--parent": {
+                "value": true
+              },
+              "--remove-assignee": {
+                "value": true
+              },
+              "--remove-blocked-by": {
+                "value": true
+              },
+              "--remove-blocking": {
+                "value": true
+              },
+              "--remove-label": {
+                "value": true
+              },
+              "--remove-milestone": {},
+              "--remove-parent": {},
+              "--remove-project": {
+                "value": true
+              },
+              "--remove-sub-issue": {
+                "value": true
+              },
+              "--remove-type": {},
+              "--title": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--type": {
+                "value": true
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "comment": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--attach": {
+                "value": true
+              },
+              "--body": {
+                "value": true
+              },
+              "-b": {
+                "value": true
+              },
+              "--body-file": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "-F": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "--create-if-none": {},
+              "--delete-last": {},
+              "--edit-last": {},
+              "--editor": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-e": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--yes": {},
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "close": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--comment": {
+                "value": true
+              },
+              "-c": {
+                "value": true
+              },
+              "--duplicate-of": {
+                "value": true
+              },
+              "--reason": {
+                "value": true
+              },
+              "-r": {
+                "value": true
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "reopen": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--comment": {
+                "value": true
+              },
+              "-c": {
+                "value": true
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          }
+        }
+      },
+      "run": {
+        "effects": [],
+        "paths": "none",
+        "flags": {
+          "--help": {}
+        },
+        "subcommands": {
+          "view": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--attempt": {
+                "value": true
+              },
+              "-a": {
+                "value": true
+              },
+              "--exit-status": {},
+              "--job": {
+                "value": true
+              },
+              "-j": {
+                "value": true
+              },
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--log": {},
+              "--log-failed": {},
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--verbose": {},
+              "-v": {},
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "list": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--all": {},
+              "-a": {},
+              "--branch": {
+                "value": true
+              },
+              "-b": {
+                "value": true
+              },
+              "--commit": {
+                "value": true
+              },
+              "-c": {
+                "value": true
+              },
+              "--created": {
+                "value": true
+              },
+              "--event": {
+                "value": true
+              },
+              "-e": {
+                "value": true
+              },
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--limit": {
+                "value": true
+              },
+              "-L": {
+                "value": true
+              },
+              "--status": {
+                "value": true
+              },
+              "-s": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--user": {
+                "value": true
+              },
+              "-u": {
+                "value": true
+              },
+              "--workflow": {
+                "value": true
+              },
+              "-w": {
+                "value": true
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "download": {
+            "effects": [
+              "write",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--dir": {
+                "value": true,
+                "valueIsPath": "write",
+                "effects": [
+                  "write"
+                ]
+              },
+              "-D": {
+                "value": true,
+                "valueIsPath": "write",
+                "effects": [
+                  "write"
+                ]
+              },
+              "--name": {
+                "value": true
+              },
+              "-n": {
+                "value": true
+              },
+              "--pattern": {
+                "value": true
+              },
+              "-p": {
+                "value": true
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "rerun": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--debug": {},
+              "-d": {},
+              "--failed": {},
+              "--job": {
+                "value": true
+              },
+              "-j": {
+                "value": true
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "cancel": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--force": {},
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          }
+        }
+      },
+      "release": {
+        "effects": [],
+        "paths": "none",
+        "flags": {
+          "--help": {}
+        },
+        "subcommands": {
+          "view": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "list": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--exclude-drafts": {},
+              "--exclude-pre-releases": {},
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--limit": {
+                "value": true
+              },
+              "-L": {
+                "value": true
+              },
+              "--order": {
+                "value": true
+              },
+              "-O": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "create": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": {
+              "operandsFrom": 1
+            },
+            "clusters": true,
+            "flags": {
+              "--discussion-category": {
+                "value": true
+              },
+              "--draft": {},
+              "-d": {},
+              "--fail-on-no-commits": {},
+              "--generate-notes": {},
+              "--latest": {},
+              "--notes": {
+                "value": true
+              },
+              "-n": {
+                "value": true
+              },
+              "--notes-file": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "-F": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "--notes-from-tag": {},
+              "--notes-start-tag": {
+                "value": true
+              },
+              "--prerelease": {},
+              "-p": {},
+              "--target": {
+                "value": true
+              },
+              "--title": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--verify-tag": {},
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "upload": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": {
+              "operandsFrom": 1
+            },
+            "clusters": true,
+            "flags": {
+              "--clobber": {},
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "download": {
+            "effects": [
+              "write",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--allow-escape-sequences": {},
+              "--archive": {
+                "value": true
+              },
+              "-A": {
+                "value": true
+              },
+              "--clobber": {},
+              "--dir": {
+                "value": true,
+                "valueIsPath": "write",
+                "effects": [
+                  "write"
+                ]
+              },
+              "-D": {
+                "value": true,
+                "valueIsPath": "write",
+                "effects": [
+                  "write"
+                ]
+              },
+              "--output": {
+                "value": true,
+                "valueIsPath": "write",
+                "effects": [
+                  "write"
+                ]
+              },
+              "-O": {
+                "value": true,
+                "valueIsPath": "write",
+                "effects": [
+                  "write"
+                ]
+              },
+              "--pattern": {
+                "value": true
+              },
+              "-p": {
+                "value": true
+              },
+              "--skip-existing": {},
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          }
+        }
+      },
+      "repo": {
+        "effects": [],
+        "paths": "none",
+        "flags": {
+          "--help": {}
+        },
+        "subcommands": {
+          "view": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--branch": {
+                "value": true
+              },
+              "-b": {
+                "value": true
+              },
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {}
+            }
+          },
+          "clone": {
+            "effects": [
+              "write",
+              "runs-code",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": {
+              "operandsFrom": 1
+            },
+            "noPaths": "cwd",
+            "clusters": true,
+            "flags": {
+              "--no-upstream": {},
+              "--upstream-remote-name": {
+                "value": true
+              },
+              "-u": {
+                "value": true
+              },
+              "--help": {}
+            }
+          },
+          "fork": {
+            "effects": [
+              "read",
+              "write",
+              "runs-code",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--clone": {},
+              "--default-branch-only": {},
+              "--fork-name": {
+                "value": true
+              },
+              "--org": {
+                "value": true
+              },
+              "--remote": {},
+              "--remote-name": {
+                "value": true
+              },
+              "--help": {}
+            }
+          },
+          "create": {
+            "effects": [
+              "read",
+              "write",
+              "runs-code",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--add-readme": {},
+              "--clone": {},
+              "-c": {},
+              "--description": {
+                "value": true
+              },
+              "-d": {
+                "value": true
+              },
+              "--disable-issues": {},
+              "--disable-wiki": {},
+              "--gitignore": {
+                "value": true
+              },
+              "-g": {
+                "value": true
+              },
+              "--homepage": {
+                "value": true
+              },
+              "-h": {
+                "value": true
+              },
+              "--include-all-branches": {},
+              "--internal": {},
+              "--license": {
+                "value": true
+              },
+              "-l": {
+                "value": true
+              },
+              "--private": {},
+              "--public": {},
+              "--push": {},
+              "--remote": {
+                "value": true
+              },
+              "-r": {
+                "value": true
+              },
+              "--source": {
+                "value": true
+              },
+              "-s": {
+                "value": true
+              },
+              "--team": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-p": {
+                "value": true
+              },
+              "--help": {}
+            }
+          },
+          "delete": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "repo",
+            "clusters": true,
+            "flags": {
+              "--yes": {},
+              "--help": {}
+            }
+          }
+        }
+      },
+      "gist": {
+        "effects": [],
+        "paths": "none",
+        "flags": {
+          "--help": {}
+        },
+        "subcommands": {
+          "create": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "operands",
+            "clusters": true,
+            "flags": {
+              "--desc": {
+                "value": true
+              },
+              "-d": {
+                "value": true
+              },
+              "--filename": {
+                "value": true
+              },
+              "-f": {
+                "value": true
+              },
+              "--public": {},
+              "-p": {},
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {}
+            }
+          },
+          "edit": {
+            "effects": [
+              "read",
+              "runs-code",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "none",
+            "clusters": true,
+            "flags": {
+              "--add": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "-a": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "--desc": {
+                "value": true
+              },
+              "-d": {
+                "value": true
+              },
+              "--filename": {
+                "value": true
+              },
+              "-f": {
+                "value": true
+              },
+              "--remove": {
+                "value": true
+              },
+              "-r": {
+                "value": true
+              },
+              "--help": {}
+            }
+          },
+          "delete": {
+            "effects": [
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "none",
+            "clusters": true,
+            "flags": {
+              "--yes": {},
+              "--help": {}
+            }
+          },
+          "rename": {
+            "effects": [
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "none",
+            "clusters": true,
+            "flags": {
+              "--help": {}
+            }
+          },
+          "clone": {
+            "effects": [
+              "write",
+              "runs-code",
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": {
+              "operandsFrom": 1
+            },
+            "noPaths": "cwd",
+            "clusters": true,
+            "flags": {
+              "--help": {}
+            }
+          }
+        }
+      },
+      "search": {
+        "effects": [],
+        "paths": "none",
+        "flags": {
+          "--help": {}
+        },
+        "subcommands": {
+          "prs": {
+            "effects": [
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "none",
+            "clusters": true,
+            "flags": {
+              "--app": {
+                "value": true
+              },
+              "--archived": {},
+              "--assignee": {
+                "value": true
+              },
+              "--author": {
+                "value": true
+              },
+              "--base": {
+                "value": true
+              },
+              "-B": {
+                "value": true
+              },
+              "--checks": {
+                "value": true
+              },
+              "--closed": {
+                "value": true
+              },
+              "--commenter": {
+                "value": true
+              },
+              "--comments": {
+                "value": true
+              },
+              "--created": {
+                "value": true
+              },
+              "--draft": {},
+              "--head": {
+                "value": true
+              },
+              "-H": {
+                "value": true
+              },
+              "--interactions": {
+                "value": true
+              },
+              "--involves": {
+                "value": true
+              },
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--label": {
+                "value": true
+              },
+              "--language": {
+                "value": true
+              },
+              "--limit": {
+                "value": true
+              },
+              "-L": {
+                "value": true
+              },
+              "--locked": {},
+              "--match": {
+                "value": true
+              },
+              "--mentions": {
+                "value": true
+              },
+              "--merged": {},
+              "--merged-at": {
+                "value": true
+              },
+              "--milestone": {
+                "value": true
+              },
+              "--no-assignee": {},
+              "--no-label": {},
+              "--no-milestone": {},
+              "--no-project": {},
+              "--order": {
+                "value": true
+              },
+              "--owner": {
+                "value": true
+              },
+              "--project": {
+                "value": true
+              },
+              "--reactions": {
+                "value": true
+              },
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              },
+              "--review": {
+                "value": true
+              },
+              "--review-requested": {
+                "value": true
+              },
+              "--reviewed-by": {
+                "value": true
+              },
+              "--sort": {
+                "value": true
+              },
+              "--state": {
+                "value": true
+              },
+              "--team-mentions": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--updated": {
+                "value": true
+              },
+              "--visibility": {
+                "value": true
+              },
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {}
+            }
+          },
+          "issues": {
+            "effects": [
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "none",
+            "clusters": true,
+            "flags": {
+              "--app": {
+                "value": true
+              },
+              "--archived": {},
+              "--assignee": {
+                "value": true
+              },
+              "--author": {
+                "value": true
+              },
+              "--closed": {
+                "value": true
+              },
+              "--commenter": {
+                "value": true
+              },
+              "--comments": {
+                "value": true
+              },
+              "--created": {
+                "value": true
+              },
+              "--include-prs": {},
+              "--interactions": {
+                "value": true
+              },
+              "--involves": {
+                "value": true
+              },
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--label": {
+                "value": true
+              },
+              "--language": {
+                "value": true
+              },
+              "--limit": {
+                "value": true
+              },
+              "-L": {
+                "value": true
+              },
+              "--locked": {},
+              "--match": {
+                "value": true
+              },
+              "--mentions": {
+                "value": true
+              },
+              "--milestone": {
+                "value": true
+              },
+              "--no-assignee": {},
+              "--no-label": {},
+              "--no-milestone": {},
+              "--no-project": {},
+              "--order": {
+                "value": true
+              },
+              "--owner": {
+                "value": true
+              },
+              "--project": {
+                "value": true
+              },
+              "--reactions": {
+                "value": true
+              },
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              },
+              "--search-type": {
+                "value": true
+              },
+              "--sort": {
+                "value": true
+              },
+              "--state": {
+                "value": true
+              },
+              "--team-mentions": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--updated": {
+                "value": true
+              },
+              "--visibility": {
+                "value": true
+              },
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {}
+            }
+          },
+          "repos": {
+            "effects": [
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "none",
+            "clusters": true,
+            "flags": {
+              "--archived": {},
+              "--created": {
+                "value": true
+              },
+              "--followers": {
+                "value": true
+              },
+              "--forks": {
+                "value": true
+              },
+              "--good-first-issues": {
+                "value": true
+              },
+              "--help-wanted-issues": {
+                "value": true
+              },
+              "--include-forks": {
+                "value": true
+              },
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--language": {
+                "value": true
+              },
+              "--license": {
+                "value": true
+              },
+              "--limit": {
+                "value": true
+              },
+              "-L": {
+                "value": true
+              },
+              "--match": {
+                "value": true
+              },
+              "--number-topics": {
+                "value": true
+              },
+              "--order": {
+                "value": true
+              },
+              "--owner": {
+                "value": true
+              },
+              "--size": {
+                "value": true
+              },
+              "--sort": {
+                "value": true
+              },
+              "--stars": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--topic": {
+                "value": true
+              },
+              "--updated": {
+                "value": true
+              },
+              "--visibility": {
+                "value": true
+              },
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {}
+            }
+          },
+          "code": {
+            "effects": [
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "none",
+            "clusters": true,
+            "flags": {
+              "--extension": {
+                "value": true
+              },
+              "--filename": {
+                "value": true
+              },
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--language": {
+                "value": true
+              },
+              "--limit": {
+                "value": true
+              },
+              "-L": {
+                "value": true
+              },
+              "--match": {
+                "value": true
+              },
+              "--owner": {
+                "value": true
+              },
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              },
+              "--size": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {}
+            }
+          },
+          "commits": {
+            "effects": [
+              {
+                "network": {
+                  "direction": "read"
+                }
+              }
+            ],
+            "paths": "none",
+            "clusters": true,
+            "flags": {
+              "--author": {
+                "value": true
+              },
+              "--author-date": {
+                "value": true
+              },
+              "--author-email": {
+                "value": true
+              },
+              "--author-name": {
+                "value": true
+              },
+              "--committer": {
+                "value": true
+              },
+              "--committer-date": {
+                "value": true
+              },
+              "--committer-email": {
+                "value": true
+              },
+              "--committer-name": {
+                "value": true
+              },
+              "--hash": {
+                "value": true
+              },
+              "--jq": {
+                "value": true
+              },
+              "-q": {
+                "value": true
+              },
+              "--json": {
+                "value": true
+              },
+              "--limit": {
+                "value": true
+              },
+              "-L": {
+                "value": true
+              },
+              "--merge": {},
+              "--order": {
+                "value": true
+              },
+              "--owner": {
+                "value": true
+              },
+              "--parent": {
+                "value": true
+              },
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              },
+              "--sort": {
+                "value": true
+              },
+              "--template": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--tree": {
+                "value": true
+              },
+              "--visibility": {
+                "value": true
+              },
+              "--web": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "-w": {
+                "effects": [
+                  "unknown"
+                ]
+              },
+              "--help": {}
+            }
+          }
+        }
+      },
+      "secret": {
+        "effects": [],
+        "paths": "none",
+        "flags": {
+          "--help": {}
+        },
+        "subcommands": {
+          "set": {
+            "effects": [
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "none",
+            "clusters": true,
+            "flags": {
+              "--app": {
+                "value": true
+              },
+              "-a": {
+                "value": true
+              },
+              "--body": {
+                "value": true
+              },
+              "-b": {
+                "value": true
+              },
+              "--env": {
+                "value": true
+              },
+              "-e": {
+                "value": true
+              },
+              "--env-file": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "-f": {
+                "value": true,
+                "valueIsPath": "read"
+              },
+              "--no-repos-selected": {},
+              "--no-store": {},
+              "--org": {
+                "value": true
+              },
+              "-o": {
+                "value": true
+              },
+              "--repos": {
+                "value": true
+              },
+              "-r": {
+                "value": true
+              },
+              "--user": {},
+              "-u": {},
+              "--visibility": {
+                "value": true
+              },
+              "-v": {
+                "value": true
+              },
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          },
+          "delete": {
+            "effects": [
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "none",
+            "clusters": true,
+            "flags": {
+              "--app": {
+                "value": true
+              },
+              "-a": {
+                "value": true
+              },
+              "--env": {
+                "value": true
+              },
+              "-e": {
+                "value": true
+              },
+              "--org": {
+                "value": true
+              },
+              "-o": {
+                "value": true
+              },
+              "--user": {},
+              "-u": {},
+              "--help": {},
+              "--repo": {
+                "value": true
+              },
+              "-R": {
+                "value": true
+              }
+            }
+          }
+        }
+      },
+      "ssh-key": {
+        "effects": [],
+        "paths": "none",
+        "flags": {
+          "--help": {}
+        },
+        "subcommands": {
+          "add": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "operands",
+            "clusters": true,
+            "flags": {
+              "--title": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--type": {
+                "value": true
+              },
+              "--help": {}
+            }
+          },
+          "delete": {
+            "effects": [
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "none",
+            "clusters": true,
+            "flags": {
+              "--yes": {},
+              "-y": {},
+              "--help": {}
+            }
+          }
+        }
+      },
+      "gpg-key": {
+        "effects": [],
+        "paths": "none",
+        "flags": {
+          "--help": {}
+        },
+        "subcommands": {
+          "add": {
+            "effects": [
+              "read",
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "operands",
+            "clusters": true,
+            "flags": {
+              "--title": {
+                "value": true
+              },
+              "-t": {
+                "value": true
+              },
+              "--help": {}
+            }
+          },
+          "delete": {
+            "effects": [
+              {
+                "network": {
+                  "direction": "both"
+                }
+              }
+            ],
+            "paths": "none",
+            "clusters": true,
+            "flags": {
+              "--yes": {},
+              "-y": {},
+              "--help": {}
+            }
+          }
+        }
+      }
+    }
+  }
+}
