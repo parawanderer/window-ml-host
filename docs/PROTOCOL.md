@@ -43,6 +43,7 @@ the host answers each as it finishes, not in order. A message that is not an obj
   "modes": ["host"],                                                // "container" appears once a runner exists
   "peek": true,                                                     // this host answers `peek`; an older host has no such field
   "tilde": true,                                                    // this host expands a leading `~` in argv and cwd (see `spawn`); an older host has no such field
+  "put": { "max": 67108864 },                                       // this host answers `put`, `write` and `commit`; `max` is the most bytes one put may declare; an older host has no such field
   "owners": { "ledger": true, "register": true },                   // ledger false: the table is in memory only; register false over the hub (see "Owners")
   "memory": { "metric": "phys_footprint", "enforcer": "watchdog", "everyMs": 100 },
   "cpu": { "metric": "user+system, with reaped children" } }        // what `cpuMs` counts: measured, never bounded
@@ -310,6 +311,28 @@ has ended, a call of another connection) is `UnknownId` "no running call", as fo
 answers `stdout` and `stderr` as `null`. Offered over every transport, like `read` and `cancel`: it reads only a call
 of this connection.
 
+### put / write / commit: write bytes to a file in a root
+
+Three calls write one file: `put` resolves the target and writes nothing, `write` sends the bytes in chunks, `commit` puts them in place. They follow `spawn`'s shape: the host resolves the facts, the worker judges, the host acts. A put shares `spawn`'s pending table: the same 30-minute TTL (`expiresInMs`), the same `Busy` limit of 256 and the same id counter, with ids of the form `p3` where a spawn's are `c3`. `discard` drops a put. Offered over a native connection only: over the hub all three are `Refused` with `reason: "scope"`, before their arguments are read.
+
+```jsonc
+put    args:  { "path": "inbox/report.pdf", "cwd": "/Users/sb/work", "size": 48213 }   // cwd required for a relative path; a leading ~ expands as for spawn
+       value: { "id": "p3", "path": "/Users/sb/work/inbox/report.pdf", "root": "/Users/sb/work", "rel": "inbox/report.pdf",
+                "exists": false, "existingSize": null, "size": 48213, "tilde": [], "expiresInMs": 1800000 }
+write  args:  { "id": "p3", "offset": 0, "bytes": { "$bytes": "<base64>" } }
+       value: { "id": "p3", "received": 32768 }
+commit args:  { "id": "p3", "replace": false }                                          // replace optional, default false
+       value: { "id": "p3", "path": "/Users/sb/work/inbox/report.pdf", "rel": "inbox/report.pdf", "size": 48213, "sha256": "<hex>" }
+```
+
+`put` checks, in order: `size` is at most `hello.put.max` (`TooLarge`); the last component of `path` is a normal name, not empty, `.` or `..`, with no trailing `/` (`BadRequest`); the parent directory exists (`NoParent`; the host never creates a directory) and its realpath lies in a root (`OutsideRoots`, which a `..` or a symlinked directory leading out also gives); the target is not a protected name of its root (`sandbox::protected_rels()`, relative to the root the parent lies in, compared case-insensitively) and does not look like a credential (`Protected`, with no verdict that can allow it, the same names the sandbox keeps a child from writing); the target is not a symlink (`IsSymlink`, whatever it points at) or a directory (`IsDirectory`). `exists` and `existingSize` are the worker's input for "an existing file always asks". The host opens the parent once and holds it as a directory descriptor with the put; every later step goes through it, so a path component swapped for a symlink afterwards cannot redirect the write: the bytes land in the original directory, wherever it has been renamed to.
+
+`write` appends one chunk of at most 512 KiB (the limit of `read`). `offset` must equal the bytes received so far, so a gap, a repeat, a chunk over the cap, bytes past the declared `size` and a malformed `bytes` are `BadRequest`, and the message of an offset error names the expected one. The first chunk creates a temp file `.wmlhost-put-<id>-<random>` in the parent through the held descriptor (`O_CREAT|O_EXCL|O_NOFOLLOW`, mode `0666` less the umask). A put of `size: 0` needs no chunk.
+
+`commit` needs `received == size` (`BadRequest` otherwise, and the put stays open to continue). It syncs the temp file and renames it into place through the held descriptor. With `replace: false` the rename refuses to replace: `renameat2(RENAME_NOREPLACE)` on Linux, `renameatx_np(RENAME_EXCL)` on macOS, and `link` then `unlink` where the OS or filesystem has no such flag. A file that appeared since `put` is `Exists`. With `replace: true` (the worker sends it only once the person approved overwriting) the host looks at the target again, refuses a symlink or directory as `put` did, and renames over it. A commit consumes the put, whatever its outcome. `sha256` is of the bytes written.
+
+The temp file is deleted by `discard`, by TTL expiry, by a failed `commit`, by a `configure` (which drops pending calls) and when the connection ends.
+
 ### `register`: own a process group this connection started
 
 ```jsonc
@@ -501,11 +524,11 @@ These are the host's own; the worker maps them onto the `ml` wire's codes (`Refu
 | `NotConfigured` | `spawn` or `glob` before `configure` |
 | `BadRoot` | a root that is not an absolute existing directory, or is `/` |
 | `ProgramNotFound` | `argv[0]` not found on `PATH`, or not an executable file |
-| `CwdOutsideRoots` | `cwd` (of `spawn` or `glob`) missing, not a directory, or resolving outside every root |
+| `CwdOutsideRoots` | `cwd` (of `spawn`, `glob` or `put`) missing, not a directory, or resolving outside every root |
 | `EnvRefused` | an `env` name on the denylist (`src/env.rs`) |
 | `SecretUnavailable` | an `env` handle the host's store does not hold |
 | `Unsupported` | `mode: "container"` this version |
-| `UnknownId` | `start`/`discard`/`cancel`/`pipe`/`peek` of an id that never existed, expired, or already started (`start`, `pipe`) |
+| `UnknownId` | `start`/`discard`/`cancel`/`pipe`/`peek`/`write`/`commit` of an id that never existed, expired, or already started (`start`, `pipe`) |
 | `UnknownPtr` | `read`/`release` of a pointer that does not exist |
 | `SandboxFailed` | the sandbox program itself could not be started (a refusal by the sandbox shows in `done`); a `start`/`pipe` with an `envelope` on a call that is not sandboxed (an envelope is a request for a bound; an unsandboxed call holds none); a `write: "roots"` or `exec: "program-only"` on Linux without Landlock |
 | `SpawnFailed` | the OS refused to start the program |
@@ -513,7 +536,13 @@ These are the host's own; the worker maps them onto the `ml` wire's codes (`Refu
 | `Busy` | 256 calls already wait for a verdict, or 32 are running (a `pipe` counts its stages) |
 | `Failed` | reading held output failed on disk |
 | `Refused` | over the hub only: the host's own checks refused the caller before the call was looked at; `reason` is `scope`, `revoked`, `stale` or `notACaller` (`docs/HUB.md`) |
-| `TooLarge` | the answer would exceed 1 MiB (an `argv` that large, echoed back in the facts) |
+| `TooLarge` | the answer would exceed 1 MiB (an `argv` that large, echoed back in the facts); a `put` whose `size` is over `hello.put.max` |
+| `NoParent` | `put`: the parent directory of the target does not exist, or is not a directory |
+| `OutsideRoots` | `put`: the parent directory's realpath is in no root |
+| `IsSymlink` | `put`/`commit`: the target is a symbolic link |
+| `IsDirectory` | `put`/`commit`: the target is a directory |
+| `Protected` | `put`: the target is a protected name of its root (`.git/hooks`, `.bashrc`, …) or looks like a credential |
+| `Exists` | `commit` without `replace`: a file is at the target now |
 
 ## Not in v1, and where it will go
 
