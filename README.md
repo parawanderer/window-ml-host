@@ -12,6 +12,7 @@ repository holds:
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md): the wire, call by call.
 - [`docs/SANDBOX.md`](docs/SANDBOX.md): what a sandboxed call may and may not do on macOS and Linux, what the tests
   show, the limits, and what container mode will need.
+- [`docs/RELEASE.md`](docs/RELEASE.md): cutting a release, what it publishes, and the pin window-ml holds against it.
 - `clients/node/`: a dependency-free Node client and a smoke check.
 
 ## Build, test, install
