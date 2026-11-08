@@ -16,7 +16,7 @@ use tokio::process::{Child, Command};
 use tokio::sync::Notify;
 
 use crate::procs;
-use crate::store::{Held, Store};
+use crate::store::{Held, Lives, Store};
 
 /// How long a call has after SIGTERM before SIGKILL.
 pub const KILL_GRACE: Duration = Duration::from_secs(2);
@@ -211,6 +211,7 @@ pub async fn finish(
     cancel: Arc<Notify>,
     limits: Limits,
     meter: Arc<Meter>,
+    lives: Arc<Lives>,
 ) -> Outcome {
     let started = Instant::now();
     let Limits { timeout, cap, memory_bound } = limits;
@@ -218,9 +219,12 @@ pub async fn finish(
     let out = r.child.stdout.take();
     let err = r.child.stderr.take().expect("piped");
     let s1 = store.clone();
-    let out_task = out.map(|out| tokio::spawn(async move { s1.capture(out, cap).await.map_err(|e| e.to_string()) }));
+    let live_out = lives.stdout.clone();
+    let out_task =
+        out.map(|out| tokio::spawn(async move { s1.capture(out, cap, live_out).await.map_err(|e| e.to_string()) }));
     let s2 = store.clone();
-    let err_task = tokio::spawn(async move { s2.capture(err, cap).await.map_err(|e| e.to_string()) });
+    let live_err = Some(lives.stderr.clone());
+    let err_task = tokio::spawn(async move { s2.capture(err, cap, live_err).await.map_err(|e| e.to_string()) });
 
     let (mut timed_out, mut cancelled, mut killed) = (false, false, None);
     let status: Option<ExitStatus> = tokio::select! {
@@ -405,7 +409,9 @@ mod tests {
         let pidfile = d.path().join("pid");
         let (r, store, _base) = run_call(SETSID_THEN_LEADER_EXITS, &pidfile);
         let limits = Limits { timeout: Duration::from_secs(20), cap: 1 << 16, memory_bound: u64::MAX };
-        let o = finish(r, store, Arc::new(Notify::new()), limits, Arc::new(Meter::default())).await;
+        let o =
+            finish(r, store, Arc::new(Notify::new()), limits, Arc::new(Meter::default()), Arc::new(Lives::new(false)))
+                .await;
         assert_eq!(o.code, Some(0), "the leader exited by itself");
         let moved = moved_pid(&pidfile);
         assert!(gone(moved), "the descendant in its own session outlived its call");

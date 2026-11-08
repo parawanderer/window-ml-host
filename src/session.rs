@@ -22,7 +22,7 @@ use crate::owners::{self, Entry, Ledger};
 use crate::procs;
 use crate::runner::{self, Limits, Meter, Outcome, Prepared};
 use crate::sandbox::{self, Availability, Envelope, ExecScope, Plan, WriteScope};
-use crate::store::{MAX_READ, Store};
+use crate::store::{Live, Lives, MAX_READ, Store};
 use crate::tripwire::{self, Snapshot};
 use crate::walk;
 
@@ -141,6 +141,8 @@ struct Call {
     cancel: Arc<Notify>,
     meter: Arc<Meter>,
     owner_loss: OwnerLoss,
+    /// The call's streams as they are written, for `peek`; `None` for a registered group, whose output is not ours.
+    lives: Option<Arc<Lives>>,
 }
 
 struct State {
@@ -352,6 +354,7 @@ impl Session {
             "glob" => self.glob(args).await,
             "discard" => self.discard(args),
             "cancel" => self.cancel(args),
+            "peek" => self.peek(args),
             "read" => self.read(args),
             "release" => self.release(args),
             "status" => Ok(self.status()),
@@ -385,6 +388,7 @@ impl Session {
             "platform": std::env::consts::OS,
             "sandbox": sandbox,
             "modes": ["host"],
+            "peek": true,
             "owners": { "ledger": self.ledger.is_some(),
                         "register": !matches!(self.host.transport, Transport::Hub { .. }) },
             "cpu": { "metric": procs::CPU_METRIC },
@@ -708,9 +712,9 @@ impl Session {
         let protected = tripwire::snapshot(&p.config.roots);
         let (running, _) = self.launch(id, &p, Stdio::null(), false)?;
         let pid = running.pid;
-        let (cancel, meter) = self.register(id, pid, &p, &protected);
+        let (cancel, meter, lives) = self.register(id, pid, &p, &protected, false);
         self.send(json!({ "seq": seq, "value": { "id": id, "pid": pid } }));
-        self.supervise(id.to_string(), running, cancel, meter, &p, protected);
+        self.supervise(id.to_string(), running, (cancel, meter, lives), &p, protected);
         Ok(())
     }
 
@@ -765,11 +769,17 @@ impl Session {
             return Err(f);
         }
         let pids: Vec<u32> = started.iter().map(|r| r.pid).collect();
-        let handles: Vec<_> =
-            ids.iter().zip(&pids).zip(&stages).map(|((id, pid), p)| self.register(id, *pid, p, &protected)).collect();
+        let last = stages.len() - 1;
+        let handles: Vec<_> = ids
+            .iter()
+            .zip(&pids)
+            .zip(&stages)
+            .enumerate()
+            .map(|(i, ((id, pid), p))| self.register(id, *pid, p, &protected, i < last))
+            .collect();
         self.send(json!({ "seq": seq, "value": { "ids": ids, "pids": pids } }));
-        for (((id, r), (cancel, meter)), p) in ids.into_iter().zip(started).zip(handles).zip(&stages) {
-            self.supervise(id, r, cancel, meter, p, protected.clone());
+        for (((id, r), handle), p) in ids.into_iter().zip(started).zip(handles).zip(&stages) {
+            self.supervise(id, r, handle, p, protected.clone());
         }
         Ok(())
     }
@@ -874,10 +884,19 @@ impl Session {
     }
 
     /// Records a started call in the owner table (and its ledger), starts the warden with the first one, and returns the
-    /// handle `cancel` notifies and the call's footprint meter.
-    fn register(&self, id: &str, pid: u32, p: &Pending, protected: &Snapshot) -> (Arc<Notify>, Arc<Meter>) {
+    /// handle `cancel` notifies, the call's footprint meter and its live output records (`piped_out`: its stdout goes
+    /// to the next stage, so there is none to peek at).
+    fn register(
+        &self,
+        id: &str,
+        pid: u32,
+        p: &Pending,
+        protected: &Snapshot,
+        piped_out: bool,
+    ) -> (Arc<Notify>, Arc<Meter>, Arc<Lives>) {
         let cancel = Arc::new(Notify::new());
         let meter = Arc::new(Meter::default());
+        let lives = Arc::new(Lives::new(piped_out));
         let entry = Entry {
             id: id.to_string(),
             pgid: pid,
@@ -893,10 +912,17 @@ impl Session {
         let mut st = self.state.lock().unwrap();
         if st.closed {
             runner::kill_now(pid);
-            return (cancel, meter);
+            return (cancel, meter, lives);
         }
-        self.add_row(&mut st, Call { entry, cancel: cancel.clone(), meter: meter.clone(), owner_loss: p.owner_loss });
-        (cancel, meter)
+        let call = Call {
+            entry,
+            cancel: cancel.clone(),
+            meter: meter.clone(),
+            owner_loss: p.owner_loss,
+            lives: Some(lives.clone()),
+        };
+        self.add_row(&mut st, call);
+        (cancel, meter, lives)
     }
 
     /// Puts a row in the owner table and its ledger, and starts the warden with the first row.
@@ -968,7 +994,10 @@ impl Session {
         let meter = Arc::new(Meter::default());
         // The first sample before the answer, so a `status` or `owner` right after it already sees the members.
         meter.sample(owners::members_of(&entry));
-        self.add_row(&mut st, Call { entry: entry.clone(), cancel: cancel.clone(), meter: meter.clone(), owner_loss });
+        self.add_row(
+            &mut st,
+            Call { entry: entry.clone(), cancel: cancel.clone(), meter: meter.clone(), owner_loss, lives: None },
+        );
         drop(st);
         self.watch_registered(entry, cancel, meter);
         Ok(json!({ "id": id, "pid": pgid, "memoryBound": memory_bound, "onOwnerLoss": owner_loss.json() }))
@@ -1063,8 +1092,7 @@ impl Session {
         self: &Arc<Self>,
         id: String,
         running: runner::Running,
-        cancel: Arc<Notify>,
-        meter: Arc<Meter>,
+        (cancel, meter, lives): (Arc<Notify>, Arc<Meter>, Arc<Lives>),
         p: &Pending,
         protected: Snapshot,
     ) {
@@ -1078,7 +1106,7 @@ impl Session {
         let sandboxed = p.sandboxed;
         let envelope = p.envelope.unwrap_or_else(Envelope::today);
         tokio::spawn(async move {
-            let o = runner::finish(running, store.clone(), cancel, limits, meter).await;
+            let o = runner::finish(running, store.clone(), cancel, limits, meter, lives).await;
             {
                 let mut st = s.state.lock().unwrap();
                 st.running.remove(&id);
@@ -1134,6 +1162,33 @@ impl Session {
             }
             None => fail("UnknownId", format!("no running call {id:?}")),
         }
+    }
+
+    /// The latest output of a call of this session that is still running: the last `bytes` kept of each stream so far.
+    fn peek(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
+        let id = req_str(a, "id")?;
+        let bytes = opt_u64(a, "bytes")?.unwrap_or(DEFAULT_PEEK);
+        if bytes == 0 {
+            return fail("BadRequest", "bytes is a positive integer");
+        }
+        let bytes = bytes.min(MAX_READ);
+        // Cloned out so no file is read under the state lock.
+        let lives = match self.state.lock().unwrap().running.get(id) {
+            Some(c) => c.lives.clone(),
+            None => return fail("UnknownId", format!("no running call {id:?}")),
+        };
+        let (out, err) = (lives.as_ref().and_then(|l| l.stdout.as_ref()), lives.as_ref().map(|l| &l.stderr));
+        // MAX_READ is the budget of the WHOLE answer, both streams together: two full streams as base64 would pass the
+        // 1 MiB message limit (PROTOCOL.md, "peek"). What one stream does not use, the other may.
+        let want = |l: Option<&Arc<Live>>| l.map_or(0, |l| bytes.min(l.kept()));
+        let (out_bytes, err_bytes) = split_peek_budget(want(out), want(err), MAX_READ);
+        let stream = |l: Option<&Arc<Live>>, n: u64| -> Result<Value, Fail> {
+            let Some(l) = l else { return Ok(Value::Null) };
+            let (data, size, truncated) = self.host.store.peek_tail(l, n).map_err(|e| Fail("Failed", e.to_string()))?;
+            Ok(json!({ "size": size, "truncated": truncated,
+                       "data": { "$bytes": base64::engine::general_purpose::STANDARD.encode(&data) } }))
+        };
+        Ok(json!({ "id": id, "stdout": stream(out, out_bytes)?, "stderr": stream(err, err_bytes)? }))
     }
 
     fn read(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
@@ -1287,6 +1342,20 @@ fn req_str<'a>(a: &'a Map<String, Value>, k: &str) -> Result<&'a str, Fail> {
     a.get(k).and_then(Value::as_str).ok_or_else(|| Fail("BadRequest", format!("{k} is a string")))
 }
 
+/// What `peek` returns of each stream when `bytes` is not given.
+const DEFAULT_PEEK: u64 = 4096;
+
+/// How many of the last bytes of each stream one `peek` answer carries, when stdout wants `a` and stderr `b`: both in
+/// full when they fit in `budget` together, else each at least half the budget, and what one leaves unused to the other.
+fn split_peek_budget(a: u64, b: u64, budget: u64) -> (u64, u64) {
+    if a + b <= budget {
+        return (a, b);
+    }
+    let half = budget / 2;
+    let a = a.min(budget - b.min(half));
+    (a, b.min(budget - a))
+}
+
 fn opt_u64(a: &Map<String, Value>, k: &str) -> Result<Option<u64>, Fail> {
     match a.get(k) {
         None | Some(Value::Null) => Ok(None),
@@ -1304,6 +1373,20 @@ fn opt_bool(a: &Map<String, Value>, k: &str) -> Result<Option<bool>, Fail> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_peek_budget_is_shared_and_what_one_stream_leaves_goes_to_the_other() {
+        assert_eq!(split_peek_budget(10, 20, 100), (10, 20));
+        assert_eq!(split_peek_budget(100, 100, 100), (50, 50));
+        assert_eq!(split_peek_budget(5, 100, 100), (5, 95));
+        assert_eq!(split_peek_budget(100, 5, 100), (95, 5));
+        assert_eq!(split_peek_budget(0, 200, 100), (0, 100));
+        assert_eq!(split_peek_budget(70, 40, 100), (60, 40));
+        for (a, b) in [(1u64, 1u64), (99, 99), (51, 50), (0, 0), (100, 0)] {
+            let (x, y) = split_peek_budget(a, b, 100);
+            assert!(x + y <= 100 && x <= a && y <= b, "{a},{b} -> {x},{y}");
+        }
+    }
     use super::*;
     use serde_json::Value;
 
