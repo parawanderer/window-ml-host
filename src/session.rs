@@ -423,7 +423,8 @@ impl Session {
             "modes": ["host"],
             "peek": true,
             "tilde": true,
-            "put": { "max": put::MAX_PUT },
+            // Over the hub `put` is refused, so it is not offered: the file would land on another machine.
+            "put": if matches!(self.host.transport, Transport::Hub { .. }) { Value::Null } else { json!({ "max": put::MAX_PUT }) },
             "owners": { "ledger": self.ledger.is_some(),
                         "register": !matches!(self.host.transport, Transport::Hub { .. }) },
             "cpu": { "metric": procs::CPU_METRIC },
@@ -1620,6 +1621,11 @@ mod tests {
             let v = one_call(Transport::Native, call).await;
             assert_ne!(v["error"]["code"], "Refused", "{name} natively reads its arguments: {v}");
         }
+        // Not offered where it is refused, as `register` is not.
+        let hello = one_call(hub, json!({ "seq": 2, "call": "hello" })).await;
+        assert!(hello["value"]["put"].is_null(), "{hello}");
+        let hello = one_call(Transport::Native, json!({ "seq": 2, "call": "hello" })).await;
+        assert_eq!(hello["value"]["put"]["max"], put::MAX_PUT, "{hello}");
     }
 
     #[test]

@@ -43,7 +43,7 @@ the host answers each as it finishes, not in order. A message that is not an obj
   "modes": ["host"],                                                // "container" appears once a runner exists
   "peek": true,                                                     // this host answers `peek`; an older host has no such field
   "tilde": true,                                                    // this host expands a leading `~` in argv and cwd (see `spawn`); an older host has no such field
-  "put": { "max": 67108864 },                                       // this host answers `put`, `write` and `commit`; `max` is the most bytes one put may declare; an older host has no such field
+  "put": { "max": 67108864 },                                       // this host answers `put`, `write` and `commit`; `max` is the most bytes one put may declare; `null` over the hub, where the three are refused; an older host has no such field
   "owners": { "ledger": true, "register": true },                   // ledger false: the table is in memory only; register false over the hub (see "Owners")
   "memory": { "metric": "phys_footprint", "enforcer": "watchdog", "everyMs": 100 },
   "cpu": { "metric": "user+system, with reaped children" } }        // what `cpuMs` counts: measured, never bounded
