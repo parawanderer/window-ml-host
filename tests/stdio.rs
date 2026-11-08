@@ -447,6 +447,192 @@ fn the_output_cap_truncates_and_says_so() {
     h.close();
 }
 
+// --- peek: the latest output of a call that is still running ---
+
+impl Host {
+    /// spawn + start, returning the id once the call is running.
+    fn begin(&mut self, argv: &[&str], cwd: &Path) -> String {
+        let id = self.ok("spawn", json!({ "argv": argv, "cwd": cwd, "timeoutMs": 20_000 }))["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        self.ok("start", json!({ "id": id }));
+        id
+    }
+
+    /// Peeks until `stream`'s size reaches `size` (at most 5 s), returning that answer.
+    fn peek_until(&mut self, id: &str, args: Value, stream: &str, size: u64) -> Value {
+        let mut args = args;
+        args["id"] = json!(id);
+        for _ in 0..100 {
+            let v = self.ok("peek", args.clone());
+            if v[stream]["size"].as_u64() == Some(size) {
+                return v;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        panic!("{stream} never reached {size} bytes");
+    }
+}
+
+fn peek_bytes(v: &Value) -> Vec<u8> {
+    base64::engine::general_purpose::STANDARD.decode(v["data"]["$bytes"].as_str().unwrap()).unwrap()
+}
+
+#[test]
+fn hello_offers_peek() {
+    let mut h = Host::start();
+    assert_eq!(h.ok("hello", json!({}))["peek"], true);
+    h.close();
+}
+
+#[test]
+fn peek_shows_the_output_of_a_running_call() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let id = h.begin(&["sh", "-c", "printf first; sleep 5"], &r);
+    let v = h.peek_until(&id, json!({}), "stdout", 5);
+    assert_eq!(v["id"], json!(id));
+    assert_eq!(peek_bytes(&v["stdout"]), b"first");
+    assert_eq!(v["stdout"]["truncated"], false);
+    assert_eq!(v["stderr"]["size"], 0);
+    assert_eq!(v["stderr"]["truncated"], false);
+    assert_eq!(peek_bytes(&v["stderr"]), b"");
+    h.ok("cancel", json!({ "id": id }));
+    h.done(&id);
+    h.close();
+}
+
+#[test]
+fn bytes_bounds_the_tail_to_the_last_bytes() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    // 10000 bytes: 0..9 repeated per line, so the tail is recognisable.
+    let id =
+        h.begin(&["sh", "-c", "i=0; while [ $i -lt 1000 ]; do printf '012345678\\n'; i=$((i+1)); done; sleep 5"], &r);
+    let v = h.peek_until(&id, json!({ "bytes": 100 }), "stdout", 10_000);
+    assert_eq!(peek_bytes(&v["stdout"]), "012345678\n".repeat(10).into_bytes());
+    // The default is 4096; a larger ask than the size returns it all.
+    let v = h.peek_until(&id, json!({}), "stdout", 10_000);
+    assert_eq!(peek_bytes(&v["stdout"]).len(), 4096);
+    let v = h.ok("peek", json!({ "id": id, "bytes": 1_000_000 }));
+    assert_eq!(peek_bytes(&v["stdout"]).len(), 10_000);
+    h.ok("cancel", json!({ "id": id }));
+    h.done(&id);
+    h.close();
+}
+
+#[test]
+fn bytes_past_max_read_is_clamped_without_a_hint() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r], "outputCap": 2_000_000 }));
+    let id = h.begin(&["sh", "-c", "head -c 700000 /dev/zero; sleep 5"], &r);
+    let v = h.peek_until(&id, json!({ "bytes": 10_000_000 }), "stdout", 700_000);
+    assert_eq!(peek_bytes(&v["stdout"]).len(), 512 * 1024, "clamped to MAX_READ");
+    let mut keys: Vec<_> = v["stdout"].as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    assert_eq!(keys, ["data", "size", "truncated"], "no field says the ask was clamped");
+    h.ok("cancel", json!({ "id": id }));
+    h.done(&id);
+    h.close();
+}
+
+#[test]
+fn peek_past_the_output_cap_is_truncated_at_the_cap() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r], "outputCap": 1000 }));
+    let id = h.begin(&["sh", "-c", "yes | head -c 100000; sleep 5"], &r);
+    let v = h.peek_until(&id, json!({ "bytes": 10 }), "stdout", 1000);
+    assert_eq!(v["stdout"]["truncated"], true);
+    assert_eq!(peek_bytes(&v["stdout"]).len(), 10);
+    h.ok("cancel", json!({ "id": id }));
+    h.done(&id);
+    h.close();
+}
+
+#[test]
+fn peek_answers_only_for_a_running_call() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    assert_eq!(h.call("peek", json!({ "id": "c999" })).unwrap_err().0, "UnknownId");
+    // Pending, not started.
+    let pending = h.ok("spawn", json!({ "argv": ["true"], "cwd": r }))["id"].as_str().unwrap().to_string();
+    assert_eq!(h.call("peek", json!({ "id": pending })).unwrap_err().0, "UnknownId");
+    h.ok("discard", json!({ "id": pending }));
+    // Ended: `done` has been seen.
+    let (f, _d) = h.run(json!({ "argv": ["echo", "hi"], "cwd": r }));
+    let ended = f["id"].as_str().unwrap();
+    assert_eq!(h.call("peek", json!({ "id": ended })).unwrap_err().0, "UnknownId");
+    h.close();
+}
+
+#[test]
+fn peek_refuses_a_bad_bytes() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let id = h.begin(&["sleep", "30"], &r);
+    for bad in [json!(0), json!(-1), json!("x"), json!(1.5)] {
+        let e = h.call("peek", json!({ "id": id, "bytes": bad })).unwrap_err();
+        assert_eq!(e.0, "BadRequest", "bytes {bad}");
+    }
+    h.ok("peek", json!({ "id": id, "bytes": 1 }));
+    h.ok("cancel", json!({ "id": id }));
+    h.done(&id);
+    h.close();
+}
+
+#[test]
+fn a_piped_first_stage_has_no_stdout_to_peek() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let ids = spawn_all(&mut h, &r, &[&["sh", "-c", "printf a >&2; sleep 5"], &["cat"]]);
+    h.ok("pipe", json!({ "ids": ids }));
+    let v = h.peek_until(&ids[0], json!({}), "stderr", 1);
+    assert_eq!(v["stdout"], Value::Null);
+    assert_eq!(peek_bytes(&v["stderr"]), b"a");
+    let last = h.ok("peek", json!({ "id": ids[1] }));
+    assert!(last["stdout"].is_object(), "the last stage's stdout is held: {last}");
+    h.ok("cancel", json!({ "id": ids[0] }));
+    h.done(&ids[0]);
+    h.done(&ids[1]);
+    h.close();
+}
+
+#[test]
+fn another_connection_cannot_peek_at_this_ones_call() {
+    let (_d, r) = root();
+    let mut a = Host::start();
+    let mut b = Host::start();
+    a.ok("configure", json!({ "roots": [r] }));
+    b.ok("configure", json!({ "roots": [r] }));
+    let id = a.begin(&["sh", "-c", "printf mine; sleep 5"], &r);
+    // The other session starts a call of its own, so an id of the same shape may exist there too.
+    let other = b.begin(&["sleep", "5"], &r);
+    let v = a.peek_until(&id, json!({}), "stdout", 4);
+    assert_eq!(peek_bytes(&v["stdout"]), b"mine");
+    if other != id {
+        assert_eq!(b.call("peek", json!({ "id": id })).unwrap_err().0, "UnknownId");
+    }
+    let c = Host::start();
+    let mut c = c;
+    c.ok("configure", json!({ "roots": [r] }));
+    assert_eq!(c.call("peek", json!({ "id": id })).unwrap_err().0, "UnknownId");
+    for (h, i) in [(&mut a, &id), (&mut b, &other)] {
+        h.ok("cancel", json!({ "id": i }));
+        h.done(i);
+    }
+    a.close();
+    b.close();
+    c.close();
+}
+
 // --- the OS sandbox ---
 
 #[test]

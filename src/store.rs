@@ -6,7 +6,8 @@ use std::collections::HashMap;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
@@ -24,6 +25,29 @@ pub struct Held {
     pub sha256: String,
     /// The stream passed the cap; the first `size` bytes were kept and the rest drained.
     pub truncated: bool,
+}
+
+/// The state of a stream still being captured, published for `peek`: its file's name once created, the bytes of it
+/// that are on disk, and whether the cap has been passed. `kept` only ever names bytes already written and flushed.
+#[derive(Debug, Default)]
+pub struct Live {
+    name: OnceLock<String>,
+    kept: AtomicU64,
+    truncated: AtomicBool,
+}
+
+/// The live records of one call's two streams. `stdout` is `None` when it went to the next stage of a pipeline.
+#[derive(Debug)]
+pub struct Lives {
+    pub stdout: Option<Arc<Live>>,
+    pub stderr: Arc<Live>,
+}
+
+impl Lives {
+    /// Records for a call; `piped_out` when its stdout is handed to the next stage rather than held.
+    pub fn new(piped_out: bool) -> Lives {
+        Lives { stdout: (!piped_out).then(Arc::default), stderr: Arc::default() }
+    }
 }
 
 /// A session's held output and its calls' temp directories.
@@ -71,10 +95,19 @@ impl Store {
     }
 
     /// Reads `stream` to its end into a new held file: keeps at most `cap` bytes, drains the rest so the writer is
-    /// never blocked, and returns the pointer.
-    pub async fn capture<R: AsyncRead + Unpin>(&self, mut stream: R, cap: u64) -> io::Result<(String, Held)> {
+    /// never blocked, and returns the pointer. With `live`, what is on disk so far is published as it is written, for
+    /// [`Store::peek_tail`].
+    pub async fn capture<R: AsyncRead + Unpin>(
+        &self,
+        mut stream: R,
+        cap: u64,
+        live: Option<Arc<Live>>,
+    ) -> io::Result<(String, Held)> {
         let name = random_hex(16);
         let mut f = tokio::fs::OpenOptions::new().write(true).create_new(true).open(self.out.join(&name)).await?;
+        if let Some(l) = &live {
+            let _ = l.name.set(name.clone());
+        }
         let mut hash = Sha256::new();
         let (mut kept, mut truncated) = (0u64, false);
         let mut buf = vec![0u8; 64 * 1024];
@@ -92,6 +125,15 @@ impl Store {
                 f.write_all(&buf[..take]).await?;
                 hash.update(&buf[..take]);
                 kept += take as u64;
+            }
+            if let Some(l) = &live {
+                // tokio's File hands a write to the blocking pool and can return before the bytes reach the OS: flush
+                // first, so `kept` never names bytes a reader could not yet read back from the file.
+                f.flush().await?;
+                l.kept.store(kept, Ordering::Release);
+                if truncated {
+                    l.truncated.store(true, Ordering::Release);
+                }
             }
         }
         f.flush().await?;
@@ -116,6 +158,22 @@ impl Store {
             f.read_exact(&mut buf)?;
             Ok((buf, size, start + len >= size))
         })())
+    }
+
+    /// The last `min(bytes, size)` bytes kept so far of a stream still being captured, the bytes kept, and whether the
+    /// cap has been passed. A stream whose file does not exist yet is empty. Opened by descriptor beneath `out/`, as
+    /// [`Store::read`] does.
+    pub fn peek_tail(&self, live: &Live, bytes: u64) -> io::Result<(Vec<u8>, u64, bool)> {
+        // `truncated` is published after `kept`, so reading it first means a `true` comes with the final `kept`.
+        let truncated = live.truncated.load(Ordering::Acquire);
+        let size = live.kept.load(Ordering::Acquire);
+        let Some(name) = live.name.get().filter(|_| size > 0) else { return Ok((Vec::new(), 0, truncated)) };
+        let mut f = fsx::open_beneath(&self.out, Path::new(name))?;
+        let len = bytes.min(MAX_READ).min(size);
+        f.seek(SeekFrom::Start(size - len))?;
+        let mut buf = vec![0u8; len as usize];
+        f.read_exact(&mut buf)?;
+        Ok((buf, size, truncated))
     }
 
     /// Forgets and deletes a held stream. False if it was not held.
@@ -151,7 +209,7 @@ mod tests {
         let base = tempfile::tempdir().unwrap();
         let s = Store::create(base.path()).unwrap();
         let data: Vec<u8> = (0..1_500_000u32).map(|i| (i % 251) as u8).collect();
-        let (ptr, held) = s.capture(&data[..], 10 << 20).await.unwrap();
+        let (ptr, held) = s.capture(&data[..], 10 << 20, None).await.unwrap();
         assert_eq!(held.size, data.len() as u64);
         assert!(!held.truncated);
         assert_eq!(held.sha256, hex::encode(Sha256::digest(&data)));
@@ -174,7 +232,7 @@ mod tests {
     async fn the_cap_keeps_the_head_and_marks_truncation() {
         let base = tempfile::tempdir().unwrap();
         let s = Store::create(base.path()).unwrap();
-        let (ptr, held) = s.capture(&b"0123456789"[..], 4).await.unwrap();
+        let (ptr, held) = s.capture(&b"0123456789"[..], 4, None).await.unwrap();
         assert_eq!(held, Held { size: 4, sha256: hex::encode(Sha256::digest(b"0123")), truncated: true });
         assert_eq!(s.read(&ptr, 0, 100).unwrap().unwrap().0, b"0123");
     }
@@ -185,7 +243,7 @@ mod tests {
         let s = Store::create(base.path()).unwrap();
         assert!(s.read("out:00", 0, 1).is_none());
         assert!(s.read("../etc/passwd", 0, 1).is_none());
-        let (ptr, _) = s.capture(&b"x"[..], 10).await.unwrap();
+        let (ptr, _) = s.capture(&b"x"[..], 10, None).await.unwrap();
         assert!(s.release(&ptr));
         assert!(!s.release(&ptr));
         assert!(s.read(&ptr, 0, 1).is_none());
@@ -202,5 +260,48 @@ mod tests {
             assert_eq!(std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
         }
         assert!(!dir.exists());
+    }
+
+    // --- output of a stream still being written ---
+
+    #[tokio::test]
+    async fn a_published_size_never_exceeds_the_bytes_on_disk() {
+        let base = tempfile::tempdir().unwrap();
+        let s = Arc::new(Store::create(base.path()).unwrap());
+        let live = Arc::new(Live::default());
+        // A slow writer: 200 chunks of 1000 bytes, the reader peeking between them.
+        let (mut tx, rx) = tokio::io::duplex(4096);
+        let (s2, l2) = (s.clone(), live.clone());
+        let cap = tokio::spawn(async move { s2.capture(rx, 1 << 20, Some(l2)).await.unwrap() });
+        let chunk: Vec<u8> = (0..1000u32).map(|i| (i % 253) as u8).collect();
+        let mut checked = 0;
+        for i in 0..200u64 {
+            tx.write_all(&chunk).await.unwrap();
+            let (data, size, truncated) = s.peek_tail(&live, 100).unwrap();
+            assert!(!truncated);
+            assert!(size <= (i + 1) * 1000, "kept {size} after {} written", (i + 1) * 1000);
+            assert_eq!(data.len() as u64, 100.min(size), "the data is all there at size {size}");
+            // Whatever size was published, the bytes behind it are the stream's own, not a hole of zeros.
+            let all: Vec<u8> = chunk.iter().cycle().take(200_000).copied().collect();
+            assert_eq!(&data[..], &all[(size as usize - data.len())..size as usize]);
+            checked += 1;
+            tokio::task::yield_now().await;
+        }
+        drop(tx);
+        let (_, held) = cap.await.unwrap();
+        let (data, size, _) = s.peek_tail(&live, 1 << 30).unwrap();
+        assert_eq!((size, data.len() as u64), (200_000, 200_000.min(MAX_READ)));
+        assert_eq!(held.size, 200_000);
+        assert!(checked > 0);
+    }
+
+    #[tokio::test]
+    async fn peek_before_any_output_is_empty_and_past_the_cap_is_truncated() {
+        let base = tempfile::tempdir().unwrap();
+        let s = Store::create(base.path()).unwrap();
+        let live = Arc::new(Live::default());
+        assert_eq!(s.peek_tail(&live, 10).unwrap(), (Vec::new(), 0, false));
+        s.capture(&b"0123456789"[..], 4, Some(live.clone())).await.unwrap();
+        assert_eq!(s.peek_tail(&live, 2).unwrap(), (b"23".to_vec(), 4, true));
     }
 }

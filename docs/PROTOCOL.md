@@ -41,6 +41,7 @@ the host answers each as it finishes, not in order. A message that is not an obj
 { "host": "window-ml-host", "version": "0.7.0", "protocol": 1, "platform": "macos",
   "sandbox": { "kind": "seatbelt", "available": true, "landlockAbi": null },  // kind: "seatbelt" | "bwrap" | null; "reason" when unavailable; landlockAbi: number | null (Linux only)
   "modes": ["host"],                                                // "container" appears once a runner exists
+  "peek": true,                                                     // this host answers `peek`; an older host has no such field
   "owners": { "ledger": true, "register": true },                   // ledger false: the table is in memory only; register false over the hub (see "Owners")
   "memory": { "metric": "phys_footprint", "enforcer": "watchdog", "everyMs": 100 },
   "cpu": { "metric": "user+system, with reaped children" } }        // what `cpuMs` counts: measured, never bounded
@@ -270,6 +271,29 @@ the person the names a command will receive instead of a pattern a shell would e
 
 `args: { "id": "c3" }` → `{ "signalled": true }`. SIGTERM to the process group, SIGKILL two seconds later if it is still
 there. The `done` event follows with `cancelled: true`.
+
+### `peek`: the latest output of a running call
+
+```jsonc
+args:  { "id": "c3", "bytes": 4096 }        // bytes optional, default 4096, clamped to 512 KiB (the limit of `read`); 0, negative or non-integer: BadRequest
+value: { "id": "c3",
+         "stdout": { "size": 18342, "truncated": false, "data": { "$bytes": "<base64>" } },   // null when this call's stdout went to the next stage of a pipeline
+         "stderr": { "size": 0, "truncated": false, "data": { "$bytes": "" } } }
+```
+
+Output is held only once a call ends (`done` carries the pointers), so `peek` is how to read a call that is still
+running. `data` is the LAST `min(bytes, size)` bytes kept so far of each stream; `size` is the bytes kept so far. A
+stream that has passed the output cap has `truncated: true`: kept bytes stop at the cap, so `peek` then shows the last
+bytes BEFORE the cap, and `size` stays at the cap.
+
+The bytes are bytes, as for `read`: the cut may split a UTF-8 sequence or a line, so the reader decodes and trims. A
+clamped `bytes` is not marked in the answer.
+
+Only a call in this session's running table answers. Anything else (an unknown id, a call not yet started, a call that
+has ended, a call of another connection) is `UnknownId` "no running call", as for `cancel`; once a call has ended, its
+`done` event's pointers and `read` are the way. A group declared with `register` has no output of the host's, and
+answers `stdout` and `stderr` as `null`. Offered over every transport, like `read` and `cancel`: it reads only a call
+of this connection.
 
 ### `register`: own a process group this connection started
 

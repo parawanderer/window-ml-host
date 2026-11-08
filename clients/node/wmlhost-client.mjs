@@ -182,6 +182,8 @@ export class HostClient {
   discard(id) { return this.call("discard", { id }); }
   /** Terminates a running call's process group. */
   cancel(id) { return this.call("cancel", { id }); }
+  /** The last `bytes` (default 4096) of each stream of a RUNNING call: `{ id, stdout, stderr }` (PROTOCOL.md, `peek`). */
+  peek(id, bytes) { return this.call("peek", bytes === undefined ? { id } : { id, bytes }); }
   /** Deletes held output early. */
   release(ptr) { return this.call("release", { ptr }); }
   /** The owner table: `{ running, orphans, ended }` (PROTOCOL.md, `status`). */
