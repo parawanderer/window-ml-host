@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use base64::Engine;
 use serde_json::{Value, json};
+use sha2::Digest as _;
 
 struct Host {
     /// The owner table's ledger directory, private to this test unless shared on purpose.
@@ -2526,5 +2527,385 @@ fn a_tilde_ssh_config_operand_is_judged_at_its_real_path() {
     assert_eq!(p["path"], json!(home.join(".ssh/config")));
     assert_eq!(p["secret"], true);
     assert_eq!(p["inRoot"], false);
+    h.close();
+}
+
+// --- put / write / commit: bytes to a file in a root ---
+
+/// A host whose HOME is `home` and whose only root is `r`.
+fn put_host(home: &Path, r: &Path) -> Host {
+    tilde_host(home, &[r])
+}
+
+fn b64(b: &[u8]) -> Value {
+    json!({ "$bytes": base64::engine::general_purpose::STANDARD.encode(b) })
+}
+
+/// The `.wmlhost-put-*` files directly in `dir`.
+fn leftovers(dir: &Path) -> Vec<String> {
+    std::fs::read_dir(dir)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+                .filter(|n| n.starts_with(".wmlhost-put-"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn code(r: Result<Value, (String, String)>) -> String {
+    match r {
+        Ok(v) => format!("ok {v}"),
+        Err((c, _)) => c,
+    }
+}
+
+/// put + write in 3 chunks of at most `chunk` bytes; the put's facts.
+fn put_all(h: &mut Host, path: &str, cwd: &Path, data: &[u8], chunk: usize) -> Value {
+    let f = h.ok("put", json!({ "path": path, "cwd": cwd, "size": data.len() }));
+    let id = f["id"].as_str().unwrap().to_string();
+    let mut off = 0;
+    for c in data.chunks(chunk.max(1)) {
+        let w = h.ok("write", json!({ "id": id, "offset": off, "bytes": b64(c) }));
+        off += c.len();
+        assert_eq!(w["received"], off);
+    }
+    f
+}
+
+#[test]
+fn hello_reports_the_put_cap() {
+    let mut h = Host::start();
+    assert_eq!(h.ok("hello", json!({}))["put"], json!({ "max": 64 << 20 }));
+    h.close();
+}
+
+#[test]
+fn a_new_file_arrives_byte_for_byte_over_several_chunks() {
+    let (_d, r) = root();
+    std::fs::create_dir(r.join("inbox")).unwrap();
+    let mut h = put_host(&r, &r);
+    let data: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+    let f = put_all(&mut h, "inbox/report.bin", &r, &data, 100_000);
+    assert_eq!(f["path"], json!(r.join("inbox/report.bin")));
+    assert_eq!((f["root"].clone(), f["rel"].clone()), (json!(r), json!("inbox/report.bin")));
+    assert_eq!(
+        (f["exists"].clone(), f["existingSize"].clone(), f["size"].clone()),
+        (json!(false), Value::Null, json!(300_000))
+    );
+    assert!(!r.join("inbox/report.bin").exists(), "put writes nothing");
+    let id = f["id"].as_str().unwrap();
+    let c = h.ok("commit", json!({ "id": id }));
+    assert_eq!(c["rel"], "inbox/report.bin");
+    assert_eq!(c["size"], 300_000);
+    assert_eq!(c["path"], json!(r.join("inbox/report.bin")));
+    assert_eq!(c["sha256"], hex::encode(sha2::Sha256::digest(&data)));
+    assert_eq!(std::fs::read(r.join("inbox/report.bin")).unwrap(), data);
+    // 0666 less the umask: group/other never get more than the umask leaves, and never execute.
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::metadata(r.join("inbox/report.bin")).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode & !0o666, 0, "{mode:o}");
+    assert_eq!(mode & 0o600, 0o600, "{mode:o}");
+    assert!(leftovers(&r.join("inbox")).is_empty());
+    assert_eq!(code(h.call("commit", json!({ "id": id }))), "UnknownId", "a commit consumes the put");
+    h.close();
+}
+
+#[test]
+fn an_empty_file_commits_without_any_chunk() {
+    let (_d, r) = root();
+    let mut h = put_host(&r, &r);
+    let f = h.ok("put", json!({ "path": "empty", "cwd": r, "size": 0 }));
+    let c = h.ok("commit", json!({ "id": f["id"] }));
+    assert_eq!(c["sha256"], hex::encode(sha2::Sha256::digest(b"")));
+    assert_eq!(std::fs::read(r.join("empty")).unwrap(), b"");
+    h.close();
+}
+
+#[test]
+fn an_existing_file_is_reported_and_commit_without_replace_refuses_and_leaves_it() {
+    let (_d, r) = root();
+    std::fs::write(r.join("a.txt"), b"original").unwrap();
+    let mut h = put_host(&r, &r);
+    let f = put_all(&mut h, "a.txt", &r, b"new", 10);
+    assert_eq!((f["exists"].clone(), f["existingSize"].clone()), (json!(true), json!(8)));
+    assert_eq!(code(h.call("commit", json!({ "id": f["id"], "replace": false }))), "Exists");
+    assert_eq!(std::fs::read(r.join("a.txt")).unwrap(), b"original");
+    assert!(leftovers(&r).is_empty(), "a failed commit deletes its temp file");
+    h.close();
+}
+
+#[test]
+fn a_file_created_between_put_and_commit_is_exists_without_replace() {
+    let (_d, r) = root();
+    let mut h = put_host(&r, &r);
+    let f = put_all(&mut h, "late.txt", &r, b"mine", 10);
+    assert_eq!(f["exists"], false);
+    std::fs::write(r.join("late.txt"), b"theirs").unwrap();
+    assert_eq!(code(h.call("commit", json!({ "id": f["id"] }))), "Exists");
+    assert_eq!(std::fs::read(r.join("late.txt")).unwrap(), b"theirs");
+    assert!(leftovers(&r).is_empty());
+    h.close();
+}
+
+#[test]
+fn replace_true_overwrites() {
+    let (_d, r) = root();
+    std::fs::write(r.join("a.txt"), b"original").unwrap();
+    let mut h = put_host(&r, &r);
+    let f = put_all(&mut h, "a.txt", &r, b"replacement", 4);
+    h.ok("commit", json!({ "id": f["id"], "replace": true }));
+    assert_eq!(std::fs::read(r.join("a.txt")).unwrap(), b"replacement");
+    assert!(leftovers(&r).is_empty());
+    h.close();
+}
+
+#[test]
+fn a_missing_parent_is_no_parent_and_nothing_is_created() {
+    let (_d, r) = root();
+    let mut h = put_host(&r, &r);
+    assert_eq!(code(h.call("put", json!({ "path": "no/such/x", "cwd": r, "size": 1 }))), "NoParent");
+    assert_eq!(code(h.call("put", json!({ "path": r.join("nodir/x"), "size": 1 }))), "NoParent");
+    std::fs::write(r.join("file"), b"").unwrap();
+    assert_eq!(
+        code(h.call("put", json!({ "path": "file/x", "cwd": r, "size": 1 }))),
+        "NoParent",
+        "a file is no parent"
+    );
+    assert_eq!(std::fs::read_dir(&r).unwrap().count(), 1, "only the file we made");
+    h.close();
+}
+
+#[test]
+fn a_parent_outside_the_roots_is_refused_however_it_is_reached() {
+    let (_d, r) = root();
+    let (_o, other) = root();
+    std::fs::create_dir(r.join("w")).unwrap();
+    std::os::unix::fs::symlink(&other, r.join("w/out")).unwrap();
+    let mut h = put_host(&r, &r.join("w"));
+    let w = r.join("w");
+    assert_eq!(code(h.call("put", json!({ "path": "../x", "cwd": w, "size": 1 }))), "OutsideRoots");
+    assert_eq!(code(h.call("put", json!({ "path": other.join("x"), "size": 1 }))), "OutsideRoots");
+    assert_eq!(code(h.call("put", json!({ "path": "out/x", "cwd": w, "size": 1 }))), "OutsideRoots", "a link out");
+    assert_eq!(code(h.call("put", json!({ "path": "x", "cwd": other, "size": 1 }))), "CwdOutsideRoots");
+    assert_eq!(code(h.call("put", json!({ "path": "x", "size": 1 }))), "BadRequest", "relative without a cwd");
+    assert!(std::fs::read_dir(&other).unwrap().next().is_none());
+    h.close();
+}
+
+#[test]
+fn a_target_that_is_a_symlink_is_refused_whichever_way_it_points() {
+    let (_d, r) = root();
+    let (_o, other) = root();
+    std::fs::write(r.join("real"), b"r").unwrap();
+    std::fs::write(other.join("elsewhere"), b"e").unwrap();
+    std::os::unix::fs::symlink(r.join("real"), r.join("in-link")).unwrap();
+    std::os::unix::fs::symlink(other.join("elsewhere"), r.join("out-link")).unwrap();
+    std::os::unix::fs::symlink(r.join("nothing"), r.join("dangling")).unwrap();
+    let mut h = put_host(&r, &r);
+    for n in ["in-link", "out-link", "dangling"] {
+        assert_eq!(code(h.call("put", json!({ "path": n, "cwd": r, "size": 1 }))), "IsSymlink", "{n}");
+    }
+    assert_eq!(std::fs::read(r.join("real")).unwrap(), b"r");
+    assert_eq!(std::fs::read(other.join("elsewhere")).unwrap(), b"e");
+    h.close();
+}
+
+#[test]
+fn a_symlink_that_appears_after_put_is_refused_by_a_replacing_commit() {
+    let (_d, r) = root();
+    std::fs::write(r.join("t"), b"orig").unwrap();
+    std::fs::write(r.join("victim"), b"v").unwrap();
+    let mut h = put_host(&r, &r);
+    let f = put_all(&mut h, "t", &r, b"new", 10);
+    std::fs::remove_file(r.join("t")).unwrap();
+    std::os::unix::fs::symlink(r.join("victim"), r.join("t")).unwrap();
+    assert_eq!(code(h.call("commit", json!({ "id": f["id"], "replace": true }))), "IsSymlink");
+    assert_eq!(std::fs::read(r.join("victim")).unwrap(), b"v");
+    assert!(leftovers(&r).is_empty());
+    h.close();
+}
+
+#[test]
+fn a_target_that_is_a_directory_is_refused() {
+    let (_d, r) = root();
+    std::fs::create_dir(r.join("d")).unwrap();
+    let mut h = put_host(&r, &r);
+    assert_eq!(code(h.call("put", json!({ "path": "d", "cwd": r, "size": 1 }))), "IsDirectory");
+    for bad in ["d/", "d/.", ".", "..", ""] {
+        assert_eq!(code(h.call("put", json!({ "path": bad, "cwd": r, "size": 1 }))), "BadRequest", "{bad:?}");
+    }
+    h.close();
+}
+
+#[test]
+fn protected_and_credential_names_are_refused_with_no_way_to_allow_them() {
+    let (_d, r) = root();
+    for d in [".git/hooks", ".ssh", ".vscode"] {
+        std::fs::create_dir_all(r.join(d)).unwrap();
+    }
+    let mut h = put_host(&r, &r);
+    for p in [".git/hooks/pre-commit", ".git/config", ".bashrc", ".ssh/x", ".vscode/settings.json", ".env", "key.pem"] {
+        assert_eq!(code(h.call("put", json!({ "path": p, "cwd": r, "size": 1 }))), "Protected", "{p}");
+    }
+    assert!(!r.join(".git/hooks/pre-commit").exists() && !r.join(".bashrc").exists());
+    // Beside them is fine.
+    h.ok("put", json!({ "path": ".git/HEAD", "cwd": r, "size": 1 }));
+    h.close();
+}
+
+#[test]
+fn a_parent_swapped_for_a_symlink_after_put_still_writes_into_the_original_directory() {
+    let (_d, r) = root();
+    let (_o, other) = root();
+    std::fs::create_dir(r.join("dir")).unwrap();
+    let mut h = put_host(&r, &r);
+    let f = h.ok("put", json!({ "path": "dir/f.txt", "cwd": r, "size": 7 }));
+    // The real parent moves away and a link to somewhere else takes its place, before any byte is written.
+    std::fs::rename(r.join("dir"), r.join("dir-moved")).unwrap();
+    std::os::unix::fs::symlink(&other, r.join("dir")).unwrap();
+    for (off, c) in [(0, &b"pay"[..]), (3, b"load")] {
+        h.ok("write", json!({ "id": f["id"], "offset": off, "bytes": b64(c) }));
+    }
+    let c = h.ok("commit", json!({ "id": f["id"] }));
+    assert_eq!(c["sha256"], hex::encode(sha2::Sha256::digest(b"payload")));
+    assert_eq!(std::fs::read(r.join("dir-moved/f.txt")).unwrap(), b"payload", "lands in the original directory");
+    assert!(std::fs::read_dir(&other).unwrap().next().is_none(), "nothing in the link's target");
+    assert!(leftovers(&r.join("dir-moved")).is_empty());
+    h.close();
+}
+
+#[test]
+fn a_parent_swapped_after_put_does_not_leak_a_temp_file_into_the_link_target_before_commit() {
+    let (_d, r) = root();
+    let (_o, other) = root();
+    std::fs::create_dir(r.join("dir")).unwrap();
+    let mut h = put_host(&r, &r);
+    let f = h.ok("put", json!({ "path": "dir/f", "cwd": r, "size": 2 }));
+    std::fs::rename(r.join("dir"), r.join("moved")).unwrap();
+    std::os::unix::fs::symlink(&other, r.join("dir")).unwrap();
+    h.ok("write", json!({ "id": f["id"], "offset": 0, "bytes": b64(b"ab") }));
+    assert!(std::fs::read_dir(&other).unwrap().next().is_none());
+    assert_eq!(leftovers(&r.join("moved")).len(), 1, "the temp file is in the original directory");
+    h.ok("discard", json!({ "id": f["id"] }));
+    assert!(leftovers(&r.join("moved")).is_empty());
+    h.close();
+}
+
+#[test]
+fn bad_offsets_oversized_chunks_and_oversized_puts_are_refused() {
+    let (_d, r) = root();
+    let mut h = put_host(&r, &r);
+    let f = h.ok("put", json!({ "path": "f", "cwd": r, "size": 10 }));
+    let id = f["id"].clone();
+    h.ok("write", json!({ "id": id, "offset": 0, "bytes": b64(b"abcd") }));
+    let (gap, repeat, past) = (
+        h.call("write", json!({ "id": id, "offset": 6, "bytes": b64(b"x") })),
+        h.call("write", json!({ "id": id, "offset": 0, "bytes": b64(b"x") })),
+        h.call("write", json!({ "id": id, "offset": 4, "bytes": b64(b"1234567") })),
+    );
+    assert_eq!(
+        (code(gap.clone()), code(repeat), code(past)),
+        ("BadRequest".into(), "BadRequest".into(), "BadRequest".into())
+    );
+    assert!(gap.unwrap_err().1.contains('4'), "the message names the expected offset");
+    assert_eq!(code(h.call("write", json!({ "id": id, "offset": 4, "bytes": "not an object" }))), "BadRequest");
+    assert_eq!(code(h.call("write", json!({ "id": id, "offset": 4, "bytes": { "$bytes": "!!!" } }))), "BadRequest");
+    // A chunk over 512 KiB, in a put big enough to hold it.
+    let big = h.ok("put", json!({ "path": "big", "cwd": r, "size": 600 * 1024 }));
+    let chunk = vec![7u8; 512 * 1024 + 1];
+    assert_eq!(code(h.call("write", json!({ "id": big["id"], "offset": 0, "bytes": b64(&chunk) }))), "BadRequest");
+    h.ok("write", json!({ "id": big["id"], "offset": 0, "bytes": b64(&chunk[..512 * 1024]) }));
+    // The declared size.
+    assert_eq!(code(h.call("put", json!({ "path": "huge", "cwd": r, "size": (64u64 << 20) + 1 }))), "TooLarge");
+    h.ok("put", json!({ "path": "huge", "cwd": r, "size": 64u64 << 20 }));
+    h.close();
+}
+
+#[test]
+fn a_commit_short_of_the_size_is_refused_and_the_put_can_continue() {
+    let (_d, r) = root();
+    let mut h = put_host(&r, &r);
+    let f = h.ok("put", json!({ "path": "f", "cwd": r, "size": 4 }));
+    h.ok("write", json!({ "id": f["id"], "offset": 0, "bytes": b64(b"ab") }));
+    assert_eq!(code(h.call("commit", json!({ "id": f["id"] }))), "BadRequest");
+    assert!(!r.join("f").exists());
+    h.ok("write", json!({ "id": f["id"], "offset": 2, "bytes": b64(b"cd") }));
+    h.ok("commit", json!({ "id": f["id"] }));
+    assert_eq!(std::fs::read(r.join("f")).unwrap(), b"abcd");
+    h.close();
+}
+
+#[test]
+fn discard_leaves_no_temp_file_and_the_id_is_gone() {
+    let (_d, r) = root();
+    let mut h = put_host(&r, &r);
+    let f = h.ok("put", json!({ "path": "f", "cwd": r, "size": 3 }));
+    h.ok("write", json!({ "id": f["id"], "offset": 0, "bytes": b64(b"abc") }));
+    assert_eq!(leftovers(&r).len(), 1);
+    h.ok("discard", json!({ "id": f["id"] }));
+    assert!(leftovers(&r).is_empty());
+    assert_eq!(code(h.call("write", json!({ "id": f["id"], "offset": 3, "bytes": b64(b"") }))), "UnknownId");
+    assert!(!r.join("f").exists());
+    h.close();
+}
+
+#[test]
+fn reconfiguring_drops_a_put_and_its_temp_file() {
+    let (_d, r) = root();
+    let mut h = put_host(&r, &r);
+    let f = h.ok("put", json!({ "path": "f", "cwd": r, "size": 1 }));
+    h.ok("write", json!({ "id": f["id"], "offset": 0, "bytes": b64(b"a") }));
+    h.ok("configure", json!({ "roots": [r] }));
+    assert!(leftovers(&r).is_empty());
+    assert_eq!(code(h.call("commit", json!({ "id": f["id"] }))), "UnknownId");
+    h.close();
+}
+
+#[test]
+fn the_end_of_the_connection_deletes_the_temp_file() {
+    let (_d, r) = root();
+    let mut h = put_host(&r, &r);
+    let f = h.ok("put", json!({ "path": "f", "cwd": r, "size": 3 }));
+    h.ok("write", json!({ "id": f["id"], "offset": 0, "bytes": b64(b"ab") }));
+    assert_eq!(leftovers(&r).len(), 1);
+    h.close();
+    assert!(leftovers(&r).is_empty());
+    assert!(!r.join("f").exists());
+}
+
+#[test]
+fn a_tilde_path_expands_and_the_facts_say_so() {
+    let (_d, r) = root();
+    std::fs::create_dir(r.join("inbox")).unwrap();
+    let mut h = put_host(&r, &r);
+    let f = h.ok("put", json!({ "path": "~/inbox/x", "size": 1 }));
+    let to = format!("{}/inbox/x", r.display());
+    assert_eq!(f["tilde"], json!([{ "index": "path", "from": "~/inbox/x", "to": to }]));
+    assert_eq!(f["rel"], "inbox/x");
+    h.close();
+}
+
+#[test]
+fn a_put_id_of_another_connection_is_unknown() {
+    let (_d, r) = root();
+    let mut a = put_host(&r, &r);
+    let mut b = put_host(&r, &r);
+    let f = a.ok("put", json!({ "path": "f", "cwd": r, "size": 1 }));
+    assert_eq!(code(b.call("write", json!({ "id": f["id"], "offset": 0, "bytes": b64(b"a") }))), "UnknownId");
+    assert_eq!(code(b.call("commit", json!({ "id": f["id"] }))), "UnknownId");
+    assert_eq!(code(b.call("discard", json!({ "id": f["id"] }))), "UnknownId");
+    a.close();
+    b.close();
+}
+
+#[test]
+fn put_ids_do_not_collide_with_spawn_ids() {
+    let (_d, r) = root();
+    let mut h = put_host(&r, &r);
+    let p = h.ok("put", json!({ "path": "f", "cwd": r, "size": 1 }));
+    let s = h.ok("spawn", json!({ "argv": ["echo", "x"], "cwd": r }));
+    assert_ne!(p["id"], s["id"]);
+    assert!(p["id"].as_str().unwrap().starts_with('p') && s["id"].as_str().unwrap().starts_with('c'));
+    assert_eq!(code(h.call("start", json!({ "id": p["id"] }))), "UnknownId", "a put is not a call");
     h.close();
 }

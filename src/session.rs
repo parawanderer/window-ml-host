@@ -20,6 +20,7 @@ use crate::gitconfig;
 use crate::glob;
 use crate::owners::{self, Entry, Ledger};
 use crate::procs;
+use crate::put::{self, Staged};
 use crate::runner::{self, Limits, Meter, Outcome, Prepared};
 use crate::sandbox::{self, Availability, Envelope, ExecScope, Plan, WriteScope};
 use crate::store::{Live, Lives, MAX_READ, Store};
@@ -149,6 +150,9 @@ struct Call {
 struct State {
     config: Option<Config>,
     pending: HashMap<String, Pending>,
+    /// Puts waiting for their bytes or their commit. They share `pending`'s TTL, `MAX_PENDING` and id counter, and
+    /// each deletes its temp file when it is dropped from here.
+    puts: HashMap<String, Staged>,
     running: HashMap<String, Call>,
     next_id: u64,
     /// Whether this host's warden has been started (on the first call that runs).
@@ -158,6 +162,12 @@ struct State {
 }
 
 impl State {
+    /// Drops what waited past its TTL: pending spawns, and puts (whose temp files go with them).
+    fn sweep(&mut self) {
+        self.pending.retain(|_, p| p.created.elapsed() < PENDING_TTL);
+        self.puts.retain(|_, p| p.created.elapsed() < PENDING_TTL);
+    }
+
     fn entries(&self) -> Vec<Entry> {
         self.running.values().map(|c| c.entry.clone()).collect()
     }
@@ -257,6 +267,7 @@ where
         state: Mutex::new(State {
             config: None,
             pending: HashMap::new(),
+            puts: HashMap::new(),
             running: HashMap::new(),
             next_id: 1,
             warden: false,
@@ -276,6 +287,12 @@ where
         }
     };
     s.owner_lost();
+    {
+        // The connection ended: pending spawns die with the session, and so do the staged temp files.
+        let mut st = s.state.lock().unwrap();
+        st.pending.clear();
+        st.puts.clear();
+    }
     s.host.store.cleanup();
     drop(s);
     writer.abort();
@@ -365,11 +382,22 @@ impl Session {
             "status" => Ok(self.status()),
             // A remote principal registering a group on this machine would hold a kill over any process of this
             // user, through owner loss and the memory bound: refused before its arguments are read.
-            "register" if matches!(self.host.transport, Transport::Hub { .. }) => {
-                return self.send(json!({ "seq": seq, "error": { "code": "Refused", "reason": "scope",
-                    "message": "register is not offered over the hub: only a connection on this machine may declare its processes" } }));
+            "register" | "put" | "write" | "commit" if matches!(self.host.transport, Transport::Hub { .. }) => {
+                // Likewise a remote principal writing files on this machine: the window.ml side refuses first, and
+                // a hub-relayed caller never gets this far.
+                let message = if call == "register" {
+                    "register is not offered over the hub: only a connection on this machine may declare its processes"
+                } else {
+                    "put is not offered over the hub: only a connection on this machine may write its files"
+                };
+                return self.send(
+                    json!({ "seq": seq, "error": { "code": "Refused", "reason": "scope", "message": message } }),
+                );
             }
             "register" => self.register_group(args),
+            "put" => self.put(args),
+            "write" => self.write(args),
+            "commit" => self.commit(args),
             "owner" => self.owner_of(args),
             other => fail("BadRequest", format!("unknown call {other:?}")),
         };
@@ -395,6 +423,8 @@ impl Session {
             "modes": ["host"],
             "peek": true,
             "tilde": true,
+            // Over the hub `put` is refused, so it is not offered: the file would land on another machine.
+            "put": if matches!(self.host.transport, Transport::Hub { .. }) { Value::Null } else { json!({ "max": put::MAX_PUT }) },
             "owners": { "ledger": self.ledger.is_some(),
                         "register": !matches!(self.host.transport, Transport::Hub { .. }) },
             "cpu": { "metric": procs::CPU_METRIC },
@@ -486,6 +516,7 @@ impl Session {
         let sandboxed = sandbox && self.host.sandbox.available;
         let mut st = self.state.lock().unwrap();
         st.pending.clear();
+        st.puts.clear();
         st.config = Some(Config { roots, sandbox, path, timeout_ms, output_cap, memory_bound, memory_max, owner_loss });
         Ok(json!({ "roots": shown, "sandboxed": sandboxed, "memoryBound": memory_bound, "memoryMax": memory_max,
                    "onOwnerLoss": owner_loss.json() }))
@@ -604,8 +635,8 @@ impl Session {
             .collect();
 
         let mut st = self.state.lock().unwrap();
-        st.pending.retain(|_, p| p.created.elapsed() < PENDING_TTL);
-        if st.pending.len() >= MAX_PENDING {
+        st.sweep();
+        if st.pending.len() + st.puts.len() >= MAX_PENDING {
             return fail("Busy", format!("{MAX_PENDING} calls already wait for a verdict"));
         }
         let id = format!("c{}", st.next_id);
@@ -1165,10 +1196,125 @@ impl Session {
 
     fn discard(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
         let id = req_str(a, "id")?;
-        match self.state.lock().unwrap().pending.remove(id) {
-            Some(_) => Ok(json!({})),
-            None => fail("UnknownId", format!("no pending call {id:?}")),
+        let mut st = self.state.lock().unwrap();
+        // A dropped put deletes its temp file.
+        if st.pending.remove(id).is_some() || st.puts.remove(id).is_some() {
+            Ok(json!({}))
+        } else {
+            fail("UnknownId", format!("no pending call {id:?}"))
         }
+    }
+
+    /// Resolves a target path and holds its parent directory; writes nothing (docs/PROTOCOL.md, "put").
+    fn put(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
+        let config = self.state.lock().unwrap().config.clone();
+        let Some(config) = config else { return fail("NotConfigured", "configure the session first") };
+        let size = opt_u64(a, "size")?.ok_or_else(|| Fail("BadRequest", "size is a non-negative integer".into()))?;
+        let mut path = req_str(a, "path")?.to_string();
+        if path.contains('\0') {
+            return fail("BadRequest", "path has no NUL");
+        }
+        let mut tilde: Vec<Value> = Vec::new();
+        let home = self.host.home.as_deref();
+        tilde.extend(tilde::apply(&mut path, json!("path"), home));
+        let mut cwd_arg = match a.get("cwd") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(c)) if !c.contains('\0') => Some(c.clone()),
+            Some(_) => return fail("BadRequest", "cwd is a string with no NUL"),
+        };
+        if let Some(c) = cwd_arg.as_mut() {
+            tilde.extend(tilde::apply(c, json!("cwd"), home));
+        }
+        let (parent_given, name) = put::split_target(&path).map_err(|m| Fail("BadRequest", m.into()))?;
+        // A relative path needs a cwd, which is checked as `spawn` checks it.
+        let cwd = if Path::new(&path).is_absolute() && cwd_arg.is_none() {
+            PathBuf::from("/")
+        } else {
+            let Some(c) = cwd_arg.as_deref().filter(|c| Path::new(c).is_absolute()) else {
+                return fail("BadRequest", "cwd is an absolute path");
+            };
+            match Path::new(c).canonicalize().ok().filter(|c| c.is_dir() && facts::in_roots(c, &config.roots)) {
+                Some(c) => c,
+                None => return fail("CwdOutsideRoots", format!("{c} is not a directory inside a root")),
+            }
+        };
+        if size > put::MAX_PUT {
+            return fail("TooLarge", format!("size is at most {} bytes", put::MAX_PUT));
+        }
+        let parent = facts::resolve_path(parent_given, &cwd);
+        if !parent.exists || !parent.path.is_dir() {
+            return fail("NoParent", format!("{parent_given:?} is not an existing directory"));
+        }
+        let Some(root) = put::root_of(&parent.path, &config.roots).cloned() else {
+            return fail("OutsideRoots", format!("{} is outside every root", parent.path.display()));
+        };
+        let rel = put::rel_of(&root, &parent.path, name);
+        let full = parent.path.join(name);
+        if put::refused_target(&full, &rel) {
+            return fail("Protected", format!("{rel} is a protected or credential name, which no write may touch"));
+        }
+        let fd = put::open_parent(&parent.path).map_err(|e| Fail("Failed", e.to_string()))?;
+        let kind = put::kind_at(&fd, name).map_err(|e| Fail("Failed", e.to_string()))?;
+        put::kind_refusal(&kind, &rel)?;
+        let (exists, existing_size) = match kind {
+            put::Kind::File(n) => (true, json!(n)),
+            _ => (false, Value::Null),
+        };
+        let mut st = self.state.lock().unwrap();
+        st.sweep();
+        if st.pending.len() + st.puts.len() >= MAX_PENDING {
+            return fail("Busy", format!("{MAX_PENDING} calls already wait for a verdict"));
+        }
+        let id = format!("p{}", st.next_id);
+        st.next_id += 1;
+        let facts = json!({ "id": id, "path": full, "root": root, "rel": rel, "exists": exists,
+                            "existingSize": existing_size, "size": size, "tilde": tilde,
+                            "expiresInMs": PENDING_TTL.as_millis() as u64 });
+        st.puts.insert(id.clone(), Staged::new(fd, name, &id, size, full, root, rel));
+        Ok(facts)
+    }
+
+    /// Appends one chunk to a put, in order.
+    fn write(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
+        let id = req_str(a, "id")?;
+        let offset =
+            opt_u64(a, "offset")?.ok_or_else(|| Fail("BadRequest", "offset is a non-negative integer".into()))?;
+        let encoded = a.get("bytes").and_then(|b| b.get("$bytes")).and_then(Value::as_str);
+        let Some(encoded) = encoded else { return fail("BadRequest", "bytes is { \"$bytes\": base64 }") };
+        // Before decoding anything large: base64 is 4 characters per 3 bytes.
+        if encoded.len() as u64 > MAX_READ.div_ceil(3) * 4 {
+            return fail("BadRequest", format!("a chunk is at most {MAX_READ} bytes"));
+        }
+        let data = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .map_err(|e| Fail("BadRequest", format!("bytes is not base64: {e}")))?;
+        let mut st = self.state.lock().unwrap();
+        st.sweep();
+        let Some(p) = st.puts.get_mut(id) else { return fail("UnknownId", format!("no put {id:?}")) };
+        p.append(offset, &data, MAX_READ)?;
+        Ok(json!({ "id": id, "received": p.received }))
+    }
+
+    /// Puts a completed upload in place. The put is gone afterwards, whatever the outcome, except a commit that
+    /// arrives short of the size, which can still be continued.
+    fn commit(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
+        let id = req_str(a, "id")?;
+        let replace = opt_bool(a, "replace")?.unwrap_or(false);
+        let mut staged = {
+            let mut st = self.state.lock().unwrap();
+            st.sweep();
+            match st.puts.get(id) {
+                None => return fail("UnknownId", format!("no put {id:?}")),
+                Some(p) if p.received != p.size => {
+                    return fail("BadRequest", format!("{} of the declared {} bytes arrived", p.received, p.size));
+                }
+                Some(_) => {}
+            }
+            st.puts.remove(id).expect("just found")
+        };
+        // The hashing and the sync run without the state lock; a failure drops `staged`, which deletes the temp file.
+        let sha256 = staged.finish(replace)?;
+        Ok(json!({ "id": id, "path": staged.path, "rel": staged.rel, "size": staged.size, "sha256": sha256 }))
     }
 
     fn cancel(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
@@ -1453,6 +1599,63 @@ mod tests {
         assert_eq!(v["error"]["code"], "BadRequest", "natively the arguments are read: {v}");
         let hello = one_call(hub, json!({ "seq": 2, "call": "hello" })).await;
         assert_eq!(hello["value"]["owners"]["register"], false, "{hello}");
+    }
+
+    #[tokio::test]
+    async fn put_write_and_commit_over_the_hub_are_refused_with_reason_scope_before_their_arguments_are_read() {
+        let hub = Transport::Hub {
+            roots: None,
+            callers: 1,
+            revocations_since: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            events: false,
+        };
+        for name in ["put", "write", "commit"] {
+            // No arguments at all: natively that is BadRequest, so a Refused proves the refusal came first.
+            let call = json!({ "seq": 1, "call": name, "args": {} });
+            let v = one_call(hub.clone(), call.clone()).await;
+            assert_eq!(
+                (v["error"]["code"].as_str(), v["error"]["reason"].as_str()),
+                (Some("Refused"), Some("scope")),
+                "{name}: {v}"
+            );
+            let v = one_call(Transport::Native, call).await;
+            assert_ne!(v["error"]["code"], "Refused", "{name} natively reads its arguments: {v}");
+        }
+        // Not offered where it is refused, as `register` is not.
+        let hello = one_call(hub, json!({ "seq": 2, "call": "hello" })).await;
+        assert!(hello["value"]["put"].is_null(), "{hello}");
+        let hello = one_call(Transport::Native, json!({ "seq": 2, "call": "hello" })).await;
+        assert_eq!(hello["value"]["put"]["max"], put::MAX_PUT, "{hello}");
+    }
+
+    #[test]
+    fn a_put_past_its_ttl_is_swept_and_its_temp_file_goes_with_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().canonicalize().unwrap();
+        let mut st = State {
+            config: None,
+            pending: HashMap::new(),
+            puts: HashMap::new(),
+            running: HashMap::new(),
+            next_id: 1,
+            warden: false,
+            closed: false,
+        };
+        let mk = |id: &str| {
+            let fd = put::open_parent(&real).unwrap();
+            let mut s = Staged::new(fd, id, id, 1, real.join(id), real.clone(), id.into());
+            s.append(0, b"x", 4).unwrap();
+            s
+        };
+        let mut old = mk("old");
+        old.created = Instant::now() - PENDING_TTL - Duration::from_secs(1);
+        st.puts.insert("p1".into(), old);
+        st.puts.insert("p2".into(), mk("fresh"));
+        let temps = |d: &Path| std::fs::read_dir(d).unwrap().count();
+        assert_eq!(temps(&real), 2);
+        st.sweep();
+        assert_eq!(st.puts.keys().collect::<Vec<_>>(), ["p2"]);
+        assert_eq!(temps(&real), 1, "the expired put's temp file is deleted");
     }
 
     // --- a message past the native limit ---
