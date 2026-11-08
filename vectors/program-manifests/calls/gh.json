@@ -1,0 +1,3577 @@
+{
+  "program": "gh",
+  "version": "2.103.0",
+  "calls": [
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--field",
+        "v"
+      ],
+      "note": "api: --field makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--field",
+        "v"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "-F",
+        "v"
+      ],
+      "note": "api: -F makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "-F",
+        "v"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--header",
+        "v"
+      ],
+      "note": "api: --header adds an effect",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--header",
+        "v"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "-H",
+        "v"
+      ],
+      "note": "api: -H adds an effect",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "-H",
+        "v"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--hostname",
+        "v"
+      ],
+      "note": "api: --hostname makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--hostname",
+        "v"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--input",
+        "f.txt"
+      ],
+      "note": "api: --input names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--input",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--method",
+        "v"
+      ],
+      "note": "api: --method adds an effect",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--method",
+        "v"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "-X",
+        "v"
+      ],
+      "note": "api: -X adds an effect",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "-X",
+        "v"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--raw-field",
+        "v"
+      ],
+      "note": "api: --raw-field adds an effect",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--raw-field",
+        "v"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "-f",
+        "v"
+      ],
+      "note": "api: -f adds an effect",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "-f",
+        "v"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--verbose"
+      ],
+      "note": "api: --verbose echoes the request",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": true,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--verbose"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "auth",
+        "status",
+        "--hostname",
+        "v"
+      ],
+      "note": "auth status: --hostname makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "auth",
+        "status",
+        "--hostname",
+        "v"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "auth",
+        "status",
+        "-h",
+        "v"
+      ],
+      "note": "auth status: -h makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "auth",
+        "status",
+        "-h",
+        "v"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "auth",
+        "status",
+        "--show-token"
+      ],
+      "note": "auth status: --show-token makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "auth",
+        "status",
+        "--show-token"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "auth",
+        "status",
+        "-t"
+      ],
+      "note": "auth status: -t makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "auth",
+        "status",
+        "-t"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "label",
+        "list",
+        "--web"
+      ],
+      "note": "label list: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "label",
+        "list",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "label",
+        "list",
+        "-w"
+      ],
+      "note": "label list: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "label",
+        "list",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "view",
+        "12",
+        "--web"
+      ],
+      "note": "pr view: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "view",
+        "12",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "view",
+        "12",
+        "-w"
+      ],
+      "note": "pr view: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "view",
+        "12",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "list",
+        "--web"
+      ],
+      "note": "pr list: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "list",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "list",
+        "-w"
+      ],
+      "note": "pr list: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "list",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "diff",
+        "--web"
+      ],
+      "note": "pr diff: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "diff",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "diff",
+        "-w"
+      ],
+      "note": "pr diff: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "diff",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "checks",
+        "--web"
+      ],
+      "note": "pr checks: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        8
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "checks",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "checks",
+        "-w"
+      ],
+      "note": "pr checks: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        8
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "checks",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "create",
+        "--body-file",
+        "f.txt"
+      ],
+      "note": "pr create: --body-file names a path it reads",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:fs:.:?:?",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "create",
+        "--body-file",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "create",
+        "-F",
+        "f.txt"
+      ],
+      "note": "pr create: -F names a path it reads",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:fs:.:?:?",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "create",
+        "-F",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "create",
+        "--editor"
+      ],
+      "note": "pr create: --editor makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "create",
+        "--editor"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "create",
+        "-e"
+      ],
+      "note": "pr create: -e makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "create",
+        "-e"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "create",
+        "--web"
+      ],
+      "note": "pr create: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "create",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "create",
+        "-w"
+      ],
+      "note": "pr create: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "create",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "merge",
+        "--body-file",
+        "f.txt"
+      ],
+      "note": "pr merge: --body-file names a path it reads",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:fs:.:?:?",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "merge",
+        "--body-file",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "merge",
+        "-F",
+        "f.txt"
+      ],
+      "note": "pr merge: -F names a path it reads",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:fs:.:?:?",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "merge",
+        "-F",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "edit",
+        "--body-file",
+        "f.txt"
+      ],
+      "note": "pr edit: --body-file names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "edit",
+        "--body-file",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "edit",
+        "-F",
+        "f.txt"
+      ],
+      "note": "pr edit: -F names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "edit",
+        "-F",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "comment",
+        "--body-file",
+        "f.txt"
+      ],
+      "note": "pr comment: --body-file names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "comment",
+        "--body-file",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "comment",
+        "-F",
+        "f.txt"
+      ],
+      "note": "pr comment: -F names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "comment",
+        "-F",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "comment",
+        "--editor"
+      ],
+      "note": "pr comment: --editor makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "comment",
+        "--editor"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "comment",
+        "-e"
+      ],
+      "note": "pr comment: -e makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "comment",
+        "-e"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "comment",
+        "--web"
+      ],
+      "note": "pr comment: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "comment",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "comment",
+        "-w"
+      ],
+      "note": "pr comment: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "comment",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "review",
+        "--body-file",
+        "f.txt"
+      ],
+      "note": "pr review: --body-file names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "review",
+        "--body-file",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "review",
+        "-F",
+        "f.txt"
+      ],
+      "note": "pr review: -F names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "review",
+        "-F",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "view",
+        "--web"
+      ],
+      "note": "issue view: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "view",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "view",
+        "-w"
+      ],
+      "note": "issue view: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "view",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "list",
+        "--web"
+      ],
+      "note": "issue list: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "list",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "list",
+        "-w"
+      ],
+      "note": "issue list: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "list",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "create",
+        "--body-file",
+        "f.txt"
+      ],
+      "note": "issue create: --body-file names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "create",
+        "--body-file",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "create",
+        "-F",
+        "f.txt"
+      ],
+      "note": "issue create: -F names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "create",
+        "-F",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "create",
+        "--editor"
+      ],
+      "note": "issue create: --editor makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "create",
+        "--editor"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "create",
+        "-e"
+      ],
+      "note": "issue create: -e makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "create",
+        "-e"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "create",
+        "--web"
+      ],
+      "note": "issue create: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "create",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "create",
+        "-w"
+      ],
+      "note": "issue create: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "create",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "edit",
+        "--body-file",
+        "f.txt"
+      ],
+      "note": "issue edit: --body-file names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "edit",
+        "--body-file",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "edit",
+        "-F",
+        "f.txt"
+      ],
+      "note": "issue edit: -F names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "edit",
+        "-F",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "comment",
+        "--body-file",
+        "f.txt"
+      ],
+      "note": "issue comment: --body-file names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "comment",
+        "--body-file",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "comment",
+        "-F",
+        "f.txt"
+      ],
+      "note": "issue comment: -F names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "comment",
+        "-F",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "comment",
+        "--editor"
+      ],
+      "note": "issue comment: --editor makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "comment",
+        "--editor"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "comment",
+        "-e"
+      ],
+      "note": "issue comment: -e makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "comment",
+        "-e"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "comment",
+        "--web"
+      ],
+      "note": "issue comment: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "comment",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "comment",
+        "-w"
+      ],
+      "note": "issue comment: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "comment",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "run",
+        "view",
+        "--web"
+      ],
+      "note": "run view: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "run",
+        "view",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "run",
+        "view",
+        "-w"
+      ],
+      "note": "run view: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "run",
+        "view",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "run",
+        "download",
+        "--dir",
+        "f.txt"
+      ],
+      "note": "run download: --dir names a path it writes",
+      "described": true,
+      "effects": [
+        "read:net:*",
+        "write:fs:.:?:?",
+        "write:fs:f.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "run",
+        "download",
+        "--dir",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "run",
+        "download",
+        "-D",
+        "f.txt"
+      ],
+      "note": "run download: -D names a path it writes",
+      "described": true,
+      "effects": [
+        "read:net:*",
+        "write:fs:.:?:?",
+        "write:fs:f.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "run",
+        "download",
+        "-D",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "release",
+        "view",
+        "--web"
+      ],
+      "note": "release view: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "release",
+        "view",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "release",
+        "view",
+        "-w"
+      ],
+      "note": "release view: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "release",
+        "view",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "release",
+        "create",
+        "v1",
+        "--notes-file",
+        "f.txt"
+      ],
+      "note": "release create: --notes-file names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 5,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "release",
+        "create",
+        "v1",
+        "--notes-file",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "release",
+        "create",
+        "v1",
+        "-F",
+        "f.txt"
+      ],
+      "note": "release create: -F names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 5,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "release",
+        "create",
+        "v1",
+        "-F",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "release",
+        "download",
+        "--dir",
+        "f.txt"
+      ],
+      "note": "release download: --dir names a path it writes",
+      "described": true,
+      "effects": [
+        "read:net:*",
+        "write:fs:.:?:?",
+        "write:fs:f.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "release",
+        "download",
+        "--dir",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "release",
+        "download",
+        "-D",
+        "f.txt"
+      ],
+      "note": "release download: -D names a path it writes",
+      "described": true,
+      "effects": [
+        "read:net:*",
+        "write:fs:.:?:?",
+        "write:fs:f.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "release",
+        "download",
+        "-D",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "release",
+        "download",
+        "--output",
+        "f.txt"
+      ],
+      "note": "release download: --output names a path it writes",
+      "described": true,
+      "effects": [
+        "read:net:*",
+        "write:fs:.:?:?",
+        "write:fs:f.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "release",
+        "download",
+        "--output",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "release",
+        "download",
+        "-O",
+        "f.txt"
+      ],
+      "note": "release download: -O names a path it writes",
+      "described": true,
+      "effects": [
+        "read:net:*",
+        "write:fs:.:?:?",
+        "write:fs:f.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "release",
+        "download",
+        "-O",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "repo",
+        "view",
+        "--web"
+      ],
+      "note": "repo view: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "repo",
+        "view",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "repo",
+        "view",
+        "-w"
+      ],
+      "note": "repo view: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "repo",
+        "view",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "gist",
+        "create",
+        "a.txt",
+        "--web"
+      ],
+      "note": "gist create: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "gist",
+        "create",
+        "a.txt",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "gist",
+        "create",
+        "a.txt",
+        "-w"
+      ],
+      "note": "gist create: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "gist",
+        "create",
+        "a.txt",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "gist",
+        "edit",
+        "--add",
+        "f.txt"
+      ],
+      "note": "gist edit: --add names a path it reads",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "gist",
+        "edit",
+        "--add",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "gist",
+        "edit",
+        "-a",
+        "f.txt"
+      ],
+      "note": "gist edit: -a names a path it reads",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "gist",
+        "edit",
+        "-a",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "search",
+        "prs",
+        "--web"
+      ],
+      "note": "search prs: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "search",
+        "prs",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "search",
+        "prs",
+        "-w"
+      ],
+      "note": "search prs: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "search",
+        "prs",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "search",
+        "issues",
+        "--web"
+      ],
+      "note": "search issues: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "search",
+        "issues",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "search",
+        "issues",
+        "-w"
+      ],
+      "note": "search issues: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "search",
+        "issues",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "search",
+        "repos",
+        "--web"
+      ],
+      "note": "search repos: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "search",
+        "repos",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "search",
+        "repos",
+        "-w"
+      ],
+      "note": "search repos: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "search",
+        "repos",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "search",
+        "code",
+        "--web"
+      ],
+      "note": "search code: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "search",
+        "code",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "search",
+        "code",
+        "-w"
+      ],
+      "note": "search code: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "search",
+        "code",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "search",
+        "commits",
+        "--web"
+      ],
+      "note": "search commits: --web makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "search",
+        "commits",
+        "--web"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "search",
+        "commits",
+        "-w"
+      ],
+      "note": "search commits: -w makes the call unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "search",
+        "commits",
+        "-w"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "secret",
+        "set",
+        "--env-file",
+        "f.txt"
+      ],
+      "note": "secret set: --env-file names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "secret",
+        "set",
+        "--env-file",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "secret",
+        "set",
+        "-f",
+        "f.txt"
+      ],
+      "note": "secret set: -f names a path it reads",
+      "described": true,
+      "effects": [
+        "read:fs:f.txt:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "secret",
+        "set",
+        "-f",
+        "f.txt"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "--version"
+      ],
+      "note": "the version probe: no effect",
+      "described": true,
+      "effects": [],
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "--version"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "help",
+        "environment"
+      ],
+      "note": "a help topic: no effect",
+      "described": true,
+      "effects": [],
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "help",
+        "environment"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "view",
+        "12",
+        "--json",
+        "title",
+        "--jq",
+        ".title"
+      ],
+      "note": "a read: the repository and the network, as the person",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "view",
+        "12",
+        "--json",
+        "title",
+        "--jq",
+        ".title"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "list",
+        "--state",
+        "open",
+        "--limit",
+        "5"
+      ],
+      "note": "a list is a read",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "list",
+        "--state",
+        "open",
+        "--limit",
+        "5"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "diff",
+        "12"
+      ],
+      "note": "a diff is a read",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "diff",
+        "12"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "checks",
+        "12"
+      ],
+      "note": "exit 8 (pending) is an answer",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        8
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "checks",
+        "12"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "view",
+        "7"
+      ],
+      "note": "a read",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "view",
+        "7"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "run",
+        "view",
+        "99",
+        "--log"
+      ],
+      "note": "a read",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "run",
+        "view",
+        "99",
+        "--log"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "release",
+        "view",
+        "v1"
+      ],
+      "note": "a read",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "release",
+        "view",
+        "v1"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "repo",
+        "view",
+        "cli/cli"
+      ],
+      "note": "a read",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "repo",
+        "view",
+        "cli/cli"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "label",
+        "list"
+      ],
+      "note": "a read",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "label",
+        "list"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "search",
+        "prs",
+        "fix",
+        "--repo",
+        "cli/cli"
+      ],
+      "note": "a search is a network read with no repository",
+      "described": true,
+      "effects": [
+        "read:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "search",
+        "prs",
+        "fix",
+        "--repo",
+        "cli/cli"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/cli/cli/pulls",
+        "--paginate",
+        "--jq",
+        ".[].number"
+      ],
+      "note": "api with no method: a GET, a read",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "repos/cli/cli/pulls",
+        "--paginate",
+        "--jq",
+        ".[].number"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "auth",
+        "status"
+      ],
+      "note": "masked status: a read",
+      "described": true,
+      "effects": [
+        "read:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "auth",
+        "status"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "auth",
+        "token"
+      ],
+      "note": "prints the token: unknown, asks",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "auth",
+        "token"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "merge",
+        "12"
+      ],
+      "note": "merges on GitHub and in the worktree",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:fs:.:?:?",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "merge",
+        "12"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "comment",
+        "12",
+        "--body",
+        "hi"
+      ],
+      "note": "writes to GitHub",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "comment",
+        "12",
+        "--body",
+        "hi"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "close",
+        "7"
+      ],
+      "note": "writes to GitHub",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "issue",
+        "close",
+        "7"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "-X",
+        "DELETE",
+        "repos/o/r"
+      ],
+      "note": "api with a method other than GET writes",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "-X",
+        "DELETE",
+        "repos/o/r"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r/issues",
+        "-f",
+        "title=t"
+      ],
+      "note": "-f makes it a POST",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "repos/o/r/issues",
+        "-f",
+        "title=t"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "repo",
+        "clone",
+        "o/r"
+      ],
+      "note": "creates a directory and runs git",
+      "described": true,
+      "effects": [
+        "exec:process",
+        "read:net:*",
+        "write:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "repo",
+        "clone",
+        "o/r"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "repo",
+        "clone",
+        "o/r",
+        "x",
+        "--",
+        "--upload-pack=sh"
+      ],
+      "note": "git flags after -- are not described",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "repo",
+        "clone",
+        "o/r",
+        "x",
+        "--",
+        "--upload-pack=sh"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "run",
+        "download",
+        "99"
+      ],
+      "note": "writes the artifacts to the cwd",
+      "described": true,
+      "effects": [
+        "read:net:*",
+        "write:fs:.:?:?"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "run",
+        "download",
+        "99"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "alias",
+        "set",
+        "x",
+        "pr merge"
+      ],
+      "note": "writes gh's config: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "alias",
+        "set",
+        "x",
+        "pr merge"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "extension",
+        "install",
+        "o/gh-x"
+      ],
+      "note": "installs code that later runs: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "extension",
+        "install",
+        "o/gh-x"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "workflow",
+        "run",
+        "ci.yml"
+      ],
+      "note": "not in the manifest: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "workflow",
+        "run",
+        "ci.yml"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "co",
+        "12"
+      ],
+      "note": "a built-in alias, not in the manifest: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "co",
+        "12"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "view",
+        "12",
+        "-cw"
+      ],
+      "note": "a cluster with a flag that is unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "pr",
+        "view",
+        "12",
+        "-cw"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "-XDELETE",
+        "repos/o/r"
+      ],
+      "note": "the method attached to the short flag",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "-XDELETE",
+        "repos/o/r"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "--method=DELETE",
+        "repos/o/r"
+      ],
+      "note": "the method in the attached long form",
+      "described": true,
+      "effects": [
+        "read:fs:.:?:?",
+        "read:net:*",
+        "write:net:*"
+      ],
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "--method=DELETE",
+        "repos/o/r"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "a",
+        "b"
+      ],
+      "note": "two endpoints: more operands than api takes",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": true,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "gh",
+        "api",
+        "a",
+        "b"
+      ]
+    }
+  ]
+}
