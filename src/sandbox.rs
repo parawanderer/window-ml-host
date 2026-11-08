@@ -45,15 +45,24 @@ pub struct Availability {
 
 impl Availability {
     /// Whether this platform can hold every bound `plan` names. Seatbelt always can; Linux needs
-    /// Landlock for anything narrower than the bwrap floor (and for the name-immutable top level).
+    /// Landlock for anything narrower than the bwrap floor (and for the name-immutable top level), and cannot
+    /// yet hold a credentialed profile's ports at all: `--unshare-net` is all or nothing.
     pub fn can_hold(&self, plan: &Plan) -> bool {
         match self.kind {
             Some(Kind::Seatbelt) => true,
             Some(Kind::Bwrap) => {
-                self.landlock_abi.is_some() || (plan.write == WriteScope::Today && matches!(plan.exec, ExecScope::Any))
+                plan.net_ports.is_empty()
+                    && (self.landlock_abi.is_some()
+                        || (plan.write == WriteScope::Today && matches!(plan.exec, ExecScope::Any)))
             }
             None => false,
         }
+    }
+
+    /// Whether a credentialed call can run here at all: an available Seatbelt (Linux answers `SandboxFailed`
+    /// until the proxy lands).
+    pub fn holds_credentials(&self) -> bool {
+        self.available && self.kind == Some(Kind::Seatbelt)
     }
 }
 
@@ -116,20 +125,26 @@ impl ExecScope {
 }
 
 /// The worker's narrowing envelope, as `start`/`pipe` carry it. Both fields travel together; absent
-/// means today's floor. The exec set is resolved at launch (`exec_set`), not here.
+/// means today's floor. The exec set is resolved at launch (`exec_set`), not here. `profile` is never sent by the
+/// worker: the host sets it for a credentialed call, whose exec is then always program-only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Envelope {
     pub write: WriteScope,
     pub program_only: bool,
+    pub profile: Option<&'static str>,
 }
 
 impl Envelope {
     pub fn json(self) -> serde_json::Value {
-        serde_json::json!({ "write": self.write.wire(), "exec": if self.program_only { "program-only" } else { "any" } })
+        let mut v = serde_json::json!({ "write": self.write.wire(), "exec": if self.program_only { "program-only" } else { "any" } });
+        if let Some(p) = self.profile {
+            v["profile"] = serde_json::json!(p);
+        }
+        v
     }
     /// Today's floor, what an absent envelope means and what `done` reports then (`write: "today"`).
     pub fn today() -> Self {
-        Envelope { write: WriteScope::Today, program_only: false }
+        Envelope { write: WriteScope::Today, program_only: false, profile: None }
     }
 }
 
@@ -230,6 +245,8 @@ pub struct Plan {
     pub write: WriteScope,
     /// What the call may exec. `Any` is today's floor; `ProgramOnly` carries the resolved set.
     pub exec: ExecScope,
+    /// A credentialed call's TCP ports (any address), with DNS and certificate checks; empty is no network at all.
+    pub net_ports: Vec<u16>,
 }
 
 /// The command that runs `program` with `args` under the sandbox in `cwd`. `program` is a realpath.
@@ -600,7 +617,19 @@ fn re(r: &str) -> String {
 /// The profile for one call. Later rules win in SBPL, which the order below relies on.
 pub fn seatbelt_profile(plan: &Plan) -> String {
     let mut p = vec![base_profile()];
-    p.push("; network: nothing (deny default covers network*)".into());
+    if plan.net_ports.is_empty() {
+        p.push("; network: nothing (deny default covers network*)".into());
+    } else {
+        // A credentialed call (src/credential.rs): its ports at any address, the resolver's socket and the trust
+        // daemon. Seatbelt filters by address and port, not by name, so this is the narrowest rule that works.
+        p.push("; network: the credentialed profile's ports, DNS and certificate checks".into());
+        let ports: Vec<String> = plan.net_ports.iter().map(|n| format!("(remote tcp \"*:{n}\")")).collect();
+        p.push(format!(
+            "(allow network-outbound {} (remote unix-socket (path-literal \"/private/var/run/mDNSResponder\")))",
+            ports.join(" ")
+        ));
+        p.push("(allow mach-lookup (global-name \"com.apple.trustd.agent\"))".into());
+    }
     p.push("; reads: everywhere, except credential stores, unless the call names one".into());
     p.push("(allow file-read*)".into());
     let mut deny_read: Vec<String> = DENY_READ_DIRS.iter().map(|d| re(&format!("/{}(/|$)", ci(d)))).collect();
@@ -725,6 +754,7 @@ mod tests {
             outlives_host: false,
             write: WriteScope::Today,
             exec: ExecScope::Any,
+            net_ports: vec![],
         }
     }
 
@@ -735,6 +765,24 @@ mod tests {
         assert!(!p.contains("(allow network"), "no network rule may be allowed");
         assert!(p.contains("(allow file-write* (subpath \"/w/proj\") (subpath \"/t/s/tmp/c1\")"));
         assert!(p.contains("(deny file-write* (subpath \"/t/s/out\"))"));
+    }
+
+    #[test]
+    fn only_a_credentialed_plan_opens_the_network_and_only_on_its_ports() {
+        let p = seatbelt_profile(&Plan { net_ports: vec![443], ..plan() });
+        assert!(p.contains("(allow network-outbound (remote tcp \"*:443\") (remote unix-socket (path-literal \"/private/var/run/mDNSResponder\")))"));
+        assert!(p.contains("(allow mach-lookup (global-name \"com.apple.trustd.agent\"))"));
+        assert_eq!(p.matches("(remote tcp").count(), 1, "one port, one rule");
+        assert!(!seatbelt_profile(&plan()).contains("trustd.agent"));
+        let bwrap = Availability {
+            kind: Some(Kind::Bwrap),
+            program: None,
+            available: true,
+            reason: None,
+            landlock_abi: Some(6),
+        };
+        assert!(!bwrap.can_hold(&Plan { net_ports: vec![443], ..plan() }), "bwrap has no per-port rule");
+        assert!(!bwrap.holds_credentials());
     }
 
     // --- the envelope: every accepted value is a SUBSET of today's Plan ---
@@ -765,6 +813,7 @@ mod tests {
             outlives_host: false,
             write: WriteScope::Today,
             exec: ExecScope::Any,
+            net_ports: vec![],
         };
 
         // write: none drops every root write, keeps tmp
@@ -856,6 +905,7 @@ mod tests {
             outlives_host: false,
             write: WriteScope::Roots,
             exec: ExecScope::Any,
+            net_ports: vec![],
         };
         let a: Vec<String> = bwrap_args(&pl, root.path()).iter().map(|s| s.to_string_lossy().into_owned()).collect();
         let joined = a.join(" ");
@@ -891,6 +941,7 @@ mod tests {
             outlives_host: false,
             write: WriteScope::Roots,
             exec: ExecScope::Any,
+            net_ports: vec![],
         };
         let a: Vec<String> = bwrap_args(&pl, root.path()).iter().map(|s| s.to_string_lossy().into_owned()).collect();
         for rel in &rels {

@@ -43,6 +43,7 @@ the host answers each as it finishes, not in order. A message that is not an obj
   "modes": ["host"],                                                // "container" appears once a runner exists
   "peek": true,                                                     // this host answers `peek`; an older host has no such field
   "tilde": true,                                                    // this host expands a leading `~` in argv and cwd (see `spawn`); an older host has no such field
+  "credentials": ["github"],                                        // the credential providers a `spawn` may name (see "A credentialed call"); [] where the sandbox cannot hold the profile (Linux, this version) and over the hub; an older host has no such field
   "put": { "max": 67108864 },                                       // this host answers `put`, `write` and `commit`; `max` is the most bytes one put may declare; `null` over the hub, where the three are refused; an older host has no such field
   "owners": { "ledger": true, "register": true },                   // ledger false: the table is in memory only; register false over the hub (see "Owners")
   "memory": { "metric": "phys_footprint", "enforcer": "watchdog", "everyMs": 100 },
@@ -102,7 +103,8 @@ args: { "argv": ["git", "diff", "--stat", "HEAD~1"],
         "timeoutMs": 30000,                   // optional, at most 3600000
         "owner": { "session": "…", "run": "…", "step": 3 },   // optional: who the call is for, opaque, at most 1 KiB of JSON
         "memoryBound": 536870912,             // optional: this call's bound, clamped to [16 MiB, memoryMax]
-        "onOwnerLoss": "orphan", "orphanTimeoutMs": 60000 }   // optional: this call's owner-loss policy
+        "onOwnerLoss": "orphan", "orphanTimeoutMs": 60000,    // optional: this call's owner-loss policy
+        "credential": { "provider": "github", "manifest": "<sha256 hex>" } }   // optional: see "A credentialed call"
 ```
 
 The answer is the RESOLVED FACTS, everything a policy is given about the call (`SHELL.md`, "What it is given"):
@@ -119,6 +121,7 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
   "repoConfigRunsCode": false,                  // the repository's own config makes git run a program; false with no repository
   "paths": [{ "arg": 3, "given": "HEAD~1", "path": "/Users/me/src/proj/HEAD~1",
               "inRoot": true, "secret": false, "exists": false }],
+  "credential": null,                           // { provider, ports, profile } when the spawn asked for one and it is honoured
   "effects": "unknown",                         // from the program manifest once one exists (root F); "unknown" until then
   "mode": "host",
   "sandboxed": true,
@@ -171,7 +174,45 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
 - **Refused at spawn, whatever a policy would say** (these are enforcement, not decisions): `cwd` outside every root
   (`CwdOutsideRoots`); an `env` name on the denylist (`EnvRefused`); a secret handle the host's store does not hold
   (`SecretUnavailable`, always this round: the store is empty); `argv[0]` not found (`ProgramNotFound`); `mode:
-  "container"` (`Unsupported`, until a runner exists).
+  "container"` (`Unsupported`, until a runner exists); a `credential` the host does not honour (`CredentialRefused`)
+  or cannot hold (`SandboxFailed`), below.
+
+#### A credentialed call
+
+`credential: { "provider": "github", "manifest": "<sha256>" }` asks the host to inject a credential it holds
+(`src/credential.rs`): the call then runs under the credentialed profile of the sandbox. The host honours it only when
+ALL hold, and otherwise refuses the spawn; it never runs the call under the ordinary profile instead, which for gh is the
+one that answers anonymously without saying so:
+
+- `provider` is in the host's table (`hello.credentials`; v1 has `github`), else `CredentialRefused`.
+- `manifest` is the lowercase hex sha256 of the program manifest's BYTES the worker described the call with, and those
+  bytes are one this host pinned (`vectors/program-manifests/`, window-ml's shipped manifest), which names this
+  provider in `credential.provider` and a subset of the provider's ports in `network.ports`, else `CredentialRefused`.
+  A manifest the worker holds that the host does not (a stored one, or a newer shipped one than this host's copy) names
+  no credential here.
+- The provider is its program's alone, and the program is the person's: `argv[0]` is exactly the provider's program
+  (`gh`, found on `PATH`, never a path), the manifest's `program` and the resolved binary's name are too, and the
+  resolved binary is outside every root, else `CredentialRefused`. The token fetch runs that binary unconfined, so a
+  `gh` a repository could have planted is never it.
+- The session is sandboxed with a sandbox that can hold the profile: macOS's Seatbelt in this version. A session with
+  `sandbox: false`, Linux and a machine with no sandbox answer `SandboxFailed`.
+- Not over the hub (`CredentialRefused`): only a connection on this machine may send the person's token.
+
+The facts then carry `"credential": { "provider": "github", "ports": [443], "profile": "credentialed:github" }`.
+At `start`, after the verdict and before the program runs, the host obtains the token by running the call's own
+resolved binary unconfined with the provider's arguments (`gh auth token --hostname github.com`), in an environment of
+the host's `HOME`, `USER`, `LOGNAME`, the call's `PATH` and the person's own `GH_CONFIG_DIR`, `XDG_CONFIG_HOME`,
+`GH_TOKEN` and `GITHUB_TOKEN` when set, nothing the call set; stdout is the token, stderr is discarded, neither is
+logged, and 30 s is the limit. No token (not logged in, a non-zero exit, empty or malformed output) fails the `start`
+with `SecretUnavailable` and the program never runs. The child gets `GH_TOKEN`, `GH_CONFIG_DIR` set to an empty
+directory under its `$TMPDIR` (none of the person's gh config is read), `GH_PROMPT_DISABLED=1`,
+`GH_NO_UPDATE_NOTIFIER=1` and `GH_TELEMETRY=0`. The token never crosses the protocol.
+
+The profile is the ordinary one plus outbound TCP to the manifest's ports at any address (Seatbelt filters by address
+and port, not by name), the DNS resolver's socket and the certificate trust daemon, with exec always program-only
+whatever the envelope said: the program's own chain, plus `git` resolved on the call's `PATH` and, from `git
+--exec-path`, `git` and `git-remote-http(s)`, each with its chain. The envelope's `write` applies as sent. `done`
+reports `"envelope": { "write": …, "exec": "program-only", "profile": "credentialed:github" }`.
 
 ### `start`: run it
 
@@ -460,7 +501,8 @@ A non-last stage of a `pipe` has `"stdout": { "piped": true }`: its output went 
 held. A stream the host could not keep (the disk filled, say) is `{ "error": "…" }` instead of a pointer. A sandboxed call
 whose sandbox refused to start the program adds `"error": { "code": "SandboxFailed", "message": "…" }` and `ok: false`.
 
-`envelope` is the scope the host APPLIED. `write: "today"` is the host's name for today's floor: what an ABSENT
+`envelope` is the scope the host APPLIED, with `profile` only for a credentialed call (`"credentialed:github"`); an
+envelope without it ran under the ordinary profile. `write: "today"` is the host's name for today's floor: what an ABSENT
 envelope means, and what `done` reports for one — never `"roots"`. A worker may not SEND `"today"`; that is
 malformed. An ABSENT `envelope` on `done` means an older host; the extension treats that as unknown, never as narrow.
 
@@ -525,12 +567,13 @@ These are the host's own; the worker maps them onto the `ml` wire's codes (`Refu
 | `BadRoot` | a root that is not an absolute existing directory, or is `/` |
 | `ProgramNotFound` | `argv[0]` not found on `PATH`, or not an executable file |
 | `CwdOutsideRoots` | `cwd` (of `spawn`, `glob` or `put`) missing, not a directory, or resolving outside every root |
-| `EnvRefused` | an `env` name on the denylist (`src/env.rs`) |
-| `SecretUnavailable` | an `env` handle the host's store does not hold |
+| `EnvRefused` | an `env` name on the denylist (`src/env.rs`), which includes every `GH_*`, `GITHUB_*`, `SSL_CERT_*` and `*_PROXY` (any case) |
+| `CredentialRefused` | `spawn`: a `credential` the host does not honour: an unknown provider, a manifest hash it did not pin or whose manifest names no such credential, another program, or the hub transport |
+| `SecretUnavailable` | an `env` handle the host's store does not hold; `start`/`pipe` of a credentialed call whose provider gave no token |
 | `Unsupported` | `mode: "container"` this version |
 | `UnknownId` | `start`/`discard`/`cancel`/`pipe`/`peek`/`write`/`commit` of an id that never existed, expired, or already started (`start`, `pipe`) |
 | `UnknownPtr` | `read`/`release` of a pointer that does not exist |
-| `SandboxFailed` | the sandbox program itself could not be started (a refusal by the sandbox shows in `done`); a `start`/`pipe` with an `envelope` on a call that is not sandboxed (an envelope is a request for a bound; an unsandboxed call holds none); a `write: "roots"` or `exec: "program-only"` on Linux without Landlock |
+| `SandboxFailed` | the sandbox program itself could not be started (a refusal by the sandbox shows in `done`); a `start`/`pipe` with an `envelope` on a call that is not sandboxed (an envelope is a request for a bound; an unsandboxed call holds none); a `write: "roots"` or `exec: "program-only"` on Linux without Landlock; a `credential` on a session or platform that cannot hold the credentialed profile (unsandboxed, Linux) |
 | `SpawnFailed` | the OS refused to start the program |
 | `PinChanged` | `start`/`pipe` of a call whose hashed path argument changed since its facts were read |
 | `Busy` | 256 calls already wait for a verdict, or 32 are running (a `pipe` counts its stages) |

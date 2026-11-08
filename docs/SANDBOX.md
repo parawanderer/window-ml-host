@@ -33,6 +33,7 @@ malformed is `BadRequest`, never a silent fallback. `done` always reports the sc
 | Write (`write: "roots"`) | the same roots and tmp, with a NAME-IMMUTABLE top level (below) | the same via Landlock: name-immutable top level, protected names never granted (below) |
 | Write (`write: "none"`) | its own `$TMPDIR` and the `/dev/*` exceptions only | the same |
 | Network | nothing, loopback included | nothing (`--unshare-net`) |
+| Network, a credentialed call (`credential` on `spawn`, `src/credential.rs`) | outbound TCP to the manifest's ports at ANY address (`(remote tcp "*:443")`: Seatbelt filters by address and port, not name), the resolver's socket (`/private/var/run/mDNSResponder`) and `com.apple.trustd.agent`; exec always program-only; the provider's token in the env, its config dir a throwaway under `$TMPDIR` | refused (`SandboxFailed`): `--unshare-net` is all or nothing; a CONNECT proxy is the next step |
 | Processes (`exec: "any"`, the floor) | start any program, all inheriting the profile | the same, in a fresh PID namespace |
 | Processes (`exec: "program-only"`) | only the resolved set, by `literal`; `sh -c 'ls'` cannot exec `ls` | the same, by Landlock EXECUTE grants |
 | Credential stores (`.ssh`, `.gnupg`, `.aws`, `.azure`, `.kube`, `.docker`, `.password-store`, `~/Library/Keychains`, `.config/gh`, `.config/gcloud`, `.netrc`, `.git-credentials`, `.pgpass`) | unreadable at ANY depth, matched by regex, case-insensitively | masked under `$HOME` only (an empty tmpfs or `/dev/null` bound over each that exists) |
@@ -75,6 +76,9 @@ sandbox that does not start fails the job instead of taking the fail-closed path
 | `write_roots_withholds_refer_so_mcp_json_cannot_be_moved_in` | `mv elsewhere/x .mcp.json` under `write: "roots"` | |
 | `an_envelope_on_an_unsandboxed_call_is_refused_not_misreported` | `start` with an envelope and `sandbox: false` (`SandboxFailed`) | the same call without one; `done.envelope` is `{ write: "today", … }` |
 | `a_confined_call_that_runs_wmlhost_or_a_sandbox_tool_reaches_no_withheld_path` | from inside a sandboxed call: `sandbox-exec` with `(allow default)`, `wmlhost exec-under` granting the outside, a second `wmlhost` configured with the outside as a root and `sandbox: false`, `bwrap --bind / /`, `bwrap --bind / / --bind <outside> <outside>` (bwrap keeps the new bind read-only) and a nested `mount -o remount,bind,rw <outside>` under `--cap-add ALL` (on the Linux CI job the nested bwrap and its re-bind are asserted to start, so the bwrap vectors are refused at the write), `wmlhost install` with `HOME` outside (nothing appears outside; the second host's call ends `ok: false`). On macOS only the second host and `install` reach their write (`sandbox-exec` dies in `sandbox_apply`, `exec-under` is Linux-only, no `bwrap`); on Linux all but the absent `sandbox-exec` | `touch inside` (the control) |
+| `a_credentialed_gh_reaches_port_443_with_the_token_and_no_other_port` (macOS; skips when github.com is unreachable unconfined, the control) | the same fake `gh` under the ordinary profile reaches nothing; under the credentialed one, a listener on another port of 127.0.0.1 sees nothing | under the credentialed profile, a connect to github.com's address on 443; `GH_TOKEN` is the provider's, `GH_CONFIG_DIR` is under the call's `$TMPDIR`, which is gone after; `done.envelope.profile` names it. Fails against the profile without the network rule (checked) |
+| `no_token_is_secret_unavailable_and_the_program_never_runs` | a provider whose token fetch exits 1: `start` is `SecretUnavailable` and the program left no marker | |
+| `a_credential_is_refused_for_another_program_an_unpinned_manifest_a_bad_shape_or_no_sandbox` | an unknown provider, an unpinned manifest hash, another program (`curl`), a `gh` inside a root first on PATH, a malformed `credential` (`BadRequest`) and `sandbox: false` (`SandboxFailed`) | |
 | `exec_unders_failure_is_spoken_in_the_shape_sandbox_failed_listens_for` | `wmlhost exec-under` with an unenforceable ruleset exits 2, stderr head `wmlhost exec-under:` | |
 
 Each enforcement test was checked to FAIL against a weakened profile (writes and network allowed; the hooks deny
@@ -144,6 +148,12 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
 
 ## Limits, said plainly
 
+- **A credentialed call reaches any host on its ports**, not only the provider's: Seatbelt cannot filter by name. What
+  the token reaches is what gh sends it to (gh sends no `Authorization` to a non-GitHub host, measured in window-ml
+  #1538). git started by gh inherits the profile: port 443 and `GH_TOKEN` in its env, no credential helper (the
+  person's global config is not given one here), so git over https is anonymous and over ssh fails (`~/.ssh` stays
+  unreadable, `ssh` is not in the exec set). `gh repo clone` into a root fails at `.git/hooks`, the protected names
+  rule (measured with gh 2.103.0 and git 2.56.0). Scoping the hosts needs the CONNECT proxy.
 - **Linux protects less than macOS when Landlock is unavailable** (no Landlock, or one that cannot fully enforce our
   ruleset — reported as `hello.sandbox.landlockAbi: null`). bubblewrap binds paths, it cannot match patterns, so a
   hook in a NESTED repository inside a root (`root/vendor/x/.git/hooks`), or a protected path created during the

@@ -68,7 +68,7 @@ fn all_fourteen_programs_have_a_manifest_and_a_calls_file() {
 
 /// The copy's hash, held by window-ml's `tests/program-manifest.test.mjs` too: a change to a manifest or call fixture
 /// on either side fails both suites until the copy and both pins move together.
-const VECTOR_PIN: &str = "08a37cf2ef1a64a6fc319c9940c25df5327ea2e377cf8d09611380ee355c0768";
+const VECTOR_PIN: &str = "45639c5115f63077e74fd16ed00cc051c34fb0e679d5a83e43b26e0f3dd387f9";
 
 /// The agreed input (lanes 10 and 11, 2026-10-21): every `calls/*.json` and `manifests/*.json` by that name, sorted
 /// bytewise, one `<sha256 of the raw bytes>  <name>\n` line each (shasum's format), and the sha256 of those lines.

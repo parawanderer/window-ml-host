@@ -351,12 +351,22 @@ fn env_names_that_run_code_are_refused_and_handles_are_unavailable() {
     let (_d, r) = root();
     let mut h = Host::start();
     h.ok("configure", json!({ "roots": [r] }));
-    for n in ["PAGER", "GIT_EXTERNAL_DIFF", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "GIT_CONFIG_COUNT", "PATH"] {
+    for n in [
+        "PAGER",
+        "GIT_EXTERNAL_DIFF",
+        "LD_PRELOAD",
+        "DYLD_INSERT_LIBRARIES",
+        "GIT_CONFIG_COUNT",
+        "PATH",
+        "GH_TOKEN",
+        "https_proxy",
+        "SSL_CERT_FILE",
+    ] {
         let e = h.call("spawn", json!({ "argv": ["true"], "cwd": r, "env": { n: "x" } })).unwrap_err();
         assert_eq!(e.0, "EnvRefused", "{n}");
     }
     let e = h
-        .call("spawn", json!({ "argv": ["true"], "cwd": r, "env": { "GITHUB_TOKEN": { "$secret": "github" } } }))
+        .call("spawn", json!({ "argv": ["true"], "cwd": r, "env": { "API_TOKEN": { "$secret": "github" } } }))
         .unwrap_err();
     assert_eq!(e.0, "SecretUnavailable");
     h.close();
@@ -2907,5 +2917,162 @@ fn put_ids_do_not_collide_with_spawn_ids() {
     assert_ne!(p["id"], s["id"]);
     assert!(p["id"].as_str().unwrap().starts_with('p') && s["id"].as_str().unwrap().starts_with('c'));
     assert_eq!(code(h.call("start", json!({ "id": p["id"] }))), "UnknownId", "a put is not a call");
+    h.close();
+}
+
+// --- a credentialed call: the host injects the provider's token (src/credential.rs) ---
+
+/// The sha256 of the pinned gh manifest, the hash a worker names in `credential.manifest`.
+fn gh_manifest_hash() -> String {
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("vectors/program-manifests/manifests/gh.json");
+    sha256_hex(&std::fs::read(p).unwrap())
+}
+
+/// A directory holding a fake `name` (a bash script): it prints `tok_fake` for gh's token arguments and runs `body`
+/// otherwise. Put first on the session's PATH, it is what the call's `gh` resolves to.
+fn fake_program(name: &str, body: &str) -> (tempfile::TempDir, PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+    let d = tempfile::tempdir().unwrap();
+    let dir = d.path().canonicalize().unwrap();
+    let p = dir.join(name);
+    let script = format!(
+        "#!/bin/bash\nif [ \"$*\" = \"auth token --hostname github.com\" ]; then echo tok_fake; exit 0; fi\n{body}\n"
+    );
+    std::fs::write(&p, script).unwrap();
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    (d, dir)
+}
+
+fn configure_with(h: &mut Host, r: &Path, bin: &Path, sandbox: bool) {
+    h.ok("configure", json!({ "roots": [r], "sandbox": sandbox, "path": [bin, "/usr/bin", "/bin"] }));
+}
+
+#[test]
+fn hello_offers_the_github_credential_only_where_the_sandbox_holds_it() {
+    let mut h = Host::start();
+    let v = h.ok("hello", json!({}));
+    if cfg!(target_os = "macos") {
+        assert_eq!(v["credentials"], json!(["github"]), "{v}");
+    } else {
+        assert_eq!(v["credentials"], json!([]), "Linux holds no credentialed profile yet: {v}");
+    }
+    h.close();
+}
+
+#[test]
+fn a_credentialed_gh_reaches_port_443_with_the_token_and_no_other_port() {
+    let (_d, r) = root();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    // By address: bash 3.2's /dev/tcp does not resolve github.com on macOS even unconfined. A failed `exec` redirect
+    // ends a non-interactive bash, so each probe runs in its own subshell.
+    use std::net::ToSocketAddrs;
+    let Some(ip) = ("github.com", 443).to_socket_addrs().ok().and_then(|mut a| a.find(|a| a.is_ipv4())) else {
+        eprintln!("github.com does not resolve here; the credentialed profile's network is not checked");
+        return;
+    };
+    let ip = ip.ip();
+    let body = format!(
+        "echo \"token=$GH_TOKEN config=$GH_CONFIG_DIR tmp=$TMPDIR prompt=$GH_PROMPT_DISABLED\"\n\
+         (exec 3<>/dev/tcp/{ip}/443) && echo reached-443\n\
+         (exec 4<>/dev/tcp/127.0.0.1/{port}) && echo reached-local"
+    );
+    let (_b, bin) = fake_program("gh", &body);
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
+    if !cfg!(target_os = "macos") {
+        configure_with(&mut h, &r, &bin, true);
+        let e = h.call("spawn", json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": cred })).unwrap_err();
+        assert_eq!(e.0, "SandboxFailed", "Linux refuses the credentialed profile, never runs it ordinary: {e:?}");
+        return h.close();
+    }
+    // Control: unsandboxed, github.com:443 is reachable from here, so the sandboxed result below means something.
+    configure_with(&mut h, &r, &bin, false);
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r }));
+    if !text(&h.read_all(&d["stdout"])).contains("reached-443") {
+        eprintln!("github.com:443 is unreachable from this machine; the credentialed profile's network is not checked");
+        return h.close();
+    }
+    let _ = listener.accept();
+    configure_with(&mut h, &r, &bin, true);
+    // The ordinary profile reaches nothing.
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r }));
+    assert!(!text(&h.read_all(&d["stdout"])).contains("reached-443"), "the ordinary profile reached the network");
+    let (f, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": cred }));
+    assert_eq!(f["credential"], json!({ "provider": "github", "ports": [443], "profile": "credentialed:github" }));
+    assert_eq!(f["placement"], "host-sandbox");
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(out.contains("token=tok_fake "), "the provider's token is in the call's env: {out}");
+    assert!(out.contains("prompt=1"), "{out}");
+    let tmp = out.split("tmp=").nth(1).unwrap().split(' ').next().unwrap();
+    assert!(out.contains(&format!("config={tmp}/github ")), "a throwaway config dir under the call's tmp: {out}");
+    assert!(out.contains("reached-443"), "the credentialed profile reaches 443: {out}");
+    assert!(!out.contains("reached-local"), "a port other than 443 was reached: {out}");
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(listener.accept().is_err(), "a credentialed call reached a port other than 443");
+    assert_eq!(d["envelope"], json!({ "write": "today", "exec": "program-only", "profile": "credentialed:github" }));
+    assert!(!Path::new(tmp).exists(), "the call's tmp, config dir included, is gone after the call");
+    h.close();
+}
+
+#[test]
+fn no_token_is_secret_unavailable_and_the_program_never_runs() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_d, r) = root();
+    let (_b, bin) = fake_program("gh", "");
+    let marker = r.join("ran");
+    // logged out: the token arguments fail, anything else leaves a marker
+    std::fs::write(bin.join("gh"), format!("#!/bin/bash\n[ \"$1\" = auth ] && exit 1\necho > {}\n", marker.display()))
+        .unwrap();
+    std::fs::set_permissions(bin.join("gh"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut h = Host::start();
+    if !cfg!(target_os = "macos") || !h.sandbox_available() {
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
+    let f = h.ok("spawn", json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": cred }));
+    let e = h.call("start", json!({ "id": f["id"] })).unwrap_err();
+    assert_eq!(e.0, "SecretUnavailable", "{e:?}");
+    assert!(!marker.exists(), "the call ran without its token");
+    h.close();
+}
+
+#[test]
+fn a_credential_is_refused_for_another_program_an_unpinned_manifest_a_bad_shape_or_no_sandbox() {
+    let (_d, r) = root();
+    let (_b, bin) = fake_program("gh", "true");
+    let (_c, curl_bin) = fake_program("curl", "true");
+    let mut h = Host::start();
+    configure_with(&mut h, &r, &bin, true);
+    let code = |h: &mut Host, argv: Value, cred: Value| {
+        h.call("spawn", json!({ "argv": argv, "cwd": r, "credential": cred })).map(|_| ()).unwrap_err().0
+    };
+    let hash = gh_manifest_hash();
+    assert_eq!(code(&mut h, json!(["gh"]), json!({ "provider": "aws", "manifest": hash })), "CredentialRefused");
+    let zeros = "0".repeat(64);
+    assert_eq!(code(&mut h, json!(["gh"]), json!({ "provider": "github", "manifest": zeros })), "CredentialRefused");
+    for bad in [
+        json!("github"),
+        json!({ "provider": "github" }),
+        json!({ "provider": "github", "manifest": hash, "env": "X" }),
+    ] {
+        assert_eq!(code(&mut h, json!(["gh"]), bad.clone()), "BadRequest", "{bad}");
+    }
+    let curl = curl_bin.join("curl");
+    let refused = code(&mut h, json!([curl]), json!({ "provider": "github", "manifest": hash }));
+    assert_eq!(refused, "CredentialRefused", "github is gh's alone");
+    // a gh the repository put inside a root, found first on PATH: its token fetch would run it unconfined
+    std::fs::copy(bin.join("gh"), r.join("gh")).unwrap();
+    configure_with(&mut h, &r, &r, true);
+    assert_eq!(code(&mut h, json!(["gh"]), json!({ "provider": "github", "manifest": hash })), "CredentialRefused");
+    std::fs::remove_file(r.join("gh")).unwrap();
+    configure_with(&mut h, &r, &bin, false);
+    let unsandboxed = code(&mut h, json!(["gh"]), json!({ "provider": "github", "manifest": hash }));
+    assert_eq!(unsandboxed, "SandboxFailed", "never the plain host with the person's token");
     h.close();
 }

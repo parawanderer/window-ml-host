@@ -1,2 +1,2 @@
-window-ml bc19f7fe (feat/gh-manifest, #1538): src/shell/manifests/*.json -> manifests/, tests/fixtures/program-calls/*.json -> calls/; adds gh.json to both
-sha256 08a37cf2ef1a64a6fc319c9940c25df5327ea2e377cf8d09611380ee355c0768 (tests/manifest_vectors.rs VECTOR_PIN; window-ml holds the same pin)
+window-ml 8324c22d (feat/gh-credentialed): src/shell/manifests/*.json -> manifests/, tests/fixtures/program-calls/*.json -> calls/; gh.json names the github credential and its ports
+sha256 45639c5115f63077e74fd16ed00cc051c34fb0e679d5a83e43b26e0f3dd387f9 (tests/manifest_vectors.rs VECTOR_PIN; window-ml holds the same pin)

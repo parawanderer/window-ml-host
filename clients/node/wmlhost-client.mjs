@@ -151,7 +151,8 @@ export class HostClient {
   hello() { return this.call("hello"); }
   /** Sends the session settings (roots, sandbox, path, limits). */
   configure(cfg) { return this.call("configure", cfg); }
-  /** Resolves the facts of a call and starts nothing; args are `{ argv, cwd, env?, mode?, pathArgs?, timeoutMs? }`. */
+  /** Resolves the facts of a call and starts nothing; args are `{ argv, cwd, env?, mode?, pathArgs?, timeoutMs?, credential? }`,
+   *  `credential` being `{ provider, manifest }` (PROTOCOL.md, "A credentialed call"). */
   spawn(args) { return this.call("spawn", args); }
   /**
    * Runs a pending call after its verdict. `envelope` optionally narrows the sandbox to
