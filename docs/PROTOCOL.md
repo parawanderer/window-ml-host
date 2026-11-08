@@ -289,6 +289,10 @@ bytes BEFORE the cap, and `size` stays at the cap.
 The bytes are bytes, as for `read`: the cut may split a UTF-8 sequence or a line, so the reader decodes and trims. A
 clamped `bytes` is not marked in the answer.
 
+512 KiB is the budget of the whole answer, both streams together, since two full streams as base64 would pass the 1 MiB
+message limit. Each stream gets the last `bytes` it holds when the two fit; past that each gets at least half, and what
+one stream does not use goes to the other. `size` is always the stream's own.
+
 Only a call in this session's running table answers. Anything else (an unknown id, a call not yet started, a call that
 has ended, a call of another connection) is `UnknownId` "no running call", as for `cancel`; once a call has ended, its
 `done` event's pointers and `read` are the way. A group declared with `register` has no output of the host's, and
@@ -490,7 +494,7 @@ These are the host's own; the worker maps them onto the `ml` wire's codes (`Refu
 | `EnvRefused` | an `env` name on the denylist (`src/env.rs`) |
 | `SecretUnavailable` | an `env` handle the host's store does not hold |
 | `Unsupported` | `mode: "container"` this version |
-| `UnknownId` | `start`/`discard`/`cancel`/`pipe` of an id that never existed, expired, or already started (`start`, `pipe`) |
+| `UnknownId` | `start`/`discard`/`cancel`/`pipe`/`peek` of an id that never existed, expired, or already started (`start`, `pipe`) |
 | `UnknownPtr` | `read`/`release` of a pointer that does not exist |
 | `SandboxFailed` | the sandbox program itself could not be started (a refusal by the sandbox shows in `done`); a `start`/`pipe` with an `envelope` on a call that is not sandboxed (an envelope is a request for a bound; an unsandboxed call holds none); a `write: "roots"` or `exec: "program-only"` on Linux without Landlock |
 | `SpawnFailed` | the OS refused to start the program |

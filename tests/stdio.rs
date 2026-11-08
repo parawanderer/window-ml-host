@@ -541,6 +541,38 @@ fn bytes_past_max_read_is_clamped_without_a_hint() {
 }
 
 #[test]
+fn both_streams_at_the_cap_share_one_budget_and_the_answer_still_fits_a_message() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r], "outputCap": 2_000_000 }));
+    let id = h.begin(&["sh", "-c", "head -c 700000 /dev/zero; head -c 700000 /dev/zero >&2; sleep 5"], &r);
+    h.peek_until(&id, json!({ "bytes": 1 }), "stderr", 700_000);
+    // Each stream at 512 KiB would be ~1.4 MiB as base64, past the 1 MiB limit: the answer is the data, split.
+    let v = h.ok("peek", json!({ "id": id, "bytes": 512 * 1024 }));
+    let (o, e) = (peek_bytes(&v["stdout"]).len(), peek_bytes(&v["stderr"]).len());
+    assert_eq!((o, e), (256 * 1024, 256 * 1024), "half each when both want more than half");
+    assert_eq!((v["stdout"]["size"].as_u64(), v["stderr"]["size"].as_u64()), (Some(700_000), Some(700_000)));
+    h.ok("cancel", json!({ "id": id }));
+    h.done(&id);
+    h.close();
+}
+
+#[test]
+fn a_short_stream_leaves_the_rest_of_the_budget_to_the_other() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r], "outputCap": 2_000_000 }));
+    let id = h.begin(&["sh", "-c", "printf hello; head -c 700000 /dev/zero >&2; sleep 5"], &r);
+    h.peek_until(&id, json!({ "bytes": 1 }), "stderr", 700_000);
+    let v = h.ok("peek", json!({ "id": id, "bytes": 512 * 1024 }));
+    assert_eq!(peek_bytes(&v["stdout"]), b"hello");
+    assert_eq!(peek_bytes(&v["stderr"]).len(), 512 * 1024 - 5);
+    h.ok("cancel", json!({ "id": id }));
+    h.done(&id);
+    h.close();
+}
+
+#[test]
 fn peek_past_the_output_cap_is_truncated_at_the_cap() {
     let (_d, r) = root();
     let mut h = Host::start();
@@ -2164,6 +2196,9 @@ fn a_registered_group_is_a_row_its_members_answer_owner_and_its_end_is_a_done() 
     assert_eq!(row["kind"], "registered");
     assert_eq!(row["owner"], owner);
     assert!(row["cpuMs"].is_u64(), "{row}");
+    // Its output is not ours to hold, so a peek of it answers no stream.
+    let p = h.ok("peek", json!({ "id": id }));
+    assert_eq!(p, json!({ "id": id, "stdout": null, "stderr": null }), "{p}");
     // The leader and a descendant both answer with the declared owner; this test process is in no row.
     for pid in [leader, sleeper] {
         let o = h.ok("owner", json!({ "pid": pid }));

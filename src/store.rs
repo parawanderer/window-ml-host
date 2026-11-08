@@ -36,6 +36,13 @@ pub struct Live {
     truncated: AtomicBool,
 }
 
+impl Live {
+    /// The bytes of the stream on disk so far.
+    pub fn kept(&self) -> u64 {
+        self.kept.load(Ordering::Acquire)
+    }
+}
+
 /// The live records of one call's two streams. `stdout` is `None` when it went to the next stage of a pipeline.
 #[derive(Debug)]
 pub struct Lives {

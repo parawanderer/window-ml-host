@@ -1177,16 +1177,18 @@ impl Session {
             Some(c) => c.lives.clone(),
             None => return fail("UnknownId", format!("no running call {id:?}")),
         };
-        let stream = |l: Option<&Arc<Live>>| -> Result<Value, Fail> {
+        let (out, err) = (lives.as_ref().and_then(|l| l.stdout.as_ref()), lives.as_ref().map(|l| &l.stderr));
+        // MAX_READ is the budget of the WHOLE answer, both streams together: two full streams as base64 would pass the
+        // 1 MiB message limit (PROTOCOL.md, "peek"). What one stream does not use, the other may.
+        let want = |l: Option<&Arc<Live>>| l.map_or(0, |l| bytes.min(l.kept()));
+        let (out_bytes, err_bytes) = split_peek_budget(want(out), want(err), MAX_READ);
+        let stream = |l: Option<&Arc<Live>>, n: u64| -> Result<Value, Fail> {
             let Some(l) = l else { return Ok(Value::Null) };
-            let (data, size, truncated) =
-                self.host.store.peek_tail(l, bytes).map_err(|e| Fail("Failed", e.to_string()))?;
+            let (data, size, truncated) = self.host.store.peek_tail(l, n).map_err(|e| Fail("Failed", e.to_string()))?;
             Ok(json!({ "size": size, "truncated": truncated,
                        "data": { "$bytes": base64::engine::general_purpose::STANDARD.encode(&data) } }))
         };
-        Ok(json!({ "id": id,
-                   "stdout": stream(lives.as_ref().and_then(|l| l.stdout.as_ref()))?,
-                   "stderr": stream(lives.as_ref().map(|l| &l.stderr))? }))
+        Ok(json!({ "id": id, "stdout": stream(out, out_bytes)?, "stderr": stream(err, err_bytes)? }))
     }
 
     fn read(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
@@ -1343,6 +1345,17 @@ fn req_str<'a>(a: &'a Map<String, Value>, k: &str) -> Result<&'a str, Fail> {
 /// What `peek` returns of each stream when `bytes` is not given.
 const DEFAULT_PEEK: u64 = 4096;
 
+/// How many of the last bytes of each stream one `peek` answer carries, when stdout wants `a` and stderr `b`: both in
+/// full when they fit in `budget` together, else each at least half the budget, and what one leaves unused to the other.
+fn split_peek_budget(a: u64, b: u64, budget: u64) -> (u64, u64) {
+    if a + b <= budget {
+        return (a, b);
+    }
+    let half = budget / 2;
+    let a = a.min(budget - b.min(half));
+    (a, b.min(budget - a))
+}
+
 fn opt_u64(a: &Map<String, Value>, k: &str) -> Result<Option<u64>, Fail> {
     match a.get(k) {
         None | Some(Value::Null) => Ok(None),
@@ -1360,6 +1373,20 @@ fn opt_bool(a: &Map<String, Value>, k: &str) -> Result<Option<bool>, Fail> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_peek_budget_is_shared_and_what_one_stream_leaves_goes_to_the_other() {
+        assert_eq!(split_peek_budget(10, 20, 100), (10, 20));
+        assert_eq!(split_peek_budget(100, 100, 100), (50, 50));
+        assert_eq!(split_peek_budget(5, 100, 100), (5, 95));
+        assert_eq!(split_peek_budget(100, 5, 100), (95, 5));
+        assert_eq!(split_peek_budget(0, 200, 100), (0, 100));
+        assert_eq!(split_peek_budget(70, 40, 100), (60, 40));
+        for (a, b) in [(1u64, 1u64), (99, 99), (51, 50), (0, 0), (100, 0)] {
+            let (x, y) = split_peek_budget(a, b, 100);
+            assert!(x + y <= 100 && x <= a && y <= b, "{a},{b} -> {x},{y}");
+        }
+    }
     use super::*;
     use serde_json::Value;
 
