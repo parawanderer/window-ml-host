@@ -3076,3 +3076,347 @@ fn a_credential_is_refused_for_another_program_an_unpinned_manifest_a_bad_shape_
     assert_eq!(unsandboxed, "SandboxFailed", "never the plain host with the person's token");
     h.close();
 }
+
+// --- red team: what a credentialed call can still reach (session window-ml-redteam-e3, rule 10) ---
+//
+// The rows above pin what the host GRANTS a credentialed call. These pin the edges it does not: the person's keychain
+// behind `/usr/bin/security`, the credential stores on disk, the environment names that would point gh at another
+// token, config, proxy or trust store, the person's home as a write target, how wide the network really is, and what
+// git inherits from gh. Each row is measured against the real Seatbelt profile and fails if its guard is removed: the
+// keychain row prints the item's secret when the exec set widens, the read row prints the marker when a deny goes, the
+// env row starts the program, the home row finds a file, the network row loses its reach, the git row loses its binary.
+
+/// A throwaway login-keychain item, created through `/usr/bin/security` outside the sandbox and deleted when it goes
+/// out of scope: the probe for "nothing the `security` binary's ACL trusts is reachable from a credentialed call".
+struct KeychainItem(String);
+
+impl KeychainItem {
+    /// An item under a name no other test or person uses; `None` when this machine refuses to create one (no
+    /// `/usr/bin/security`, a locked keychain), so the row says it was not measured rather than pretending.
+    fn create(service: &str, secret: &str) -> Option<KeychainItem> {
+        let ok = Command::new("/usr/bin/security")
+            .args(["add-generic-password", "-a", "window-ml-host-test", "-s", service, "-w", secret, "-U"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        ok.then(|| KeychainItem(service.to_string()))
+    }
+
+    /// What the item holds, read outside the sandbox by the test itself.
+    fn read(&self) -> Option<String> {
+        let o = Command::new("/usr/bin/security").args(["find-generic-password", "-s", &self.0, "-w"]).output().ok()?;
+        o.status.success().then(|| text(&o.stdout).trim().to_string())
+    }
+}
+
+impl Drop for KeychainItem {
+    fn drop(&mut self) {
+        let _ = Command::new("/usr/bin/security")
+            .args(["delete-generic-password", "-s", &self.0])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+}
+
+/// A file the test wrote outside the sandbox, removed when the row ends whatever it asserted.
+struct ProbeFile(PathBuf);
+
+impl ProbeFile {
+    /// A file at `path` holding `body`; `None` when it cannot be written, so the row reports that instead of passing.
+    fn create(path: PathBuf, body: &str) -> Option<ProbeFile> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).ok()?;
+        }
+        std::fs::write(&path, body).ok()?;
+        Some(ProbeFile(path))
+    }
+}
+
+impl Drop for ProbeFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+#[test]
+fn a_credentialed_call_cannot_exec_security_and_read_a_keychain_item() {
+    // gh reaches the person's keychain by exec'ing /usr/bin/security, whose ACL trusts that binary for every item any
+    // CLI stored through it. The credentialed profile's exec set is program-only ({gh, git's helpers}), so the binary
+    // is not there at all; the read deny behind it is the second guard, pinned by the row below.
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let secret = "wml_keychain_probe_value";
+    let Some(item) = KeychainItem::create(&format!("window-ml-host-test-{}", std::process::id()), secret) else {
+        eprintln!("this machine would not create a throwaway keychain item; the keychain is not checked");
+        return;
+    };
+    assert_eq!(
+        item.read().as_deref(),
+        Some(secret),
+        "the probe item is not readable outside the sandbox: the row proves nothing"
+    );
+    let (_d, r) = root();
+    // The call's own process, then a nested shell: both are inside the profile's exec rule, so neither is an argv[0]
+    // check that a subprocess could step around.
+    let body = format!(
+        "(security find-generic-password -s {svc} -w 2>&1); echo \"rc1=$?\"\n\
+         (exec 2>&1; /bin/bash -c 'security find-generic-password -s {svc} -w'); echo \"rc2=$?\"",
+        svc = item.0
+    );
+    let (_b, bin) = fake_program("gh", &body);
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    let (f, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": { "provider": "github", "manifest": gh_manifest_hash() } }));
+    assert_eq!(f["credential"]["profile"], json!("credentialed:github"));
+    let out = text(&h.read_all(&d["stdout"]));
+    let err = text(&h.read_all(&d["stderr"]));
+    assert!(!out.contains(secret) && !err.contains(secret), "a credentialed call read the keychain item: {out}{err}");
+    assert!(out.contains("rc1=") && !out.contains("rc1=0"), "security did not fail under the profile: {out}");
+    assert!(!out.contains("rc2=0"), "a nested shell reached security: {out}");
+    let both = format!("{out}{err}").to_lowercase();
+    assert!(
+        both.contains("permitted") || both.contains("denied"),
+        "the denial does not name a permission error: out=[{out}] err=[{err}]"
+    );
+    h.close();
+}
+
+#[test]
+fn a_credentialed_call_cannot_read_the_gh_config_or_the_keychain_directory() {
+    // The credential stores on disk, with a HOME the test owns: gh's config and the keychains directory. The
+    // unsandboxed control runs the same commands through the same host, so a missing file cannot pass the row.
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let home = tempfile::tempdir().unwrap();
+    let marker = "wml_credential_store_marker";
+    let Some(gh_cfg) = ProbeFile::create(home.path().join(".config/gh/hosts.yml"), marker) else { return };
+    let Some(kc) = ProbeFile::create(home.path().join("Library/Keychains/login.keychain-db"), marker) else { return };
+    let (_d, r) = root();
+    // Bash's own opens, not a helper program: the credentialed profile's exec set is program-only, so `cat` or `ls`
+    // would fail on the exec rule and the row would never reach the read rule it is here to measure.
+    let body = "( { IFS= read -r l < \"$HOME/.config/gh/hosts.yml\"; } 2>&1; echo \"rc1=$?\"; echo \"got=[$l]\" )\n\
+                ( { IFS= read -r k < \"$HOME/Library/Keychains/login.keychain-db\"; } 2>&1; echo \"rc2=$?\"; echo \"gotk=[$k]\" )\n\
+                files=(\"$HOME/Library/Keychains/\"*); echo \"n=${#files[@]} first=${files[0]##*/}\"";
+    let (_b, bin) = fake_program("gh", body);
+    let mut h = Host::start_with_env(&[("HOME", home.path().to_str().unwrap())]);
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
+    // Control: unsandboxed and without the credential (a credentialed call never runs unsandboxed), both reads see what
+    // the test wrote.
+    configure_with(&mut h, &r, &bin, false);
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r }));
+    let ctl = format!("{}{}", text(&h.read_all(&d["stdout"])), text(&h.read_all(&d["stderr"])));
+    assert!(ctl.contains(marker), "the control did not read the probe files: {ctl}");
+    // Under the credentialed profile both are refused.
+    configure_with(&mut h, &r, &bin, true);
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": cred }));
+    let out = text(&h.read_all(&d["stdout"]));
+    let err = text(&h.read_all(&d["stderr"]));
+    assert!(!out.contains(marker) && !err.contains(marker), "a credentialed call read a credential store: {out}{err}");
+    assert!(!out.contains("rc1=0"), "gh's config was readable under the credentialed profile: {out}");
+    assert!(!out.contains("rc2=0"), "a keychain file was readable under the credentialed profile: {out}");
+    // A glob that cannot read the directory leaves its pattern unexpanded: the listing itself is denied too, not only
+    // the file the row wrote.
+    assert!(out.contains("first=*"), "the keychains directory was listed under the credentialed profile: {out}");
+    drop((gh_cfg, kc));
+    h.close();
+}
+
+#[test]
+fn a_credentialed_call_cannot_set_any_environment_name_that_would_point_gh_elsewhere() {
+    // Every name that moves gh's token, host, config, proxy or trust store. Enumerated, in the case a call would write
+    // it, and by prefix as well as by name: a refusal is `EnvRefused` and the program never starts.
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let (_d, r) = root();
+    let (_b, bin) = fake_program("gh", "true");
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
+    let names = [
+        "GH_TOKEN",
+        "gh_token",
+        "Gh_Token",
+        "GH_HOST",
+        "GH_CONFIG_DIR",
+        "gh_config_dir",
+        "GH_ENTERPRISE_TOKEN",
+        "GITHUB_TOKEN",
+        "github_token",
+        "GH_ANYTHING_AT_ALL",
+        "GITHUB_WHATEVER",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "Http_Proxy",
+        "ALL_PROXY",
+        "all_proxy",
+        "NO_PROXY",
+        "no_proxy",
+        "SSL_CERT_FILE",
+        "ssl_cert_file",
+        "SSL_CERT_DIR",
+        "SSL_CERT_PATH",
+    ];
+    for name in names {
+        let e = h
+            .call(
+                "spawn",
+                json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": cred.clone(), "env": { name: "x" } }),
+            )
+            .unwrap_err();
+        assert_eq!(e.0, "EnvRefused", "{name}: {e:?}");
+        assert!(e.1.contains(name), "{name}: the refusal does not name it: {e:?}");
+    }
+    // The control: a name on the free list is accepted, so the refusals above are not a blanket no-env rule.
+    h.ok("spawn", json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": cred, "env": { "LC_ALL": "C" } }));
+    h.close();
+}
+
+#[test]
+fn a_credentialed_call_cannot_write_under_the_persons_home() {
+    // The call's HOME is the person's own. Its writable paths are the roots and its temp dir, so every attempt here must
+    // fail and leave the directory as it was: a new file, a new directory, and an append to a file that exists.
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let home = tempfile::tempdir().unwrap();
+    let target = home.path().join("existing.txt");
+    std::fs::write(&target, "untouched").unwrap();
+    let (_d, r) = root();
+    let body = "(echo x > \"$HOME/created.txt\") 2>&1; echo \"rc1=$?\"\n\
+                (mkdir \"$HOME/created-dir\") 2>&1; echo \"rc2=$?\"\n\
+                (echo appended >> \"$HOME/existing.txt\") 2>&1; echo \"rc3=$?\"";
+    let (_b, bin) = fake_program("gh", body);
+    let mut h = Host::start_with_env(&[("HOME", home.path().to_str().unwrap())]);
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
+    // Control: unsandboxed and without the credential, the same three writes land (so the row measures the profile, not
+    // a read-only filesystem).
+    configure_with(&mut h, &r, &bin, false);
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r }));
+    assert!(text(&h.read_all(&d["stdout"])).contains("rc3=0"), "the control's writes did not run");
+    assert!(home.path().join("created.txt").exists());
+    std::fs::remove_file(home.path().join("created.txt")).unwrap();
+    std::fs::remove_dir(home.path().join("created-dir")).unwrap();
+    std::fs::write(&target, "untouched").unwrap();
+    // Under the credentialed profile nothing lands.
+    configure_with(&mut h, &r, &bin, true);
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": cred }));
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(
+        !out.contains("rc1=0") && !out.contains("rc2=0") && !out.contains("rc3=0"),
+        "a write under HOME succeeded: {out}"
+    );
+    assert!(!home.path().join("created.txt").exists(), "a file appeared under the person's home");
+    assert!(!home.path().join("created-dir").exists(), "a directory appeared under the person's home");
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched", "an existing file under HOME was appended to");
+    h.close();
+}
+
+#[test]
+fn the_credentialed_profiles_network_reaches_any_443_host_not_only_githubs() {
+    // A FINDING row, not a defect: Seatbelt filters by address and port, so the profile cannot say "GitHub only". The
+    // token stays out of a third party's hands only through gh's own host choice, which is why the env row above
+    // refuses every name that would move it.
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let (_d, r) = root();
+    use std::net::ToSocketAddrs;
+    let Some(ip) = ("example.com", 443).to_socket_addrs().ok().and_then(|mut a| a.find(|a| a.is_ipv4())) else {
+        eprintln!("example.com does not resolve here; the profile's reach is not checked");
+        return;
+    };
+    let ip = ip.ip();
+    let body = format!(
+        "(exec 3<>/dev/tcp/{ip}/443) && echo reached-third-party-443\n\
+         (exec 4<>/dev/tcp/{ip}/80) && echo reached-third-party-80"
+    );
+    let (_b, bin) = fake_program("gh", &body);
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
+    configure_with(&mut h, &r, &bin, false);
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r }));
+    let ctl = text(&h.read_all(&d["stdout"]));
+    if !ctl.contains("reached-third-party-443") {
+        eprintln!("example.com:443 is unreachable from this machine; the profile's reach is not checked");
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": cred }));
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(
+        out.contains("reached-third-party-443"),
+        "the credentialed profile did not reach a third party's 443: {out}"
+    );
+    assert!(!out.contains("reached-third-party-80"), "the credentialed profile reached port 80: {out}");
+    h.close();
+}
+
+#[test]
+fn git_under_a_credentialed_gh_runs_and_yields_no_credential() {
+    // gh's exec set carries git's helpers, and Seatbelt is inherited, so a git gh starts runs under the same profile.
+    // What such a git can do is the finding: it runs, the credential helper git is configured with cannot produce
+    // anything (its binary is outside the exec set and its store is read-denied), and git cannot reach a port the
+    // profile does not hold.
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let (_d, r) = root();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let body = format!(
+        "(git --version) 2>&1; echo \"rc1=$?\"\n\
+         echo \"helper=[$(git config --get credential.helper 2>&1)]\"\n\
+         (printf 'protocol=https\\nhost=github.com\\n\\n' | git credential fill) 2>&1; echo \"rc3=$?\"\n\
+         (git ls-remote https://127.0.0.1:{port}/x) 2>&1 | tail -2; echo \"rc2=$?\""
+    );
+    let (_b, bin) = fake_program("gh", &body);
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
+    configure_with(&mut h, &r, &bin, true);
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": cred }));
+    assert_eq!(d["envelope"]["profile"], json!("credentialed:github"), "{d}");
+    let out = text(&h.read_all(&d["stdout"]));
+    let err = text(&h.read_all(&d["stderr"]));
+    let both = format!("{out}{err}");
+    assert!(
+        out.contains("rc1=0"),
+        "git is not runnable under the credentialed profile (its exec set is gh's alone): {both}"
+    );
+    assert!(out.contains("git version"), "git --version printed nothing: {both}");
+    // A helper may well be configured (Apple Git names `osxkeychain`); what matters is that it returns no credential.
+    for line in both.lines().filter(|l| l.starts_with("password=")) {
+        assert_eq!(line.trim(), "password=", "git credential fill returned a credential: {both}");
+    }
+    assert!(!out.contains("rc2=0"), "git reached a port the profile does not hold: {both}");
+    assert!(
+        both.to_lowercase().contains("permitted") || both.to_lowercase().contains("denied"),
+        "the refusal is not the profile's: {both}"
+    );
+    h.close();
+}
