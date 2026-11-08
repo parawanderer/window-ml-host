@@ -5,9 +5,10 @@
 #
 # - The TAG is the unit. Checkout is always of the tag, and a binary that does not report the tag's version fails the
 #   build, so "which build is this?" is answered by the binary.
-# - A tag's bytes never change. Upload refuses to replace an asset (no `--clobber`): window-ml pins each target's
-#   sha256 itself, and replaced bytes under the same tag would break every pin naming it. A broken release gets a new
-#   tag.
+# - A tag's bytes never change. The release is published only once it holds every asset, and the repository's
+#   immutable releases setting fixes it from then on; a published release is never touched again. window-ml pins each
+#   target's sha256 itself, and replaced bytes under the same tag would break every pin naming it. A broken release
+#   gets a new tag.
 # - Nothing is published that has not run. Each target unpacks its own archive and runs `--version` and the Node
 #   client's smoke test before upload.
 name: release
@@ -156,12 +157,23 @@ jobs:
           shasum -a 256 *.tar.gz | LC_ALL=C sort -k2 > SHA256SUMS
           shasum -a 256 -c SHA256SUMS
           cat SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
-      # No `--clobber`: an asset that already exists makes this fail rather than change bytes a pin names.
-      - name: Attach to the release
+      # The repository has immutable releases on: once a release is PUBLISHED its assets and tag are fixed, and no asset
+      # can be added. So the release is made as a DRAFT holding every asset, then published. A published release under
+      # the tag fails here; a draft left by a failed run is filled (a draft is not public, so nothing pins it yet).
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ inputs.tag || github.ref_name }}"
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --generate-notes --verify-tag
-          gh release upload "$tag" dist/*.tar.gz dist/*.sha256 dist/SHA256SUMS
-          echo "Attached $(ls dist/*.tar.gz | wc -l) archive(s) and SHA256SUMS to \`$tag\` ($(git rev-parse HEAD))." >> "$GITHUB_STEP_SUMMARY"
+          files=(dist/*.tar.gz dist/*.sha256 dist/SHA256SUMS)
+          if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$draft" != true ]; then
+              echo "::error::$tag is already published, and a published release never changes. Cut a new tag."
+              exit 1
+            fi
+            gh release upload "$tag" "${files[@]}" --clobber
+          else
+            gh release create "$tag" "${files[@]}" --draft --title "$tag" --generate-notes --verify-tag
+          fi
+          gh release edit "$tag" --draft=false
+          echo "Published \`$tag\` ($(git rev-parse HEAD)) with $(ls dist/*.tar.gz | wc -l) archive(s) and SHA256SUMS." >> "$GITHUB_STEP_SUMMARY"

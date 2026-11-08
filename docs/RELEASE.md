@@ -33,7 +33,10 @@ a consumer gates on is a sha256 it pinned itself (below).
 
 ## A tag's bytes never change
 
-The upload does not overwrite: if an asset already exists under the tag, the job fails. window-ml pins each archive's
+The repository has GitHub's immutable releases on, so a PUBLISHED release's assets and tag cannot be changed, added
+to or deleted, by this workflow or by anyone. The workflow therefore makes the release as a draft with every asset in
+it and then publishes it; it fails rather than touch a release that is already published. A draft left by a failed
+run is filled by the re-run, since a draft is not public and nothing has pinned it. window-ml pins each archive's
 sha256, so new bytes under an old tag would break every pin that names it, or, worse, satisfy a pin taken after the
 change. A broken release is fixed with a new tag.
 
