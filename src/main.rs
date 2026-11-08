@@ -2,6 +2,8 @@
 //! serves the protocol on stdio; `wmlhost install` registers it with the browser.
 
 fn main() {
+    // Before any thread: reading the umask sets it for a moment (put.rs).
+    window_ml_host::put::umask();
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("install") | Some("uninstall") => std::process::exit(window_ml_host::install::main(&args[1..])),

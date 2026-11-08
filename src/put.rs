@@ -7,6 +7,7 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::Instant;
 
 use rustix::fs::{AtFlags, FileType, Mode, OFlags};
@@ -21,6 +22,22 @@ use crate::store::random_hex;
 pub const MAX_PUT: u64 = 64 << 20;
 /// The prefix of a staged temp file, in the target's directory.
 pub const TMP_PREFIX: &str = ".wmlhost-put-";
+
+/// The process's umask, read once. POSIX reads it only by setting it, so the set-and-restore happens a single time;
+/// `main` calls this before it starts any thread, so no other thread creates a file in between.
+pub fn umask() -> Mode {
+    static UMASK: OnceLock<Mode> = OnceLock::new();
+    *UMASK.get_or_init(|| {
+        let old = rustix::process::umask(Mode::from_raw_mode(0o077));
+        rustix::process::umask(old);
+        old
+    })
+}
+
+/// The mode a committed file gets: what the person's own tools would produce, `0666` less the umask.
+pub fn committed_mode() -> Mode {
+    Mode::from_raw_mode(0o666 & !umask().as_raw_mode())
+}
 
 fn fail<T>(code: &'static str, msg: impl Into<String>) -> Result<T, Fail> {
     Err(Fail(code, msg.into()))
@@ -164,11 +181,11 @@ impl Staged {
         kind_at(&self.parent, &self.name)
     }
 
-    /// The temp file, created on first use through the held parent: `O_CREAT|O_EXCL|O_NOFOLLOW`, with the mode the
-    /// person's own tools would produce (`0666` less the umask, which the kernel applies).
+    /// The temp file, created on first use through the held parent: `O_CREAT|O_EXCL|O_NOFOLLOW`, `0600`, so while it
+    /// is staged no other user can read or write a half-written attachment. `finish` gives it its final mode.
     fn tmp_file(&mut self) -> Result<&mut File, Fail> {
         if self.tmp.is_none() {
-            let mode = Mode::RUSR | Mode::WUSR | Mode::RGRP | Mode::WGRP | Mode::ROTH | Mode::WOTH;
+            let mode = Mode::RUSR | Mode::WUSR;
             let fd = rustix::fs::openat(
                 &self.parent,
                 self.tmp_name.as_str(),
@@ -204,7 +221,9 @@ impl Staged {
         if self.received != self.size {
             return fail("BadRequest", format!("{} of the declared {} bytes arrived", self.received, self.size));
         }
-        self.tmp_file()?.sync_all().map_err(io_fail)?;
+        let tmp = self.tmp_file()?;
+        rustix::fs::fchmod(&*tmp, committed_mode()).map_err(io_fail)?;
+        tmp.sync_all().map_err(io_fail)?;
         if replace {
             // A rename replaces a link and never writes through it, but the rule stays the one `put` applied.
             kind_refusal(&self.target().map_err(io_fail)?, &self.rel)?;
@@ -246,6 +265,21 @@ fn link_unlink(dir: &OwnedFd, from: &str, to: &str) -> Result<(), rustix::io::Er
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- the staged file's mode ---
+
+    #[test]
+    fn a_staged_file_is_0600_and_a_committed_one_0666_less_the_umask() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().canonicalize().unwrap();
+        let mut s = Staged::new(open_parent(&real).unwrap(), "f", "p1", 2, real.join("f"), real.clone(), "f".into());
+        s.append(0, b"a", 2).unwrap();
+        let mode = |p: &Path| Mode::from_raw_mode(rustix::fs::stat(p).unwrap().st_mode) & Mode::from_raw_mode(0o777);
+        assert_eq!(mode(&real.join(&s.tmp_name)), Mode::RUSR | Mode::WUSR, "staged");
+        s.append(1, b"b", 2).unwrap();
+        s.finish(false).unwrap();
+        assert_eq!(mode(&real.join("f")), committed_mode(), "committed");
+    }
 
     // --- the target's name ---
 
