@@ -1,0 +1,180 @@
+# release.yml — the `wmlhost` binaries a tag ships, built from that tag and attached to its release.
+#
+# window-ml's CI fetches a pinned `wmlhost` (its `fetch-host` script) and runs ml-sh-host.spec against it, so a release
+# is something another repository executes. Hence three rules, from docs/RELEASE.md:
+#
+# - The TAG is the unit. Checkout is always of the tag, and a binary that does not report the tag's version fails the
+#   build, so "which build is this?" is answered by the binary.
+# - A tag's bytes never change. The release is published only once it holds every asset, and the repository's
+#   immutable releases setting fixes it from then on; a published release is never touched again. window-ml pins each
+#   target's sha256 itself, and replaced bytes under the same tag would break every pin naming it. A broken release
+#   gets a new tag.
+# - Nothing is published that has not run. Each target unpacks its own archive and runs `--version` and the Node
+#   client's smoke test before upload.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The tag to build and attach binaries to (e.g. v0.7.0)"
+        required: true
+        type: string
+  # A change to this file builds, checks and smoke-tests every target on its PR, without attesting or publishing, so
+  # the matrix is proven before a tag depends on it. The version is Cargo.toml's.
+  pull_request:
+    paths: [".github/workflows/release.yml"]
+
+concurrency:
+  # One group per TAG, the same for a push (ref_name `v0.7.0`) and a dispatch of that tag (`inputs.tag`).
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Native builds only, no cross-compiling: x86-64 Linux (CI runners), arm64 Linux, Apple Silicon.
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The TAG, never the branch this ran from: a dispatched run is pointed at a release that already exists.
+          ref: ${{ inputs.tag || github.ref }}
+      # The tag this builds: the pushed or dispatched one; on a PR, `v` + Cargo.toml's version.
+      - name: Tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            echo "tag=v$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+      # rust-toolchain.toml pins the version; this installs exactly that, as ci.yml does.
+      - name: Toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+      # The default features (`native`, no `hub`): the build tools/check-no-hub.sh holds and the one window-ml runs.
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin wmlhost
+      # One archive per target, and the checksum beside it. window-ml does not trust this file: it pins the sha256
+      # itself and uses the published sums only when bumping that pin (docs/RELEASE.md).
+      - name: Package
+        id: pack
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          name="wmlhost-${tag}-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          cp "target/${{ matrix.target }}/release/wmlhost" LICENSE README.md "dist/$name/"
+          tar -czf "dist/$name.tar.gz" -C dist "$name"
+          ( cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256" )
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: It reports the version of the tag it came from
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          want="${tag#v}"
+          tar -xzf "dist/${{ steps.pack.outputs.name }}.tar.gz" -C "${{ runner.temp }}"
+          got=$("${{ runner.temp }}/${{ steps.pack.outputs.name }}/wmlhost" --version | awk '{print $NF}')
+          echo "wmlhost reports $got"
+          if [ "$got" != "$want" ]; then
+            echo "::error::wmlhost reports $got but the tag is $tag. Set \`version\` in Cargo.toml to $want before tagging."
+            exit 1
+          fi
+      # The smoke test runs a call under the sandbox, which on Linux needs bubblewrap and, on Ubuntu 24.04, an AppArmor
+      # profile letting bwrap create user namespaces (the same two steps as ci.yml).
+      - name: Install bubblewrap
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - name: Let bubblewrap create user namespaces
+        if: runner.os == 'Linux'
+        run: |
+          sudo tee /etc/apparmor.d/bwrap >/dev/null <<'PROFILE'
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile bwrap /usr/bin/bwrap flags=(unconfined) {
+            userns,
+          }
+          PROFILE
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap
+          bwrap --ro-bind / / --unshare-net --unshare-pid --dev /dev --proc /proc /bin/true
+      - name: The unpacked binary passes the client's smoke test
+        run: node clients/node/smoke.mjs "${{ runner.temp }}/${{ steps.pack.outputs.name }}/wmlhost"
+      # Provenance, not a gate: `gh attestation verify <archive> --repo parawanderer/window-ml-host` proves the archive
+      # was built by this workflow at this tag. The gate is the sha256 window-ml pins.
+      - uses: actions/attest-build-provenance@v4
+        if: github.event_name != 'pull_request'
+        with:
+          subject-path: dist/${{ steps.pack.outputs.name }}.tar.gz
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.pack.outputs.name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: SHA256SUMS over every archive
+        run: |
+          cd dist
+          test "$(ls *.tar.gz | wc -l)" -eq 3 || { echo "::error::expected 3 archives, got: $(ls *.tar.gz)"; exit 1; }
+          shasum -a 256 *.tar.gz | LC_ALL=C sort -k2 > SHA256SUMS
+          shasum -a 256 -c SHA256SUMS
+          cat SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
+      # The repository has immutable releases on: once a release is PUBLISHED its assets and tag are fixed, and no asset
+      # can be added. So the release is made as a DRAFT holding every asset, then published. A published release under
+      # the tag fails here; a draft left by a failed run is filled (a draft is not public, so nothing pins it yet).
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          files=(dist/*.tar.gz dist/*.sha256 dist/SHA256SUMS)
+          if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$draft" != true ]; then
+              echo "::error::$tag is already published, and a published release never changes. Cut a new tag."
+              exit 1
+            fi
+            gh release upload "$tag" "${files[@]}" --clobber
+          else
+            gh release create "$tag" "${files[@]}" --draft --title "$tag" --generate-notes --verify-tag
+          fi
+          gh release edit "$tag" --draft=false
+          echo "Published \`$tag\` ($(git rev-parse HEAD)) with $(ls dist/*.tar.gz | wc -l) archive(s) and SHA256SUMS." >> "$GITHUB_STEP_SUMMARY"
