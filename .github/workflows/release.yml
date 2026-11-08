@@ -28,7 +28,8 @@ on:
     paths: [".github/workflows/release.yml"]
 
 concurrency:
-  group: release-${{ inputs.tag || github.ref }}
+  # One group per TAG, the same for a push (ref_name `v0.7.0`) and a dispatch of that tag (`inputs.tag`).
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
