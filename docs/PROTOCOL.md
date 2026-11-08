@@ -42,6 +42,7 @@ the host answers each as it finishes, not in order. A message that is not an obj
   "sandbox": { "kind": "seatbelt", "available": true, "landlockAbi": null },  // kind: "seatbelt" | "bwrap" | null; "reason" when unavailable; landlockAbi: number | null (Linux only)
   "modes": ["host"],                                                // "container" appears once a runner exists
   "peek": true,                                                     // this host answers `peek`; an older host has no such field
+  "tilde": true,                                                    // this host expands a leading `~` in argv and cwd (see `spawn`); an older host has no such field
   "owners": { "ledger": true, "register": true },                   // ledger false: the table is in memory only; register false over the hub (see "Owners")
   "memory": { "metric": "phys_footprint", "enforcer": "watchdog", "everyMs": 100 },
   "cpu": { "metric": "user+system, with reaped children" } }        // what `cpuMs` counts: measured, never bounded
@@ -107,7 +108,8 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
 
 ```jsonc
 { "id": "c3",                                   // names this pending call for start / discard
-  "argv": ["git", "diff", "--stat", "HEAD~1"],
+  "argv": ["git", "diff", "--stat", "HEAD~1"],  // after tilde expansion
+  "tilde": [],                                  // always present; one entry per `~` argument, see below
   "program": { "path": "/usr/bin/git", "inRoot": false,     // argv[0] after PATH lookup, realpath'd
                "fingerprint": "16777234:1152921500312187:134512:1760000000123456789" },
   "cwd": { "path": "/Users/me/src/proj", "inRoot": true },  // + "containsSecret" with walkCwd
@@ -126,6 +128,15 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
   "expiresInMs": 1800000 }                      // after this the id is gone and start fails UnknownId
 ```
 
+- **`tilde`** lists each argument that began with `~`, in argv order and then `cwd`: `{ "index": 1, "from": "~/notes.txt",
+  "to": "/Users/me/notes.txt" }`. `index` is `number | "cwd"`: the argv position, or the string `"cwd"` for the `cwd` argument.
+  The host rewrites argv and `cwd` before it resolves anything, so `argv`, `paths[].given`, the facts' paths and the
+  program that runs all carry the expanded string, and `from` is where the original lives. An argument expands only when
+  it is exactly `~` or starts with `~/`, in `argv[0]`, every later argument and `cwd` alike: `~user`, `a~/b`, `x=~/a` and
+  `--flag=~/x` stay literal and leave no entry, and nothing else expands (no glob, no `$VAR`). `~` is the host process's
+  own `HOME`, read once at start. When `HOME` is unset, empty or not absolute, the argument stays literal and its entry has
+  `"to": null` and `"reason"`: `"no-home"` (unset or empty) or `"home-not-absolute"`. `cwd` is expanded before the checks
+  on it, so `~/proj` outside every root is `CwdOutsideRoots`, and a `~` cwd with no usable `HOME` is `BadRequest`.
 - **`program.fingerprint`** is `<dev>:<ino>:<size>:<mtime_ns>` of the program file (`null` if its metadata cannot be
   read). Any rewrite of the binary changes it, so the extension can cache what it learned about a program (its version)
   per fingerprint.
