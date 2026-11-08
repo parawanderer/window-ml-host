@@ -23,6 +23,7 @@ use crate::procs;
 use crate::runner::{self, Limits, Meter, Outcome, Prepared};
 use crate::sandbox::{self, Availability, Envelope, ExecScope, Plan, WriteScope};
 use crate::store::{Live, Lives, MAX_READ, Store};
+use crate::tilde;
 use crate::tripwire::{self, Snapshot};
 use crate::walk;
 
@@ -179,6 +180,9 @@ pub struct Host {
     pub warden: Option<PathBuf>,
     /// Where the session's calls come from, and what that bounds.
     pub transport: Transport,
+    /// The host process's own `HOME`, read once: what a leading `~` in argv or `cwd` expands to ([`tilde`]). Unset,
+    /// empty or relative counts as absent when it is used.
+    pub home: Option<PathBuf>,
 }
 
 /// Where a session's calls come from. Over native messaging the extension is the person's own and `configure` sets
@@ -212,6 +216,7 @@ impl Host {
             owners_dir: Some(owners::default_dir(std::env::var("WMLHOST_STATE_DIR").ok())),
             warden: std::env::current_exe().ok(),
             transport: Transport::Native,
+            home: std::env::var_os("HOME").map(PathBuf::from),
         })
     }
 }
@@ -389,6 +394,7 @@ impl Session {
             "sandbox": sandbox,
             "modes": ["host"],
             "peek": true,
+            "tilde": true,
             "owners": { "ledger": self.ledger.is_some(),
                         "register": !matches!(self.host.transport, Transport::Hub { .. }) },
             "cpu": { "metric": procs::CPU_METRIC },
@@ -522,17 +528,28 @@ impl Session {
     fn spawn(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
         let config = self.state.lock().unwrap().config.clone();
         let Some(config) = config else { return fail("NotConfigured", "configure the session first") };
-        let argv =
+        let mut argv =
             string_array(a.get("argv")).ok_or_else(|| Fail("BadRequest", "argv is an array of strings".into()))?;
         if argv.is_empty() || argv.iter().any(|s| s.contains('\0')) {
             return fail("BadRequest", "argv is non-empty, with no NUL in any argument");
+        }
+        // A leading `~` becomes HOME here, before anything reads argv or cwd, so every later step (the cwd check,
+        // `resolve_program`, `path_facts`, `repoArg`, the facts, the worker's judgement, the run) sees one string.
+        let mut tilde: Vec<Value> = Vec::new();
+        let home = self.host.home.as_deref();
+        for (i, arg) in argv.iter_mut().enumerate() {
+            tilde.extend(tilde::apply(arg, json!(i), home));
+        }
+        let mut cwd_arg = a.get("cwd").and_then(Value::as_str).map(String::from);
+        if let Some(c) = cwd_arg.as_mut() {
+            tilde.extend(tilde::apply(c, json!("cwd"), home));
         }
         match a.get("mode").and_then(Value::as_str).unwrap_or("host") {
             "host" => {}
             "container" => return fail("Unsupported", "container mode has no runner in this version"),
             m => return fail("BadRequest", format!("mode {m:?}")),
         }
-        let Some(cwd_given) = a.get("cwd").and_then(Value::as_str) else {
+        let Some(cwd_given) = cwd_arg.as_deref() else {
             return fail("BadRequest", "cwd is an absolute path");
         };
         if !Path::new(cwd_given).is_absolute() {
@@ -596,6 +613,7 @@ impl Session {
         let facts = json!({
             "id": id,
             "argv": argv,
+            "tilde": tilde,
             "program": { "path": program, "inRoot": facts::in_roots(&program, &config.roots),
                          "fingerprint": facts::fingerprint(&program) },
             "cwd": cwd_fact,
@@ -1403,6 +1421,7 @@ mod tests {
             owners_dir: Some(dir.path().join("owners")),
             warden: None,
             transport,
+            home: None,
         };
         let (mut to_host, host_in) = tokio::io::duplex(1 << 20);
         let (host_out, mut from_host) = tokio::io::duplex(1 << 20);

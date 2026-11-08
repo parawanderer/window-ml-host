@@ -29,6 +29,7 @@ async fn an_unavailable_sandbox_is_reported_and_nothing_runs_without_start() {
         owners_dir: None,
         warden: None,
         transport: Default::default(),
+        home: None,
     };
     let (mut ours, theirs) = tokio::io::duplex(1 << 20);
     let (rd, wr) = tokio::io::split(theirs);

@@ -42,7 +42,11 @@ impl Host {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
         for (k, v) in extra {
-            c.env(k, v);
+            // A name written `-NAME` removes NAME from the child's environment instead of setting it.
+            match k.strip_prefix('-') {
+                Some(name) => c.env_remove(name),
+                None => c.env(k, v),
+            };
         }
         let mut child = c.spawn().expect("wmlhost starts");
         let stdin = child.stdin.take();
@@ -2326,5 +2330,201 @@ fn a_spawned_call_s_done_carries_its_cpu_time() {
     assert_eq!(d["ok"], true, "{d}");
     let cpu = d["cpuMs"].as_u64().unwrap();
     assert!(cpu >= 500, "about a second of spinning, sampled every 100 ms: {cpu} ms");
+    h.close();
+}
+
+// --- tilde: a leading `~` in argv and cwd becomes HOME before anything is resolved ---
+
+/// A host whose HOME is `home`, configured with `roots`.
+fn tilde_host(home: &Path, roots: &[&Path]) -> Host {
+    let mut h = Host::start_with_env(&[("HOME", home.to_str().unwrap())]);
+    h.ok("configure", json!({ "roots": roots }));
+    h
+}
+
+/// The facts of `argv` (run in `cwd`) on a host whose HOME is `home` and whose only root is `r`.
+fn tilde_facts(home: &Path, r: &Path, argv: Value) -> Value {
+    let mut h = tilde_host(home, &[r]);
+    let f = h.ok("spawn", json!({ "argv": argv, "cwd": r }));
+    h.close();
+    f
+}
+
+#[test]
+fn hello_offers_tilde() {
+    let mut h = Host::start();
+    assert_eq!(h.ok("hello", json!({}))["tilde"], true);
+    h.close();
+}
+
+#[test]
+fn tilde_is_always_present_and_empty_when_nothing_expanded() {
+    let (_d, r) = root();
+    let f = tilde_facts(&r, &r, json!(["echo", "plain"]));
+    assert_eq!(f["tilde"], json!([]));
+}
+
+#[test]
+fn a_tilde_operand_expands_and_the_facts_say_so() {
+    let (_d, r) = root();
+    let f = tilde_facts(&r, &r, json!(["echo", "~/x"]));
+    let to = format!("{}/x", r.display());
+    assert_eq!(f["argv"], json!(["echo", to]));
+    assert_eq!(f["tilde"], json!([{ "index": 1, "from": "~/x", "to": to }]));
+}
+
+#[test]
+fn a_lone_tilde_expands_to_home() {
+    let (_d, r) = root();
+    let f = tilde_facts(&r, &r, json!(["echo", "~"]));
+    assert_eq!(f["argv"][1], json!(r));
+    assert_eq!(f["tilde"], json!([{ "index": 1, "from": "~", "to": r }]));
+}
+
+#[test]
+fn a_tilde_in_argv_zero_resolves_the_program_under_home() {
+    let (_d, r) = root();
+    std::fs::create_dir(r.join("bin")).unwrap();
+    let tool = r.join("bin/tool");
+    std::fs::write(&tool, "#!/bin/sh\necho hi\n").unwrap();
+    std::fs::set_permissions(&tool, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let f = tilde_facts(&r, &r, json!(["~/bin/tool"]));
+    assert_eq!(f["program"]["path"], json!(tool));
+    assert_eq!(f["tilde"][0]["index"], 0);
+    assert_eq!(f["tilde"][0]["from"], "~/bin/tool");
+}
+
+#[test]
+fn a_tilde_cwd_expands_and_must_still_lie_in_a_root() {
+    let (_d, r) = root();
+    std::fs::create_dir(r.join("proj")).unwrap();
+    let mut h = tilde_host(&r, &[&r]);
+    let f = h.ok("spawn", json!({ "argv": ["true"], "cwd": "~/proj" }));
+    assert_eq!(f["cwd"]["path"], json!(r.join("proj")));
+    assert_eq!(f["tilde"], json!([{ "index": "cwd", "from": "~/proj", "to": r.join("proj") }]));
+    h.close();
+}
+
+#[test]
+fn a_tilde_cwd_outside_the_roots_is_cwd_outside_roots() {
+    let (_d, r) = root();
+    let (_o, home) = root();
+    std::fs::create_dir(home.join("outside")).unwrap();
+    let mut h = tilde_host(&home, &[&r]);
+    for cwd in ["~/outside", "~"] {
+        let e = h.call("spawn", json!({ "argv": ["true"], "cwd": cwd })).unwrap_err();
+        assert_eq!(e.0, "CwdOutsideRoots", "{cwd}");
+    }
+    h.close();
+}
+
+/// `arg` stays as written, with no tilde entry, while HOME is usable.
+fn assert_literal(arg: &str) {
+    let (_d, r) = root();
+    let f = tilde_facts(&r, &r, json!(["echo", arg]));
+    assert_eq!(f["argv"][1], arg);
+    assert_eq!(f["tilde"], json!([]), "{arg}");
+}
+
+#[test]
+fn tilde_user_stays_literal() {
+    assert_literal("~user");
+    assert_literal("~user/x");
+}
+
+#[test]
+fn a_tilde_inside_a_word_stays_literal() {
+    assert_literal("a~b");
+}
+
+#[test]
+fn a_tilde_after_a_slash_or_a_word_slash_stays_literal() {
+    assert_literal("a~/b");
+    assert_literal("x/~");
+}
+
+#[test]
+fn a_tilde_after_an_equals_sign_stays_literal() {
+    assert_literal("--flag=~/x");
+    assert_literal("x=~/a");
+}
+
+#[test]
+fn double_tilde_and_tilde_space_stay_literal() {
+    assert_literal("~~");
+    assert_literal("~ ");
+}
+
+#[test]
+fn without_a_usable_home_the_argument_stays_literal_with_a_reason() {
+    let (_d, r) = root();
+    for (env, reason) in
+        [(("-HOME", ""), "no-home"), (("HOME", ""), "no-home"), (("HOME", "rel/home"), "home-not-absolute")]
+    {
+        let mut h = Host::start_with_env(&[env]);
+        h.ok("configure", json!({ "roots": [r] }));
+        let f = h.ok("spawn", json!({ "argv": ["echo", "~/x", "~"], "cwd": r }));
+        assert_eq!(f["argv"], json!(["echo", "~/x", "~"]), "{env:?}");
+        assert_eq!(
+            f["tilde"],
+            json!([
+                { "index": 1, "from": "~/x", "to": null, "reason": reason },
+                { "index": 2, "from": "~", "to": null, "reason": reason },
+            ]),
+            "{env:?}"
+        );
+        h.close();
+    }
+}
+
+#[test]
+fn a_tilde_cwd_without_home_is_a_bad_request() {
+    let (_d, r) = root();
+    let mut h = Host::start_with_env(&[("-HOME", "")]);
+    h.ok("configure", json!({ "roots": [r] }));
+    let e = h.call("spawn", json!({ "argv": ["true"], "cwd": "~/p" })).unwrap_err();
+    assert_eq!(e.0, "BadRequest");
+    h.close();
+}
+
+#[test]
+fn the_child_receives_the_expanded_argument() {
+    let (_d, r) = root();
+    let mut h = tilde_host(&r, &[&r]);
+    let (f, d) = h.run(json!({ "argv": ["echo", "~/x", "~y"], "cwd": r }));
+    assert_eq!(text(&h.read_all(&d["stdout"])), format!("{}/x ~y\n", r.display()));
+    assert_eq!(f["argv"][1], json!(format!("{}/x", r.display())));
+    h.close();
+}
+
+#[test]
+fn a_path_operand_with_a_tilde_resolves_under_home_and_agrees_with_argv() {
+    let (_d, r) = root();
+    std::fs::write(r.join("notes.txt"), "x").unwrap();
+    let mut h = tilde_host(&r, &[&r]);
+    let f = h.ok("spawn", json!({ "argv": ["cat", "~/notes.txt"], "cwd": r, "pathArgs": [{ "arg": 1 }] }));
+    let want = r.join("notes.txt");
+    assert_eq!(f["argv"][1], json!(want));
+    assert_eq!(f["paths"][0]["given"], json!(want), "given is the expanded string; tilde holds the original");
+    assert_eq!(f["paths"][0]["path"], json!(want));
+    assert_eq!(f["paths"][0]["inRoot"], true);
+    assert_eq!(f["paths"][0]["secret"], false);
+    assert_eq!(f["paths"][0]["exists"], true);
+    assert_eq!(f["tilde"][0]["from"], "~/notes.txt");
+    h.close();
+}
+
+#[test]
+fn a_tilde_ssh_config_operand_is_judged_at_its_real_path() {
+    let (_d, r) = root();
+    let (_o, home) = root();
+    std::fs::create_dir(home.join(".ssh")).unwrap();
+    std::fs::write(home.join(".ssh/config"), "Host *").unwrap();
+    let mut h = tilde_host(&home, &[&r]);
+    let f = h.ok("spawn", json!({ "argv": ["cat", "~/.ssh/config"], "cwd": r, "pathArgs": [{ "arg": 1 }] }));
+    let p = &f["paths"][0];
+    assert_eq!(p["path"], json!(home.join(".ssh/config")));
+    assert_eq!(p["secret"], true);
+    assert_eq!(p["inRoot"], false);
     h.close();
 }
