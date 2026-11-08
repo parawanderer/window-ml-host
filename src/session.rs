@@ -13,6 +13,7 @@ use serde_json::{Map, Value, json};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{Notify, mpsc};
 
+use crate::credential::{self, Grant};
 use crate::env::{self, CallEnv, EnvError, NoSecrets, SecretStore};
 use crate::facts;
 use crate::framing::{self, FrameError, MAX_OUT};
@@ -133,6 +134,8 @@ struct Pending {
     owner_loss: OwnerLoss,
     /// The worker's narrowing envelope from `start`/`pipe`; `None` means today's floor.
     envelope: Option<Envelope>,
+    /// The credential the host injects at launch (src/credential.rs), when the spawn asked for one and it was honoured.
+    credential: Option<Grant>,
     /// The config it was judged against (a reconfigure drops pending calls, so this is the current one).
     config: Config,
 }
@@ -423,6 +426,13 @@ impl Session {
             "modes": ["host"],
             "peek": true,
             "tilde": true,
+            // The credential providers a spawn may name: none where the sandbox cannot hold the profile (Linux, in
+            // this version), and none over the hub. The worker's only gate.
+            "credentials": if self.host.sandbox.holds_credentials() && matches!(self.host.transport, Transport::Native) {
+                credential::PROVIDERS.iter().map(|p| p.name).collect::<Vec<_>>()
+            } else {
+                vec![]
+            },
             // Over the hub `put` is refused, so it is not offered: the file would land on another machine.
             "put": if matches!(self.host.transport, Transport::Hub { .. }) { Value::Null } else { json!({ "max": put::MAX_PUT }) },
             "owners": { "ledger": self.ledger.is_some(),
@@ -601,6 +611,35 @@ impl Session {
         };
         let program =
             facts::resolve_program(&argv[0], &cwd, &config.path).map_err(|e| Fail("ProgramNotFound", e.to_string()))?;
+        // A credential the host injects: honoured only for its provider's program, a manifest this host pinned and a
+        // sandbox that can hold the profile. Anything else is refused, never run under the ordinary profile.
+        let credential = match a.get("credential") {
+            None | Some(Value::Null) => None,
+            Some(Value::Object(c)) => {
+                let (Some(Value::String(provider)), Some(Value::String(manifest)), 2) =
+                    (c.get("provider"), c.get("manifest"), c.len())
+                else {
+                    return fail("BadRequest", "credential is {provider, manifest}");
+                };
+                if matches!(self.host.transport, Transport::Hub { .. }) {
+                    return fail(
+                        "CredentialRefused",
+                        "a credential is not offered over the hub: only a connection on this machine may send the person's token",
+                    );
+                }
+                let in_root = facts::in_roots(&program, &config.roots);
+                let grant = credential::honour(provider, manifest, &argv[0], &program, in_root)
+                    .map_err(|m| Fail("CredentialRefused", m))?;
+                if !(config.sandbox && self.host.sandbox.holds_credentials()) {
+                    return fail(
+                        "SandboxFailed",
+                        "a credentialed call runs only under a sandbox that can hold its profile (macOS's, in this version)",
+                    );
+                }
+                Some(grant)
+            }
+            Some(_) => return fail("BadRequest", "credential is {provider, manifest}"),
+        };
         let paths = self.path_facts(a.get("pathArgs"), &argv, &cwd, &config.roots)?;
         let mut cwd_fact = json!({ "path": cwd, "inRoot": true });
         if opt_bool(a, "walkCwd")?.unwrap_or(false) {
@@ -656,6 +695,8 @@ impl Session {
             // the host could compute nothing of (PROTOCOL.md).
             "repoConfigRunsCode": repo.as_ref().is_some_and(|r| r.runs_code),
             "paths": paths,
+            "credential": credential.as_ref().map(|g| json!({ "provider": g.provider.name, "ports": g.ports,
+                                                              "profile": g.provider.profile })),
             "effects": "unknown",
             "mode": "host",
             "sandboxed": sandboxed,
@@ -681,6 +722,7 @@ impl Session {
                 memory_bound,
                 owner_loss,
                 envelope: None,
+                credential,
                 config,
             },
         );
@@ -757,6 +799,7 @@ impl Session {
             }
         };
         p.envelope = parse_envelope(a.get("envelope"))?;
+        p.envelope = applied_envelope(&p);
         // What the protected names look like before the program runs: `done` reports what changed since.
         let protected = tripwire::snapshot(&p.config.roots);
         let (running, _) = self.launch(id, &p, Stdio::null(), false)?;
@@ -790,6 +833,7 @@ impl Session {
         };
         for (p, e) in stages.iter_mut().zip(envelopes) {
             p.envelope = e;
+            p.envelope = applied_envelope(p);
         }
         // One snapshot for every stage, taken before the first starts: each stage's `done` reports the pipe's changes.
         // Every stage has the same roots: `configure` drops every pending call, so no stage predates the current config.
@@ -862,7 +906,7 @@ impl Session {
             Ok(path) => path,
             Err(e) => return failed(Fail("SpawnFailed", e.to_string())),
         };
-        let envmap = match env::build(
+        let mut envmap = match env::build(
             &*self.host.host_env,
             &path.to_string_lossy(),
             &tmp.to_string_lossy(),
@@ -872,13 +916,47 @@ impl Session {
             Ok(m) => m,
             Err(_) => return failed(Fail("SecretUnavailable", "a secret went away between spawn and start".into())),
         };
+        if let Some(g) = &p.credential {
+            // The token is read now, after the verdict, from the call's own resolved binary run unconfined; the fetch
+            // sees the host's identity and PATH, nothing the call set. No token: the call never starts.
+            let mut base = vec![("PATH".to_string(), path.to_string_lossy().into_owned())];
+            for k in ["HOME", "USER", "LOGNAME"] {
+                if let Some(v) = (self.host.host_env)(k) {
+                    base.push((k.to_string(), v));
+                }
+            }
+            let token = match credential::fetch_token(g.provider, &p.program, &base, &*self.host.host_env) {
+                Ok(t) => t,
+                Err(m) => return failed(Fail("SecretUnavailable", m)),
+            };
+            let config_dir = tmp.join(g.provider.name);
+            if let Err(e) = std::fs::create_dir(&config_dir) {
+                return failed(Fail("SpawnFailed", format!("config dir: {e}")));
+            }
+            envmap.insert(g.provider.token_env.into(), token);
+            envmap.insert(g.provider.config_env.into(), config_dir.to_string_lossy().into_owned());
+            envmap.extend(g.provider.fixed_env.iter().map(|(k, v)| (k.to_string(), v.to_string())));
+        }
         let prepared = if p.sandboxed {
             let env = p.envelope.unwrap_or_else(Envelope::today);
             let exec = if env.program_only {
                 let hashed: Vec<PathBuf> = p.pins.iter().map(|(x, _)| x.clone()).collect();
-                let path = (self.host.host_env)("PATH");
-                match sandbox::exec_set(&p.program, &hashed, path.as_deref()) {
-                    Ok(set) => ExecScope::ProgramOnly(set),
+                let host_path = (self.host.host_env)("PATH");
+                match sandbox::exec_set(&p.program, &hashed, host_path.as_deref()) {
+                    Ok(mut set) => {
+                        // A credentialed gh may run git (and git its https helpers), each with its own chain.
+                        if p.credential.is_some() {
+                            let in_root = |x: &Path| facts::in_roots(x, &p.config.roots);
+                            for g in credential::git_set(Some(&path.to_string_lossy()), &in_root) {
+                                for x in sandbox::exec_set(&g, &[], host_path.as_deref()).unwrap_or_default() {
+                                    if !set.contains(&x) {
+                                        set.push(x);
+                                    }
+                                }
+                            }
+                        }
+                        ExecScope::ProgramOnly(set)
+                    }
                     Err(m) => return failed(Fail("SandboxFailed", m)),
                 }
             } else {
@@ -893,6 +971,7 @@ impl Session {
                 outlives_host: matches!(p.owner_loss, OwnerLoss::Orphan(_)),
                 write: env.write,
                 exec,
+                net_ports: p.credential.as_ref().map(|g| g.ports.clone()).unwrap_or_default(),
             };
             if !self.host.sandbox.can_hold(&plan) {
                 return failed(Fail(
@@ -1458,7 +1537,15 @@ fn parse_envelope(v: Option<&Value>) -> Result<Option<Envelope>, Fail> {
         "program-only" => true,
         _ => return fail("BadRequest", format!("envelope.exec {e:?} is \"any\" or \"program-only\"")),
     };
-    Ok(Some(Envelope { write, program_only }))
+    Ok(Some(Envelope { write, program_only, profile: None }))
+}
+
+/// The envelope a call runs under: the worker's, or for a credentialed call the worker's write scope with exec always
+/// program-only and its profile named, so `done` reports what was applied.
+fn applied_envelope(p: &Pending) -> Option<Envelope> {
+    let Some(g) = &p.credential else { return p.envelope };
+    let e = p.envelope.unwrap_or_else(Envelope::today);
+    Some(Envelope { write: e.write, program_only: true, profile: Some(g.provider.profile) })
 }
 
 /// The optional `envelopes` of `pipe`: one per id, each `null` (that stage keeps today's floor) or an

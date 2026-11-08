@@ -60,6 +60,14 @@
     "GIT_CONFIG_PARAMETERS",
     "GIT_PROXY_COMMAND"
   ],
+  "credential": {
+    "provider": "github"
+  },
+  "network": {
+    "ports": [
+      443
+    ]
+  },
   "command": {
     "effects": [],
     "paths": "none",

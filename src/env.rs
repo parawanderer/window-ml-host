@@ -110,9 +110,26 @@ const DENY_NAMES: &[&str] = &[
 ];
 
 /// Prefixes a call may never set: the dynamic loaders, git's config injection and tracing (which writes to a path it
-/// names), npm's config, and exported shell functions.
-const DENY_PREFIXES: &[&str] =
-    &["LD_", "DYLD_", "GIT_CONFIG", "GIT_TRACE", "NPM_CONFIG_", "BASH_FUNC_", "MALLOC", "SSH_", "GPG_"];
+/// names), npm's config, exported shell functions, and what points a credentialed program at another host, token,
+/// config or trust store (`GH_*`, `GITHUB_*`, `SSL_CERT_*`; the host sets gh's own, [`crate::credential`]).
+const DENY_PREFIXES: &[&str] = &[
+    "LD_",
+    "DYLD_",
+    "GIT_CONFIG",
+    "GIT_TRACE",
+    "NPM_CONFIG_",
+    "BASH_FUNC_",
+    "MALLOC",
+    "SSH_",
+    "GPG_",
+    "GH_",
+    "GITHUB_",
+    "SSL_CERT_",
+];
+
+/// Suffixes a call may never set: every proxy (`HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, …), which would route a
+/// credentialed call's traffic, token and all, through a host the call names.
+const DENY_SUFFIXES: &[&str] = &["_PROXY"];
 
 /// Why an `env` entry was refused.
 #[derive(Debug, PartialEq, Eq)]
@@ -180,7 +197,9 @@ pub fn check_call_env(env: &serde_json::Map<String, Value>, store: &dyn SecretSt
 /// Whether a call may never set `name`.
 pub fn denied(name: &str) -> bool {
     let up = name.to_ascii_uppercase();
-    DENY_NAMES.contains(&up.as_str()) || DENY_PREFIXES.iter().any(|p| up.starts_with(p))
+    DENY_NAMES.contains(&up.as_str())
+        || DENY_PREFIXES.iter().any(|p| up.starts_with(p))
+        || DENY_SUFFIXES.iter().any(|x| up.ends_with(x))
 }
 
 fn valid_name(n: &str) -> bool {
@@ -257,6 +276,22 @@ mod tests {
             "RIPGREP_CONFIG_PATH",
             "GIT_DIR",
             "SSH_AUTH_SOCK",
+            // a credentialed call's host, token, config and route (#1538's finding (c))
+            "GH_TOKEN",
+            "GH_HOST",
+            "GH_CONFIG_DIR",
+            "GH_ENTERPRISE_TOKEN",
+            "gh_token",
+            "GITHUB_TOKEN",
+            "GITHUB_ENTERPRISE_TOKEN",
+            "HTTPS_PROXY",
+            "https_proxy",
+            "HTTP_PROXY",
+            "ALL_PROXY",
+            "NO_PROXY",
+            "no_proxy",
+            "SSL_CERT_FILE",
+            "SSL_CERT_DIR",
         ] {
             let r = check(json!({ n: "x" }));
             assert!(matches!(r, Err(EnvError::Refused(_)) | Err(EnvError::Bad(_))), "{n}: {r:?}");
@@ -276,7 +311,7 @@ mod tests {
     #[test]
     fn a_secret_handle_is_unavailable_while_the_store_is_empty() {
         assert_eq!(
-            check(json!({ "GITHUB_TOKEN": { "$secret": "github" } })),
+            check(json!({ "API_TOKEN": { "$secret": "github" } })),
             Err(EnvError::SecretUnavailable("github".into()))
         );
     }
@@ -289,10 +324,10 @@ mod tests {
                 (n == "github").then(|| "s3cret".into())
             }
         }
-        let e = check_call_env(json!({ "GITHUB_TOKEN": { "$secret": "github" } }).as_object().unwrap(), &One).unwrap();
-        assert_eq!(e.secrets.get("GITHUB_TOKEN").map(String::as_str), Some("github"));
+        let e = check_call_env(json!({ "API_TOKEN": { "$secret": "github" } }).as_object().unwrap(), &One).unwrap();
+        assert_eq!(e.secrets.get("API_TOKEN").map(String::as_str), Some("github"));
         let env = build(&|_| None, "/usr/bin", "/tmp/x", &e, &One).unwrap();
-        assert_eq!(env.get("GITHUB_TOKEN").map(String::as_str), Some("s3cret"));
+        assert_eq!(env.get("API_TOKEN").map(String::as_str), Some("s3cret"));
     }
 
     // --- the scrubbed base ---

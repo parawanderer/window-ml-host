@@ -380,8 +380,28 @@ pub struct Manifest {
     /// Environment variables that change what the program does.
     #[serde(default)]
     pub env: Vec<String>,
+    /// A credential the host holds and injects, named by provider ([`crate::credential`]).
+    pub credential: Option<ManifestCredential>,
+    /// What the credentialed profile may connect to.
+    pub network: Option<ManifestNetwork>,
     /// The command tree.
     pub command: CommandSpec,
+}
+
+/// Which host-held credential a program's calls carry.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestCredential {
+    /// A provider of [`crate::credential::PROVIDERS`].
+    pub provider: String,
+}
+
+/// The ports a credentialed call may connect to.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestNetwork {
+    /// TCP ports, each one of the provider's.
+    pub ports: Vec<u16>,
 }
 
 // --- the description ---
