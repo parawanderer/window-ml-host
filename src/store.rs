@@ -169,6 +169,9 @@ impl Store {
         let size = live.kept.load(Ordering::Acquire);
         let Some(name) = live.name.get().filter(|_| size > 0) else { return Ok((Vec::new(), 0, truncated)) };
         let mut f = fsx::open_beneath(&self.out, Path::new(name))?;
+        // Never past what the file holds, whatever `kept` says: the flush in `capture` is what keeps the two equal,
+        // and this clamp is what makes a reader safe without depending on it.
+        let size = size.min(f.metadata()?.len());
         let len = bytes.min(MAX_READ).min(size);
         f.seek(SeekFrom::Start(size - len))?;
         let mut buf = vec![0u8; len as usize];
@@ -263,6 +266,21 @@ mod tests {
     }
 
     // --- output of a stream still being written ---
+
+    #[tokio::test]
+    async fn a_count_published_ahead_of_the_file_never_reads_past_it() {
+        // What an unflushed write would look like to a reader: `kept` says 5000, the file holds 1000.
+        let base = tempfile::tempdir().unwrap();
+        let s = Store::create(base.path()).unwrap();
+        let live = Live::default();
+        let name = "ahead";
+        std::fs::write(s.out.join(name), vec![7u8; 1000]).unwrap();
+        live.name.set(name.into()).unwrap();
+        live.kept.store(5000, Ordering::Release);
+        let (data, size, _) = s.peek_tail(&live, 100).unwrap();
+        assert_eq!(size, 1000, "the size is what the file holds");
+        assert_eq!(data, vec![7u8; 100], "the tail is the file's own last bytes");
+    }
 
     #[tokio::test]
     async fn a_published_size_never_exceeds_the_bytes_on_disk() {
