@@ -66,6 +66,14 @@
   "network": {
     "ports": [
       443
+    ],
+    "hosts": [
+      "api.github.com",
+      "github.com",
+      "uploads.github.com",
+      "codeload.github.com",
+      "raw.githubusercontent.com",
+      "release-assets.githubusercontent.com"
     ]
   },
   "command": {

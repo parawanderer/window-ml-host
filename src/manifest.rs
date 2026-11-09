@@ -396,12 +396,15 @@ pub struct ManifestCredential {
     pub provider: String,
 }
 
-/// The ports a credentialed call may connect to.
+/// Where a credentialed call may connect: ports and, through its proxy, host names.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestNetwork {
     /// TCP ports, each one of the provider's.
     pub ports: Vec<u16>,
+    /// Host names, each one of the provider's; absent (a manifest from before hosts) means all of them.
+    #[serde(default)]
+    pub hosts: Option<Vec<String>>,
 }
 
 // --- the description ---

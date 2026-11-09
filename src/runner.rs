@@ -94,12 +94,15 @@ pub struct Prepared {
     pub argv0: Option<String>,
     pub cwd: PathBuf,
     pub env: BTreeMap<String, String>,
+    /// A credentialed call's proxy: it lives exactly as long as the call ([`finish`] and [`abort`] drop it).
+    pub proxy: Option<crate::proxy::Proxy>,
 }
 
 /// A started call.
 pub struct Running {
     child: Child,
     pub pid: u32,
+    proxy: Option<crate::proxy::Proxy>,
 }
 
 /// How a call ended.
@@ -153,7 +156,7 @@ pub fn spawn(p: Prepared, stdin: Stdio) -> std::io::Result<Running> {
     }
     let child = c.spawn()?;
     let pid = child.id().unwrap_or(0);
-    Ok(Running { child, pid })
+    Ok(Running { child, pid, proxy: p.proxy })
 }
 
 fn signal_group(pgid: u32, sig: Signal) {
@@ -237,6 +240,8 @@ pub async fn finish(
     // The call is over: anything it left running in its group (holding the pipes open, or just lingering) goes too, and
     // what left the group: a descendant in a session of its own, found through the members the watchdog last saw.
     kill_tree(pgid, &meter.tracked());
+    // A credentialed call's proxy closes with it, before its `done` is sent.
+    drop(r.proxy.take());
     let join = |t: tokio::task::JoinHandle<Captured>| async move {
         match tokio::time::timeout(DRAIN_GRACE, t).await {
             Ok(Ok(c)) => c,
@@ -375,6 +380,7 @@ mod tests {
             argv0: None,
             cwd: base.path().into(),
             env,
+            proxy: None,
         };
         (spawn(p, Stdio::null()).unwrap(), store, base)
     }

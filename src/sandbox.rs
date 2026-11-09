@@ -51,7 +51,7 @@ impl Availability {
         match self.kind {
             Some(Kind::Seatbelt) => true,
             Some(Kind::Bwrap) => {
-                plan.net_ports.is_empty()
+                plan.proxy.is_none()
                     && (self.landlock_abi.is_some()
                         || (plan.write == WriteScope::Today && matches!(plan.exec, ExecScope::Any)))
             }
@@ -245,8 +245,9 @@ pub struct Plan {
     pub write: WriteScope,
     /// What the call may exec. `Any` is today's floor; `ProgramOnly` carries the resolved set.
     pub exec: ExecScope,
-    /// A credentialed call's TCP ports (any address), with DNS and certificate checks; empty is no network at all.
-    pub net_ports: Vec<u16>,
+    /// A credentialed call's proxy port (src/proxy.rs): the one outbound address, `localhost:<port>`, plus certificate
+    /// checks. `None` is no network at all.
+    pub proxy: Option<u16>,
 }
 
 /// The command that runs `program` with `args` under the sandbox in `cwd`. `program` is a realpath.
@@ -617,18 +618,14 @@ fn re(r: &str) -> String {
 /// The profile for one call. Later rules win in SBPL, which the order below relies on.
 pub fn seatbelt_profile(plan: &Plan) -> String {
     let mut p = vec![base_profile()];
-    if plan.net_ports.is_empty() {
-        p.push("; network: nothing (deny default covers network*)".into());
-    } else {
-        // A credentialed call (src/credential.rs): its ports at any address, the resolver's socket and the trust
-        // daemon. Seatbelt filters by address and port, not by name, so this is the narrowest rule that works.
-        p.push("; network: the credentialed profile's ports, DNS and certificate checks".into());
-        let ports: Vec<String> = plan.net_ports.iter().map(|n| format!("(remote tcp \"*:{n}\")")).collect();
-        p.push(format!(
-            "(allow network-outbound {} (remote unix-socket (path-literal \"/private/var/run/mDNSResponder\")))",
-            ports.join(" ")
-        ));
+    if let Some(port) = plan.proxy {
+        // A credentialed call (src/credential.rs): its own proxy's port on localhost and nothing else, not even the
+        // resolver's socket (the proxy resolves the listed name); certificates are still checked in the child.
+        p.push("; network: the call's proxy alone, and certificate checks".into());
+        p.push(format!("(allow network-outbound (remote ip \"localhost:{port}\"))"));
         p.push("(allow mach-lookup (global-name \"com.apple.trustd.agent\"))".into());
+    } else {
+        p.push("; network: nothing (deny default covers network*)".into());
     }
     p.push("; reads: everywhere, except credential stores, unless the call names one".into());
     p.push("(allow file-read*)".into());
@@ -754,7 +751,7 @@ mod tests {
             outlives_host: false,
             write: WriteScope::Today,
             exec: ExecScope::Any,
-            net_ports: vec![],
+            proxy: None,
         }
     }
 
@@ -768,11 +765,12 @@ mod tests {
     }
 
     #[test]
-    fn only_a_credentialed_plan_opens_the_network_and_only_on_its_ports() {
-        let p = seatbelt_profile(&Plan { net_ports: vec![443], ..plan() });
-        assert!(p.contains("(allow network-outbound (remote tcp \"*:443\") (remote unix-socket (path-literal \"/private/var/run/mDNSResponder\")))"));
+    fn only_a_credentialed_plan_opens_the_network_and_only_to_its_proxy() {
+        let p = seatbelt_profile(&Plan { proxy: Some(50123), ..plan() });
+        assert!(p.contains("(allow network-outbound (remote ip \"localhost:50123\"))"));
         assert!(p.contains("(allow mach-lookup (global-name \"com.apple.trustd.agent\"))"));
-        assert_eq!(p.matches("(remote tcp").count(), 1, "one port, one rule");
+        assert_eq!(p.matches("network-outbound").count(), 1, "one address, one rule");
+        assert!(!p.contains("remote tcp") && !p.contains("mDNSResponder"), "no port at any address, no resolver");
         assert!(!seatbelt_profile(&plan()).contains("trustd.agent"));
         let bwrap = Availability {
             kind: Some(Kind::Bwrap),
@@ -781,7 +779,7 @@ mod tests {
             reason: None,
             landlock_abi: Some(6),
         };
-        assert!(!bwrap.can_hold(&Plan { net_ports: vec![443], ..plan() }), "bwrap has no per-port rule");
+        assert!(!bwrap.can_hold(&Plan { proxy: Some(50123), ..plan() }), "bwrap has no forwarder yet");
         assert!(!bwrap.holds_credentials());
     }
 
@@ -813,7 +811,7 @@ mod tests {
             outlives_host: false,
             write: WriteScope::Today,
             exec: ExecScope::Any,
-            net_ports: vec![],
+            proxy: None,
         };
 
         // write: none drops every root write, keeps tmp
@@ -905,7 +903,7 @@ mod tests {
             outlives_host: false,
             write: WriteScope::Roots,
             exec: ExecScope::Any,
-            net_ports: vec![],
+            proxy: None,
         };
         let a: Vec<String> = bwrap_args(&pl, root.path()).iter().map(|s| s.to_string_lossy().into_owned()).collect();
         let joined = a.join(" ");
@@ -941,7 +939,7 @@ mod tests {
             outlives_host: false,
             write: WriteScope::Roots,
             exec: ExecScope::Any,
-            net_ports: vec![],
+            proxy: None,
         };
         let a: Vec<String> = bwrap_args(&pl, root.path()).iter().map(|s| s.to_string_lossy().into_owned()).collect();
         for rel in &rels {

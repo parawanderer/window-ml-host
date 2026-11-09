@@ -16,6 +16,7 @@ pub mod install;
 pub mod manifest;
 pub mod owners;
 pub mod procs;
+pub mod proxy;
 pub mod put;
 pub mod register;
 pub mod runner;

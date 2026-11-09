@@ -696,7 +696,7 @@ impl Session {
             "repoConfigRunsCode": repo.as_ref().is_some_and(|r| r.runs_code),
             "paths": paths,
             "credential": credential.as_ref().map(|g| json!({ "provider": g.provider.name, "ports": g.ports,
-                                                              "profile": g.provider.profile })),
+                                                              "hosts": g.hosts, "profile": g.provider.profile })),
             "effects": "unknown",
             "mode": "host",
             "sandboxed": sandboxed,
@@ -916,6 +916,7 @@ impl Session {
             Ok(m) => m,
             Err(_) => return failed(Fail("SecretUnavailable", "a secret went away between spawn and start".into())),
         };
+        let mut call_proxy: Option<crate::proxy::Proxy> = None;
         if let Some(g) = &p.credential {
             // The token is read now, after the verdict, from the call's own resolved binary run unconfined; the fetch
             // sees the host's identity and PATH, nothing the call set. No token: the call never starts.
@@ -936,6 +937,15 @@ impl Session {
             envmap.insert(g.provider.token_env.into(), token);
             envmap.insert(g.provider.config_env.into(), config_dir.to_string_lossy().into_owned());
             envmap.extend(g.provider.fixed_env.iter().map(|(k, v)| (k.to_string(), v.to_string())));
+            // The call's one way out (src/proxy.rs): the profile allows only this port, and the env routes to it.
+            let px = match crate::proxy::start(g.hosts.clone(), g.ports.clone()) {
+                Ok(px) => px,
+                Err(e) => return failed(Fail("SpawnFailed", format!("proxy: {e}"))),
+            };
+            let url = format!("http://127.0.0.1:{}", px.port);
+            envmap.extend(credential::PROXY_ENV.iter().map(|k| (k.to_string(), url.clone())));
+            envmap.extend(credential::NO_PROXY_ENV.iter().map(|k| (k.to_string(), String::new())));
+            call_proxy = Some(px);
         }
         let prepared = if p.sandboxed {
             let env = p.envelope.unwrap_or_else(Envelope::today);
@@ -971,7 +981,7 @@ impl Session {
                 outlives_host: matches!(p.owner_loss, OwnerLoss::Orphan(_)),
                 write: env.write,
                 exec,
-                net_ports: p.credential.as_ref().map(|g| g.ports.clone()).unwrap_or_default(),
+                proxy: call_proxy.as_ref().map(|x| x.port),
             };
             if !self.host.sandbox.can_hold(&plan) {
                 return failed(Fail(
@@ -982,7 +992,7 @@ impl Session {
             let Some((prog, args)) = sandbox::wrap(&self.host.sandbox, &plan, &p.program, &p.argv[1..], &p.cwd) else {
                 return failed(Fail("SandboxFailed", "the sandbox is not available".into()));
             };
-            Prepared { program: prog, args, argv0: None, cwd: p.cwd.clone(), env: envmap }
+            Prepared { program: prog, args, argv0: None, cwd: p.cwd.clone(), env: envmap, proxy: call_proxy }
         } else {
             Prepared {
                 program: p.program.clone(),
@@ -990,6 +1000,7 @@ impl Session {
                 argv0: Some(p.argv[0].clone()),
                 cwd: p.cwd.clone(),
                 env: envmap,
+                proxy: None,
             }
         };
         let code = if p.sandboxed { "SandboxFailed" } else { "SpawnFailed" };
@@ -1233,6 +1244,7 @@ impl Session {
         };
         let sandboxed = p.sandboxed;
         let envelope = p.envelope.unwrap_or_else(Envelope::today);
+        let hosts = p.credential.as_ref().map(|g| g.hosts.clone());
         tokio::spawn(async move {
             let o = runner::finish(running, store.clone(), cancel, limits, meter, lives).await;
             {
@@ -1243,7 +1255,11 @@ impl Session {
                 }
             }
             store.remove_call_tmp(&id);
-            let done = done_event(&id, o, sandboxed, envelope, &tripwire::report(&protected), &store);
+            let mut done = done_event(&id, o, sandboxed, envelope, &tripwire::report(&protected), &store);
+            if let Some(h) = hosts {
+                // What the call's proxy admitted, beside its profile.
+                done["envelope"]["hosts"] = json!(h);
+            }
             s.send(done);
         });
     }

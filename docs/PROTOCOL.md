@@ -38,7 +38,7 @@ the host answers each as it finishes, not in order. A message that is not an obj
 `args: {}` → the host's identity and what it can do. Safe to call any time.
 
 ```jsonc
-{ "host": "window-ml-host", "version": "0.7.0", "protocol": 1, "platform": "macos",
+{ "host": "window-ml-host", "version": "0.8.0", "protocol": 1, "platform": "macos",
   "sandbox": { "kind": "seatbelt", "available": true, "landlockAbi": null },  // kind: "seatbelt" | "bwrap" | null; "reason" when unavailable; landlockAbi: number | null (Linux only)
   "modes": ["host"],                                                // "container" appears once a runner exists
   "peek": true,                                                     // this host answers `peek`; an older host has no such field
@@ -187,7 +187,10 @@ one that answers anonymously without saying so:
 - `provider` is in the host's table (`hello.credentials`; v1 has `github`), else `CredentialRefused`.
 - `manifest` is the lowercase hex sha256 of the program manifest's BYTES the worker described the call with, and those
   bytes are one this host pinned (`vectors/program-manifests/`, window-ml's shipped manifest), which names this
-  provider in `credential.provider` and a subset of the provider's ports in `network.ports`, else `CredentialRefused`.
+  provider in `credential.provider`, a subset of the provider's ports in `network.ports` and, when present, a non-empty
+  subset of the provider's host names in `network.hosts`, else `CredentialRefused`. A pinned manifest with no
+  `network.hosts` (one from before hosts) gets every provider host. A release pins the current shipped manifest and the
+  one before it (`pinned/`), so an extension one release behind is still honoured.
   A manifest the worker holds that the host does not (a stored one, or a newer shipped one than this host's copy) names
   no credential here.
 - The provider is its program's alone, and the program is the person's: `argv[0]` is exactly the provider's program
@@ -198,7 +201,8 @@ one that answers anonymously without saying so:
   `sandbox: false`, Linux and a machine with no sandbox answer `SandboxFailed`.
 - Not over the hub (`CredentialRefused`): only a connection on this machine may send the person's token.
 
-The facts then carry `"credential": { "provider": "github", "ports": [443], "profile": "credentialed:github" }`.
+The facts then carry `"credential": { "provider": "github", "ports": [443], "hosts": [<names>], "profile":
+"credentialed:github" }`.
 At `start`, after the verdict and before the program runs, the host obtains the token by running the call's own
 resolved binary unconfined with the provider's arguments (`gh auth token --hostname github.com`), in an environment of
 the host's `HOME`, `USER`, `LOGNAME`, the call's `PATH` and the person's own `GH_CONFIG_DIR`, `XDG_CONFIG_HOME`,
@@ -206,13 +210,19 @@ the host's `HOME`, `USER`, `LOGNAME`, the call's `PATH` and the person's own `GH
 logged, and 30 s is the limit. No token (not logged in, a non-zero exit, empty or malformed output) fails the `start`
 with `SecretUnavailable` and the program never runs. The child gets `GH_TOKEN`, `GH_CONFIG_DIR` set to an empty
 directory under its `$TMPDIR` (none of the person's gh config is read), `GH_PROMPT_DISABLED=1`,
-`GH_NO_UPDATE_NOTIFIER=1` and `GH_TELEMETRY=0`. The token never crosses the protocol.
+`GH_NO_UPDATE_NOTIFIER=1` and `GH_TELEMETRY=0`, and the call's proxy in `HTTPS_PROXY`, `https_proxy`, `HTTP_PROXY`,
+`http_proxy`, `ALL_PROXY` and `all_proxy` (`http://127.0.0.1:<port>`), with `NO_PROXY` and `no_proxy` empty. The token
+never crosses the protocol.
 
-The profile is the ordinary one plus outbound TCP to the manifest's ports at any address (Seatbelt filters by address
-and port, not by name), the DNS resolver's socket and the certificate trust daemon, with exec always program-only
+The host starts a CONNECT proxy for the call on `127.0.0.1:<ephemeral>` (`src/proxy.rs`) and closes it before `done`.
+It admits only a request line `CONNECT <name>:<port> HTTP/1.1` (or `1.0`) whose name, ASCII-lowercased with one
+trailing dot dropped, is exactly one of the granted hosts and whose port is one of the granted ports; anything else (an
+IP literal, userinfo, an escape, another method) gets `403` and no outbound connection. It resolves the name with the
+host's resolver and splices bytes; it never terminates TLS. The profile is the ordinary one plus outbound TCP to that
+proxy's port on localhost alone (no other address, no DNS resolver socket) and the certificate trust daemon, with exec always program-only
 whatever the envelope said: the program's own chain, plus `git` resolved on the call's `PATH` and, from `git
 --exec-path`, `git` and `git-remote-http(s)`, each with its chain. The envelope's `write` applies as sent. `done`
-reports `"envelope": { "write": …, "exec": "program-only", "profile": "credentialed:github" }`.
+reports `"envelope": { "write": …, "exec": "program-only", "profile": "credentialed:github", "hosts": [<names>] }`.
 
 ### `start`: run it
 
@@ -501,7 +511,7 @@ A non-last stage of a `pipe` has `"stdout": { "piped": true }`: its output went 
 held. A stream the host could not keep (the disk filled, say) is `{ "error": "…" }` instead of a pointer. A sandboxed call
 whose sandbox refused to start the program adds `"error": { "code": "SandboxFailed", "message": "…" }` and `ok: false`.
 
-`envelope` is the scope the host APPLIED, with `profile` only for a credentialed call (`"credentialed:github"`); an
+`envelope` is the scope the host APPLIED, with `profile` and `hosts` only for a credentialed call (`"credentialed:github"`, the names its proxy admitted); an
 envelope without it ran under the ordinary profile. `write: "today"` is the host's name for today's floor: what an ABSENT
 envelope means, and what `done` reports for one — never `"roots"`. A worker may not SEND `"today"`; that is
 malformed. An ABSENT `envelope` on `done` means an older host; the extension treats that as unknown, never as narrow.
