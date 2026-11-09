@@ -2960,7 +2960,7 @@ fn hello_offers_the_github_credential_only_where_the_sandbox_holds_it() {
 }
 
 #[test]
-fn a_credentialed_gh_reaches_port_443_with_the_token_and_no_other_port() {
+fn a_credentialed_gh_reaches_only_its_proxy_and_the_proxy_only_the_listed_hosts() {
     let (_d, r) = root();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -2973,8 +2973,12 @@ fn a_credentialed_gh_reaches_port_443_with_the_token_and_no_other_port() {
         return;
     };
     let ip = ip.ip();
+    // Through the proxy (the one address the profile allows), a listed and an unlisted name; then around it.
     let body = format!(
-        "echo \"token=$GH_TOKEN config=$GH_CONFIG_DIR tmp=$TMPDIR prompt=$GH_PROMPT_DISABLED\"\n\
+        "echo \"token=$GH_TOKEN config=$GH_CONFIG_DIR tmp=$TMPDIR prompt=$GH_PROMPT_DISABLED proxy=$HTTPS_PROXY no=[$NO_PROXY]\"\n\
+         P=${{HTTPS_PROXY##*:}}\n\
+         for h in github.com example.com; do (exec 5<>/dev/tcp/127.0.0.1/$P; printf 'CONNECT %s:443 HTTP/1.1\\r\\n\\r\\n' $h >&5; \
+           read -r l <&5; echo \"via-proxy $h: $l\"); done\n\
          (exec 3<>/dev/tcp/{ip}/443) && echo reached-443\n\
          (exec 4<>/dev/tcp/127.0.0.1/{port}) && echo reached-local"
     );
@@ -3003,18 +3007,39 @@ fn a_credentialed_gh_reaches_port_443_with_the_token_and_no_other_port() {
     let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r }));
     assert!(!text(&h.read_all(&d["stdout"])).contains("reached-443"), "the ordinary profile reached the network");
     let (f, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": cred }));
-    assert_eq!(f["credential"], json!({ "provider": "github", "ports": [443], "profile": "credentialed:github" }));
+    let hosts = json!([
+        "api.github.com",
+        "github.com",
+        "uploads.github.com",
+        "codeload.github.com",
+        "raw.githubusercontent.com",
+        "release-assets.githubusercontent.com"
+    ]);
+    assert_eq!(
+        f["credential"],
+        json!({ "provider": "github", "ports": [443], "hosts": hosts, "profile": "credentialed:github" })
+    );
     assert_eq!(f["placement"], "host-sandbox");
     let out = text(&h.read_all(&d["stdout"]));
     assert!(out.contains("token=tok_fake "), "the provider's token is in the call's env: {out}");
     assert!(out.contains("prompt=1"), "{out}");
     let tmp = out.split("tmp=").nth(1).unwrap().split(' ').next().unwrap();
     assert!(out.contains(&format!("config={tmp}/github ")), "a throwaway config dir under the call's tmp: {out}");
-    assert!(out.contains("reached-443"), "the credentialed profile reaches 443: {out}");
-    assert!(!out.contains("reached-local"), "a port other than 443 was reached: {out}");
+    assert!(out.contains("no=[]"), "no host is exempt from the proxy: {out}");
+    assert!(out.contains("via-proxy github.com: HTTP/1.1 200"), "a listed host is reached through the proxy: {out}");
+    assert!(out.contains("via-proxy example.com: HTTP/1.1 403"), "an unlisted host is refused by the proxy: {out}");
+    assert!(!out.contains("reached-443"), "the credentialed profile reached github.com:443 around its proxy: {out}");
+    assert!(!out.contains("reached-local"), "a local port other than the proxy's was reached: {out}");
     std::thread::sleep(Duration::from_millis(100));
-    assert!(listener.accept().is_err(), "a credentialed call reached a port other than 443");
-    assert_eq!(d["envelope"], json!({ "write": "today", "exec": "program-only", "profile": "credentialed:github" }));
+    assert!(listener.accept().is_err(), "a credentialed call reached a port other than its proxy's");
+    assert_eq!(
+        d["envelope"],
+        json!({ "write": "today", "exec": "program-only", "profile": "credentialed:github", "hosts": hosts })
+    );
+    // The proxy closed with the call.
+    let proxy_port: u16 =
+        out.split("proxy=http://127.0.0.1:").nth(1).unwrap().split(' ').next().unwrap().parse().unwrap();
+    assert!(std::net::TcpStream::connect(("127.0.0.1", proxy_port)).is_err(), "the call's proxy outlived it");
     assert!(!Path::new(tmp).exists(), "the call's tmp, config dir included, is gone after the call");
     h.close();
 }

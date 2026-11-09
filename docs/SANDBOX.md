@@ -33,7 +33,7 @@ malformed is `BadRequest`, never a silent fallback. `done` always reports the sc
 | Write (`write: "roots"`) | the same roots and tmp, with a NAME-IMMUTABLE top level (below) | the same via Landlock: name-immutable top level, protected names never granted (below) |
 | Write (`write: "none"`) | its own `$TMPDIR` and the `/dev/*` exceptions only | the same |
 | Network | nothing, loopback included | nothing (`--unshare-net`) |
-| Network, a credentialed call (`credential` on `spawn`, `src/credential.rs`) | outbound TCP to the manifest's ports at ANY address (`(remote tcp "*:443")`: Seatbelt filters by address and port, not name), the resolver's socket (`/private/var/run/mDNSResponder`) and `com.apple.trustd.agent`; exec always program-only; the provider's token in the env, its config dir a throwaway under `$TMPDIR` | refused (`SandboxFailed`): `--unshare-net` is all or nothing; a CONNECT proxy is the next step |
+| Network, a credentialed call (`credential` on `spawn`, `src/credential.rs`) | outbound TCP to its own proxy alone (`(remote ip "localhost:<port>")`, `src/proxy.rs`), which admits only `CONNECT <granted host>:443`; no DNS resolver socket; `com.apple.trustd.agent`; exec always program-only; the provider's token in the env, its config dir a throwaway under `$TMPDIR` | refused (`SandboxFailed`): `--unshare-net` is all or nothing; a forwarder from inside the namespace to the proxy's unix socket is the next step (measured to work on Ubuntu 26.04) |
 | Processes (`exec: "any"`, the floor) | start any program, all inheriting the profile | the same, in a fresh PID namespace |
 | Processes (`exec: "program-only"`) | only the resolved set, by `literal`; `sh -c 'ls'` cannot exec `ls` | the same, by Landlock EXECUTE grants |
 | Credential stores (`.ssh`, `.gnupg`, `.aws`, `.azure`, `.kube`, `.docker`, `.password-store`, `~/Library/Keychains`, `.config/gh`, `.config/gcloud`, `.netrc`, `.git-credentials`, `.pgpass`) | unreadable at ANY depth, matched by regex, case-insensitively | masked under `$HOME` only (an empty tmpfs or `/dev/null` bound over each that exists) |
@@ -148,12 +148,34 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
 
 ## Limits, said plainly
 
-- **A credentialed call reaches any host on its ports**, not only the provider's: Seatbelt cannot filter by name. What
-  the token reaches is what gh sends it to (gh sends no `Authorization` to a non-GitHub host, measured in window-ml
-  #1538). git started by gh inherits the profile: port 443 and `GH_TOKEN` in its env, no credential helper (the
-  person's global config is not given one here), so git over https is anonymous and over ssh fails (`~/.ssh` stays
-  unreadable, `ssh` is not in the exec set). `gh repo clone` into a root fails at `.git/hooks`, the protected names
-  rule (measured with gh 2.103.0 and git 2.56.0). Scoping the hosts needs the CONNECT proxy.
+- **A credentialed call reaches only the provider's host names, through its proxy, and GitHub is itself a channel
+  out.** The proxy matches the CONNECT name exactly against `Provider.hosts` (`api.github.com`, `github.com`,
+  `uploads.github.com`, `codeload.github.com`, `raw.githubusercontent.com`, `release-assets.githubusercontent.com`;
+  measured with gh 2.103.0: `gh api`, a tarball, `gh release download` and a raw file use them). With the person's
+  token, `gh api -X POST /repos/<anyone>/<repo>/issues` still writes wherever the token may, and
+  `raw.githubusercontent.com` serves anyone's content: scoping the hosts does not close that. Every credentialed call
+  asking is what holds it.
+- **The bound is the NAME, resolved with the host's resolver.** The proxy resolves the granted name itself; a poisoned
+  resolver on the host is outside the bound. It never terminates TLS, so it cannot see the SNI: a client that sends
+  `CONNECT github.com:443` and then another SNI still reaches a GitHub address. GitHub fronts nothing else, so this is
+  noted, not closed.
+- **A client that ignores the proxy env fails closed.** The profile allows `localhost:<proxy port>` and nothing else,
+  so such a client does not work; that is by design, not a gap. The env only routes.
+- **git started by gh inherits the profile**: the proxy, `GH_TOKEN` in its env, no credential helper (the person's
+  global config is not given one here), so git over https is anonymous and over ssh fails (`~/.ssh` stays unreadable,
+  `ssh` is not in the exec set). `gh repo clone` into a root fails at `.git/hooks`, the protected names rule (measured
+  with gh 2.103.0 and git 2.56.0). git's exec path is trusted as `git --exec-path` reports it; an in-root git is skipped.
+- **The keychain is held by the credentialed profile's EXEC rule** (program-only: `/usr/bin/security` is not in the
+  set). The `~/Library/Keychains` read deny is the backup against a plain file read; securityd ignores the path deny.
+- **The token fetch can block the session for up to 30 s** (`credential::TOKEN_TIMEOUT`) if a Keychain dialog fires.
+  None fired when measured.
+- **macOS lets no unprivileged process bind :443**, so the tests cannot stand up a third party on 443 locally; the
+  red-team rows reach real hosts and skip when the network is down.
+- **A SIGKILLed test run can leave one keychain item** behind: service `window-ml-host-test-<pid>`, account
+  `window-ml-host-test`, holding a marker and no credential. `security delete-generic-password -s <service>` removes it.
+- **On Linux, bwrap may run only from its packaged path.** Ubuntu 26.04 sets `kernel.apparmor_restrict_unprivileged_userns=1`;
+  bwrap gets a user namespace only through `/etc/apparmor.d/bwrap-userns-restrict`, which attaches to `/usr/bin/bwrap`
+  by path, so a bwrap elsewhere would be denied (measured on mlbox, bubblewrap 0.11.1).
 - **Linux protects less than macOS when Landlock is unavailable** (no Landlock, or one that cannot fully enforce our
   ruleset — reported as `hello.sandbox.landlockAbi: null`). bubblewrap binds paths, it cannot match patterns, so a
   hook in a NESTED repository inside a root (`root/vendor/x/.git/hooks`), or a protected path created during the

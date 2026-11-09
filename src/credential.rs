@@ -24,6 +24,9 @@ pub struct Provider {
     pub program: &'static str,
     /// The ports its profile may connect to; a manifest's `network.ports` is a subset.
     pub ports: &'static [u16],
+    /// The host names its proxy admits (src/proxy.rs), exactly, no wildcards; a manifest's `network.hosts` is a subset,
+    /// and a pinned manifest naming none gets all of them.
+    pub hosts: &'static [&'static str],
     /// What `done`'s envelope reports as `profile`.
     pub profile: &'static str,
     /// The resolved program's arguments that print the token, run unconfined at launch.
@@ -44,6 +47,14 @@ pub const PROVIDERS: &[Provider] = &[Provider {
     name: "github",
     program: "gh",
     ports: &[443],
+    hosts: &[
+        "api.github.com",
+        "github.com",
+        "uploads.github.com",
+        "codeload.github.com",
+        "raw.githubusercontent.com",
+        "release-assets.githubusercontent.com",
+    ],
     profile: "credentialed:github",
     token_args: &["auth", "token", "--hostname", "github.com"],
     token_env: "GH_TOKEN",
@@ -55,7 +66,18 @@ pub const PROVIDERS: &[Provider] = &[Provider {
 /// The manifests a credential is honoured for: byte copies of window-ml's shipped ones, pinned with the rest of
 /// `vectors/program-manifests/` (`tests/manifest_vectors.rs`). A unit test holds every vector manifest that names a
 /// credential to this list.
-const PINNED: &[(&str, &[u8])] = &[("gh.json", include_bytes!("../vectors/program-manifests/manifests/gh.json"))];
+///
+/// `pinned/` keeps a shipped manifest's PREVIOUS bytes for one release, so an extension that has not updated yet is still
+/// honoured: gh.json from before `network.hosts` (window-ml 337095ac, sha256 d8a7af4e…), which gets every provider host.
+const PINNED: &[(&str, &[u8])] = &[
+    ("gh.json", include_bytes!("../vectors/program-manifests/manifests/gh.json")),
+    ("gh.json", include_bytes!("../pinned/gh.v1.json")),
+];
+
+/// The variables a credentialed call's proxy URL goes in (every client's spelling), and those emptied so no host is
+/// exempt. The Seatbelt profile is the bound: a client that ignores these fails to connect, it does not get out.
+pub const PROXY_ENV: &[&str] = &["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"];
+pub const NO_PROXY_ENV: &[&str] = &["NO_PROXY", "no_proxy"];
 
 /// How long the token fetch may take, its output included. A Keychain dialog would block it; none fired when measured
 /// (gh 2.103.0 on macOS 25.6, keyring storage, a scrubbed environment and no terminal: exit 0 in under a second).
@@ -64,11 +86,12 @@ pub const TOKEN_TIMEOUT: Duration = Duration::from_secs(30);
 /// The longest token accepted.
 const MAX_TOKEN: usize = 1024;
 
-/// A credential a spawn asked for and the host will honour: the provider and the ports its manifest names.
+/// A credential a spawn asked for and the host will honour: the provider, and the ports and hosts its manifest names.
 #[derive(Debug, Clone)]
 pub struct Grant {
     pub provider: &'static Provider,
     pub ports: Vec<u16>,
+    pub hosts: Vec<&'static str>,
 }
 
 /// The provider called `name`.
@@ -114,11 +137,29 @@ pub fn honour(
     if in_root {
         return Err(format!("{} is inside a workspace root: the repository's, not the person's", program.display()));
     }
-    let ports = m.network.map(|n| n.ports).unwrap_or_default();
+    let ports = m.network.as_ref().map(|n| n.ports.clone()).unwrap_or_default();
     if ports.is_empty() || !ports.iter().all(|p| provider.ports.contains(p)) {
         return Err(format!("the manifest's ports are not a subset of {:?}", provider.ports));
     }
-    Ok(Grant { provider, ports })
+    let hosts = grant_hosts(provider, m.network.and_then(|n| n.hosts))?;
+    Ok(Grant { provider, ports, hosts })
+}
+
+/// The hosts a manifest's `network.hosts` grants: each one of the provider's, at least one. A manifest pinned before
+/// hosts existed (`None`) gets the provider's list, so the proxy scopes it too.
+fn grant_hosts(provider: &'static Provider, named: Option<Vec<String>>) -> Result<Vec<&'static str>, String> {
+    let Some(named) = named else { return Ok(provider.hosts.to_vec()) };
+    let mut out = Vec::new();
+    for name in &named {
+        let Some(known) = provider.hosts.iter().find(|k| **k == name) else {
+            return Err(format!("the manifest's host {name:?} is not one of {:?}", provider.hosts));
+        };
+        out.push(*known);
+    }
+    if out.is_empty() {
+        return Err("the manifest names no hosts".into());
+    }
+    Ok(out)
 }
 
 /// The token, from running `program` (the call's resolved binary) with the provider's arguments, unconfined, in a
@@ -223,6 +264,32 @@ mod tests {
     }
 
     // --- which calls a credential is honoured for ---
+
+    #[test]
+    fn the_previous_gh_manifest_stays_honoured_for_one_release_with_every_provider_host() {
+        const V1: &str = "d8a7af4ec85c7de38e8e701ac8efb052e268bcf75a7216e8d67148dca1dc72c9";
+        let hashes: Vec<String> =
+            pinned_hashes().into_iter().filter(|(n, _)| *n == "gh.json").map(|(_, h)| h).collect();
+        assert_eq!(hashes.len(), 2, "this release pins the current gh.json and the one before it");
+        assert!(hashes.iter().any(|h| h == V1), "pinned/gh.v1.json is no longer window-ml 337095ac's gh.json");
+        let gh = Path::new("/opt/homebrew/bin/gh");
+        let old = honour("github", V1, "gh", gh, false).unwrap();
+        assert_eq!(old.hosts, PROVIDERS[0].hosts, "a manifest from before hosts gets the provider's list");
+        let new = honour("github", &gh_hash(), "gh", gh, false).unwrap();
+        assert!(!new.hosts.is_empty() && new.hosts.iter().all(|h| PROVIDERS[0].hosts.contains(h)));
+    }
+
+    #[test]
+    fn a_manifests_hosts_are_a_nonempty_subset_of_the_providers() {
+        let p = &PROVIDERS[0];
+        let named = |v: &[&str]| Some(v.iter().map(|s| s.to_string()).collect());
+        assert_eq!(grant_hosts(p, named(&["api.github.com"])).unwrap(), ["api.github.com"]);
+        assert_eq!(grant_hosts(p, None).unwrap(), p.hosts);
+        for bad in [&["example.com"][..], &["API.GITHUB.COM"], &["*.github.com"], &["api.github.com", "evil.test"]] {
+            assert!(grant_hosts(p, named(bad)).unwrap_err().contains("is not one of"), "{bad:?}");
+        }
+        assert!(grant_hosts(p, named(&[])).unwrap_err().contains("names no hosts"));
+    }
 
     #[test]
     fn every_vector_manifest_naming_a_credential_is_pinned_here() {
