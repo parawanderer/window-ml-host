@@ -3109,7 +3109,8 @@ fn a_credential_is_refused_for_another_program_an_unpinned_manifest_a_bad_shape_
 // token, config, proxy or trust store, the person's home as a write target, how wide the network really is, and what
 // git inherits from gh. Each row is measured against the real Seatbelt profile and fails if its guard is removed: the
 // keychain row prints the item's secret when the exec set widens, the read row prints the marker when a deny goes, the
-// env row starts the program, the home row finds a file, the network row loses its reach, the git row loses its binary.
+// env row starts the program, the home row finds a file, the network rows below lose their bound when the profile or
+// the proxy's filter widens, the git row loses its binary.
 
 /// A throwaway login-keychain item, created through `/usr/bin/security` outside the sandbox and deleted when it goes
 /// out of scope: the probe for "nothing the `security` binary's ACL trusts is reachable from a credentialed call".
@@ -3356,48 +3357,10 @@ fn a_credentialed_call_cannot_write_under_the_persons_home() {
     h.close();
 }
 
-#[test]
-fn the_credentialed_profiles_network_reaches_any_443_host_not_only_githubs() {
-    // A FINDING row, not a defect: Seatbelt filters by address and port, so the profile cannot say "GitHub only". The
-    // token stays out of a third party's hands only through gh's own host choice, which is why the env row above
-    // refuses every name that would move it.
-    if !cfg!(target_os = "macos") {
-        return;
-    }
-    let (_d, r) = root();
-    use std::net::ToSocketAddrs;
-    let Some(ip) = ("example.com", 443).to_socket_addrs().ok().and_then(|mut a| a.find(|a| a.is_ipv4())) else {
-        eprintln!("example.com does not resolve here; the profile's reach is not checked");
-        return;
-    };
-    let ip = ip.ip();
-    let body = format!(
-        "(exec 3<>/dev/tcp/{ip}/443) && echo reached-third-party-443\n\
-         (exec 4<>/dev/tcp/{ip}/80) && echo reached-third-party-80"
-    );
-    let (_b, bin) = fake_program("gh", &body);
-    let mut h = Host::start();
-    if !h.sandbox_available() {
-        return h.close();
-    }
-    let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
-    configure_with(&mut h, &r, &bin, false);
-    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r }));
-    let ctl = text(&h.read_all(&d["stdout"]));
-    if !ctl.contains("reached-third-party-443") {
-        eprintln!("example.com:443 is unreachable from this machine; the profile's reach is not checked");
-        return h.close();
-    }
-    configure_with(&mut h, &r, &bin, true);
-    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": cred }));
-    let out = text(&h.read_all(&d["stdout"]));
-    assert!(
-        out.contains("reached-third-party-443"),
-        "the credentialed profile did not reach a third party's 443: {out}"
-    );
-    assert!(!out.contains("reached-third-party-80"), "the credentialed profile reached port 80: {out}");
-    h.close();
-}
+// The v1 FINDING row (`the_credentialed_profiles_network_reaches_any_443_host_not_only_githubs`) is gone: it recorded
+// that the profile allowed `(remote tcp "*:443")`, so a credentialed call reached any HTTPS host directly. PR 2a's
+// profile allows one address, the call's own proxy port. Its flip, measured through a real call, is
+// `a_credentialed_call_reaches_the_network_only_through_its_proxy` in the proxy section below.
 
 #[test]
 fn git_under_a_credentialed_gh_runs_and_yields_no_credential() {
@@ -3442,6 +3405,460 @@ fn git_under_a_credentialed_gh_runs_and_yields_no_credential() {
     assert!(
         both.to_lowercase().contains("permitted") || both.to_lowercase().contains("denied"),
         "the refusal is not the profile's: {both}"
+    );
+    h.close();
+}
+
+// --- red team: the credentialed call's network, through the proxy the host runs for it (PR 2a, rows 1 to 10) ---
+//
+// The bound is one outbound address, the call's own `127.0.0.1:<P>`, and behind it a proxy that admits only
+// `CONNECT <listed host>:443`. src/proxy.rs has unit rows for the request line; every row here goes through a REAL
+// call instead: the proxy is a port on this machine, so a test talks to it the way any local process could while the
+// call runs, and the call's own reach is measured from inside its profile. The proxy runs in the host process,
+// OUTSIDE Seatbelt, so its filter is all that stands between a call and any address the host can reach.
+
+/// The fake gh these rows run, in the roles they need. `gh api /hold` prints the call's proxy and waits for `release`
+/// in the root (a `read -t` away: the credentialed profile's exec set carries no `sleep`); `gh api /short` prints it
+/// and ends; anything else probes its own proxy port and the one named in `other-port`.
+fn proxy_body(r: &Path) -> String {
+    let rel = r.join("release");
+    format!(
+        "P=${{HTTPS_PROXY##*:}}\n\
+         case \"$2\" in\n\
+         /short) echo \"proxy=$HTTPS_PROXY\"; exit 0 ;;\n\
+         /hold) echo \"proxy=$HTTPS_PROXY\"; while [ ! -f \"{rel}\" ]; do read -t 1 < /dev/zero; done; exit 0 ;;\n\
+         esac\n\
+         other=\"\"\n\
+         read -r other < \"{r}/other-port\" 2>/dev/null\n\
+         echo \"other=$other\"\n\
+         (exec 3<>/dev/tcp/127.0.0.1/$other) 2>&1; echo \"other-rc=$?\"\n\
+         (exec 4<>/dev/tcp/127.0.0.1/$P) 2>&1; echo \"own-rc=$?\"",
+        rel = rel.display(),
+        r = r.display()
+    )
+}
+
+impl Host {
+    /// A credentialed call started and held open, with its proxy's port: the port answers while the call runs, so a
+    /// row can probe it from outside the profile. Ends with [`Host::release_held`].
+    fn hold_with_proxy(&mut self, r: &Path) -> (String, u16) {
+        let _ = std::fs::remove_file(r.join("release"));
+        let id = self.ok(
+            "spawn",
+            json!({ "argv": ["gh", "api", "/hold"], "cwd": r, "timeoutMs": 60_000,
+                        "credential": { "provider": "github", "manifest": gh_manifest_hash() } }),
+        )["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        self.ok("start", json!({ "id": id }));
+        let mut seen = String::new();
+        for _ in 0..100 {
+            let v = self.ok("peek", json!({ "id": id, "bytes": 4096 }));
+            seen = text(&peek_bytes(&v["stdout"]));
+            if seen.contains('\n') {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let port = seen
+            .split("proxy=http://127.0.0.1:")
+            .nth(1)
+            .and_then(|s| s.split(|c: char| !c.is_ascii_digit()).next())
+            .and_then(|s| s.parse::<u16>().ok())
+            .unwrap_or_else(|| panic!("the call printed no proxy port: {seen:?}"));
+        (id, port)
+    }
+
+    /// Ends a held call: the file its body waits for, then its done.
+    fn release_held(&mut self, r: &Path, id: &str) -> Value {
+        std::fs::write(r.join("release"), b"go").unwrap();
+        self.done(id)
+    }
+}
+
+/// Asks the proxy on `port` one request head, from outside any call, and returns the bytes it answers; empty means it
+/// closed without one. A reset counts as closed without one: dropping a client that has bytes still unread is what
+/// the kernel does to a socket the host closes, and row 8 relies on it. One read: an admitted CONNECT answers its
+/// status line and then holds the connection open for the TLS that would follow.
+fn ask_proxy(port: u16, head: &[u8]) -> String {
+    let mut c = std::net::TcpStream::connect(("127.0.0.1", port)).expect("the proxy takes a local connection");
+    c.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
+    c.write_all(head).unwrap();
+    let mut buf = [0u8; 1024];
+    match c.read(&mut buf) {
+        Ok(0) => String::new(),
+        Ok(n) => text(&buf[..n]),
+        Err(e) if e.kind() == std::io::ErrorKind::ConnectionReset => String::new(),
+        Err(e) => panic!("the proxy answered nothing: {e}"),
+    }
+}
+
+#[test]
+fn an_unlisted_authority_gets_403_before_anything_is_dialled() {
+    // Row 1. Refused BEFORE a dial: the proxy is the host's own process, so an outbound connection it made would be
+    // bounded by nothing but its filter. An authority naming the test's listener is the witness — it must see none.
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let witness = listener.local_addr().unwrap().port();
+    let (_d, r) = root();
+    let (_b, bin) = fake_program("gh", &proxy_body(&r));
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    let (id, p) = h.hold_with_proxy(&r);
+    // The port answers at all, so the refusals below are the filter and not a dead listener.
+    let control = ask_proxy(p, b"CONNECT github.com:443 HTTP/1.1\r\n\r\n");
+    assert!(!control.starts_with("HTTP/1.1 403"), "the call's own proxy refused a listed host: {control}");
+    for head in [
+        format!("CONNECT 127.0.0.1:{witness} HTTP/1.1\r\n\r\n"),
+        "CONNECT example.com:443 HTTP/1.1\r\n\r\n".to_string(),
+        "CONNECT raw.githubusercontent.com.evil.test:443 HTTP/1.1\r\n\r\n".to_string(),
+    ] {
+        let a = ask_proxy(p, head.as_bytes());
+        assert!(a.starts_with("HTTP/1.1 403"), "{head:?} was not refused: {a:?}");
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(listener.accept().is_err(), "the proxy dialled an authority it refused");
+    h.release_held(&r, &id);
+    h.close();
+}
+
+#[test]
+fn a_listed_host_is_admitted_only_on_the_port_its_grant_names() {
+    // Row 2. The grant names port 443 and nothing else, and the port is part of the authority: every other one is an
+    // unlisted destination even when the name is GitHub's.
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let (_d, r) = root();
+    let (_b, bin) = fake_program("gh", &proxy_body(&r));
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    let (id, p) = h.hold_with_proxy(&r);
+    for port in ["80", "22", "8443", "4430", "0443", "+443", ""] {
+        let head = format!("CONNECT github.com:{port} HTTP/1.1\r\n\r\n");
+        let a = ask_proxy(p, head.as_bytes());
+        assert!(a.starts_with("HTTP/1.1 403"), "github.com:{port} was not refused: {a:?}");
+    }
+    h.release_held(&r, &id);
+    h.close();
+}
+
+#[test]
+fn every_authority_spoof_is_refused_through_a_real_call() {
+    // Row 3, each spelled as a client could: a suffix, a fragment, userinfo, an IP literal in both families, an
+    // escape, and a header that claims another name. `GITHUB.COM.:443` is ADMITTED (case and one root dot fold to
+    // the listed name), so the row measures the normalisation and not only the refusals.
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let (_d, r) = root();
+    let (_b, bin) = fake_program("gh", &proxy_body(&r));
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    let (id, p) = h.hold_with_proxy(&r);
+    for head in [
+        "CONNECT github.com.evil.test:443 HTTP/1.1\r\n\r\n",
+        "CONNECT evil.test#@github.com:443 HTTP/1.1\r\n\r\n",
+        "CONNECT github.com@evil.test:443 HTTP/1.1\r\n\r\n",
+        "CONNECT user:pass@github.com:443 HTTP/1.1\r\n\r\n",
+        "CONNECT 140.82.112.3:443 HTTP/1.1\r\n\r\n",
+        "CONNECT [::1]:443 HTTP/1.1\r\n\r\n",
+        "CONNECT %67ithub.com:443 HTTP/1.1\r\n\r\n",
+        "CONNECT github.com.:443x HTTP/1.1\r\n\r\n",
+        "CONNECT example.com:443 HTTP/1.1\r\nHost: github.com:443\r\n\r\n",
+        "CONNECT example.com:443 HTTP/1.1\r\nHost: github.com\r\nHost: github.com\r\n\r\n",
+    ] {
+        let a = ask_proxy(p, head.as_bytes());
+        assert!(a.starts_with("HTTP/1.1 403"), "{head:?} was not refused: {a:?}");
+    }
+    for head in [
+        "CONNECT GITHUB.COM.:443 HTTP/1.1\r\n\r\n",
+        // A header naming another host steers nothing either way: only the request line counts.
+        "CONNECT github.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n",
+    ] {
+        let a = ask_proxy(p, head.as_bytes());
+        assert!(!a.starts_with("HTTP/1.1 403"), "{head:?} is a listed authority and was refused: {a:?}");
+    }
+    h.release_held(&r, &id);
+    h.close();
+}
+
+#[test]
+fn only_a_connect_request_line_is_served() {
+    // Row 4. The proxy is a tunnel for CONNECT alone: an absolute-URI request asks it to proxy plain HTTP by itself,
+    // and a bare origin-form request is not addressed to it at all.
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let (_d, r) = root();
+    let (_b, bin) = fake_program("gh", &proxy_body(&r));
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    let (id, p) = h.hold_with_proxy(&r);
+    for head in [
+        "GET http://github.com/ HTTP/1.1\r\n\r\n",
+        "GET https://api.github.com/ HTTP/1.1\r\n\r\n",
+        "GET / HTTP/1.1\r\n\r\n",
+        "POST http://github.com/ HTTP/1.1\r\n\r\n",
+        "CONNECT github.com:443 HTTP/2\r\n\r\n",
+        "CONNECT github.com:443 HTTP/1.1 x\r\n\r\n",
+        "CONNECT github.com:443\r\n\r\n",
+    ] {
+        let a = ask_proxy(p, head.as_bytes());
+        assert!(a.starts_with("HTTP/1.1 403"), "{head:?} was served: {a:?}");
+    }
+    h.release_held(&r, &id);
+    h.close();
+}
+
+#[test]
+fn a_credentialed_call_reaches_the_network_only_through_its_proxy() {
+    // Row 5, and the flip of host#35's FINDING row: under v1 the profile allowed `(remote tcp "*:443")`, so a
+    // credentialed call reached any HTTPS host DIRECTLY, GitHub's own address included, and that row asserted it did.
+    // The profile now allows one address, the call's proxy port, so both raw connects must fail and only the proxy's
+    // list reaches anything. The addresses are resolved here, outside the call, because the call no longer can.
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    use std::net::ToSocketAddrs;
+    let Some(gh_ip) = ("github.com", 443).to_socket_addrs().ok().and_then(|mut a| a.find(|a| a.is_ipv4())) else {
+        eprintln!("github.com does not resolve here; the row is not measured");
+        return;
+    };
+    let Some(ex_ip) = ("example.com", 443).to_socket_addrs().ok().and_then(|mut a| a.find(|a| a.is_ipv4())) else {
+        eprintln!("example.com does not resolve here; the row is not measured");
+        return;
+    };
+    let (_d, r) = root();
+    let body = format!(
+        "(exec 3<>/dev/tcp/{gh}/443) 2>/dev/null && echo raw-github-443\n\
+         (exec 4<>/dev/tcp/{ex}/443) 2>/dev/null && echo raw-third-party-443\n\
+         P=${{HTTPS_PROXY##*:}}\n\
+         (exec 5<>/dev/tcp/127.0.0.1/$P; printf 'CONNECT github.com:443 HTTP/1.1\\r\\n\\r\\n' >&5; read -r l <&5; \
+           echo \"via-proxy-listed: $l\")\n\
+         (exec 6<>/dev/tcp/127.0.0.1/$P; printf 'CONNECT example.com:443 HTTP/1.1\\r\\n\\r\\n' >&6; read -r l <&6; \
+           echo \"via-proxy-unlisted: $l\")",
+        gh = gh_ip.ip(),
+        ex = ex_ip.ip()
+    );
+    let (_b, bin) = fake_program("gh", &body);
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
+    // Control: unsandboxed and without the credential, GitHub's own 443 is reachable from this machine.
+    configure_with(&mut h, &r, &bin, false);
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r }));
+    if !text(&h.read_all(&d["stdout"])).contains("raw-github-443") {
+        eprintln!("github.com:443 is unreachable from this machine; the row is not measured");
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": cred }));
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(!out.contains("raw-github-443"), "a credentialed call reached GitHub's own 443 around its proxy: {out}");
+    assert!(!out.contains("raw-third-party-443"), "a credentialed call reached a third party's 443 directly: {out}");
+    assert!(out.contains("via-proxy-listed: HTTP/1.1 "), "the call's proxy was never spoken to: {out}");
+    assert!(!out.contains("via-proxy-listed: HTTP/1.1 403"), "the call's proxy refused a listed host: {out}");
+    assert!(out.contains("via-proxy-unlisted: HTTP/1.1 403"), "the proxy admitted a third party: {out}");
+    h.close();
+}
+
+#[test]
+fn another_calls_proxy_port_is_unreachable_from_this_call() {
+    // Row 6. Each call's profile names its OWN proxy port. A second call's proxy is a real listener on this machine
+    // while this one runs, so it is exactly what a missing "only mine" would expose; the call's own port answering in
+    // the same run is the control that the probe itself works.
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let (_d, r) = root();
+    let (_b, bin) = fake_program("gh", &proxy_body(&r));
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    let (held, other) = h.hold_with_proxy(&r);
+    std::fs::write(r.join("other-port"), other.to_string()).unwrap();
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/probe"], "cwd": r,
+                              "credential": { "provider": "github", "manifest": gh_manifest_hash() } }));
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(
+        out.contains(&format!("other={other}")),
+        "the probe did not read the second call's port, so the row proves nothing: {out}"
+    );
+    assert!(
+        out.contains("own-rc=0"),
+        "the call's own proxy is not reachable from it, so the row proves nothing: {out}"
+    );
+    assert!(!out.contains("other-rc=0"), "a second call's proxy port was reachable from this call: {out}");
+    h.release_held(&r, &held);
+    h.close();
+}
+
+#[test]
+fn a_proxy_listener_closes_when_its_call_ends() {
+    // Row 7, the half the row above does not measure: closed by the time `done` is delivered, while another call's
+    // proxy in the same host is open. A listener that closed only with the session would pass "closed eventually".
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let (_d, r) = root();
+    let (_b, bin) = fake_program("gh", &proxy_body(&r));
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/short"], "cwd": r,
+                              "credential": { "provider": "github", "manifest": gh_manifest_hash() } }));
+    let short = text(&h.read_all(&d["stdout"]));
+    let ended: u16 = short
+        .split("proxy=http://127.0.0.1:")
+        .nth(1)
+        .and_then(|s| s.split(|c: char| !c.is_ascii_digit()).next())
+        .and_then(|s| s.parse().ok())
+        .unwrap_or_else(|| panic!("the call printed no proxy port: {short:?}"));
+    let (held, live) = h.hold_with_proxy(&r);
+    assert!(
+        std::net::TcpStream::connect(("127.0.0.1", live)).is_ok(),
+        "the running call's proxy does not answer, so the closed one below proves nothing"
+    );
+    assert!(
+        std::net::TcpStream::connect(("127.0.0.1", ended)).is_err(),
+        "the proxy of a call that ended outlived it while another call runs"
+    );
+    h.release_held(&r, &held);
+    h.close();
+}
+
+#[test]
+fn an_oversized_or_slow_head_is_dropped_within_the_deadline() {
+    // Row 8. A head over 8 KiB is dropped unanswered, and one that begins and stops is closed inside the 10 s
+    // deadline: a connection into the call must not be holdable by a client that never finishes its request.
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let (_d, r) = root();
+    let (_b, bin) = fake_program("gh", &proxy_body(&r));
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    let (id, p) = h.hold_with_proxy(&r);
+    let mut head = b"CONNECT github.com:443 HTTP/1.1\r\nX: ".to_vec();
+    head.extend(std::iter::repeat_n(b'a', window_ml_host::proxy::MAX_HEAD + 1024));
+    assert_eq!(ask_proxy(p, &head), "", "an oversized head got an answer");
+    let mut slow = std::net::TcpStream::connect(("127.0.0.1", p)).unwrap();
+    slow.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
+    slow.write_all(b"CONNECT github.com:443 HT").unwrap();
+    let t0 = std::time::Instant::now();
+    let mut buf = [0u8; 64];
+    let n = slow.read(&mut buf).expect("the proxy held a slow head past its deadline");
+    assert_eq!(n, 0, "a slow head got an answer: {:?}", text(&buf[..n]));
+    assert!(t0.elapsed() < Duration::from_secs(15), "the deadline took {:?}", t0.elapsed());
+    h.release_held(&r, &id);
+    h.close();
+}
+
+#[test]
+fn a_credentialed_call_cannot_look_a_name_up() {
+    // Row 9. The proxy resolves the listed names in the host, so the call needs no resolver, and the profile drops
+    // the resolver's socket (mDNSResponder). The row measures the FAILURE's kind: a call that still resolved would be
+    // stopped later, at the connect, by the address rule ("Operation not permitted"), so a resolution failure is what
+    // tells the two apart and what fails when the resolver goes back into the profile.
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let (_d, r) = root();
+    let body = "(exec 3<>/dev/tcp/github.com/443) 2>&1; echo \"name-rc=$?\"\n\
+                P=${HTTPS_PROXY##*:}\n\
+                (exec 4<>/dev/tcp/127.0.0.1/$P) 2>&1; echo \"proxy-rc=$?\"";
+    let (_b, bin) = fake_program("gh", body);
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r,
+                              "credential": { "provider": "github", "manifest": gh_manifest_hash() } }));
+    let out = format!("{}{}", text(&h.read_all(&d["stdout"])), text(&h.read_all(&d["stderr"])));
+    assert!(out.contains("proxy-rc=0"), "the call's own proxy port did not answer, so the row proves nothing: {out}");
+    assert!(!out.contains("name-rc=0"), "a credentialed call resolved a name: {out}");
+    assert!(
+        !out.to_lowercase().contains("operation not permitted"),
+        "a name connect was stopped by the address rule, so the lookup itself still worked: {out}"
+    );
+    assert!(
+        ["nodename", "servname", "name or service", "resolve", "resolv"].iter().any(|m| out.to_lowercase().contains(m)),
+        "the failure does not name a resolution error: {out}"
+    );
+    h.close();
+}
+
+#[test]
+fn tls_reaches_a_listed_host_through_the_proxy_and_an_unlisted_one_is_refused() {
+    // Row 10. The TLS client the exec set carries is git, and it honours HTTPS_PROXY with CONNECT: a listed name's
+    // handshake completes with the certificate checked in the child (trustd is the one mach service the profile
+    // keeps), and an unlisted name's CONNECT is refused by the proxy. A real `gh api /rate_limit` is not run here:
+    // the suite must not spend the person's token; mlbox's measurement handover covers that half.
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let (_d, r) = root();
+    let body = "echo \"proxy=$HTTPS_PROXY\"\n\
+                o=$(git ls-remote https://github.com/parawanderer/window-ml-host HEAD 2>&1); echo \"listed-rc=$?\"; \
+                  echo \"listed-out=${o:0:200}\"\n\
+                o=$(git ls-remote https://example.com/x 2>&1); echo \"unlisted-rc=$?\"; echo \"unlisted-out=${o:0:200}\"";
+    let (_b, bin) = fake_program("gh", body);
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
+    // Control: unsandboxed, the same read of the same listed repository works, so a failure below is the profile's.
+    configure_with(&mut h, &r, &bin, false);
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r }));
+    if !text(&h.read_all(&d["stdout"])).contains("listed-rc=0") {
+        eprintln!("github.com is unreachable from this machine; the row is not measured");
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": cred }));
+    let out = text(&h.read_all(&d["stdout"]));
+    let err = text(&h.read_all(&d["stderr"]));
+    let both = format!("{out}{err}");
+    assert!(out.contains("proxy=http://127.0.0.1:"), "the call has no proxy to route through: {both}");
+    assert!(out.contains("listed-rc=0"), "TLS to a listed host did not complete through the proxy: {both}");
+    let sha = out
+        .lines()
+        .find_map(|l| l.strip_prefix("listed-out="))
+        .map(|l| l.split_whitespace().next().unwrap_or("").len())
+        .unwrap_or(0);
+    assert_eq!(sha, 40, "git did not report a commit for the listed host, so the handshake is not proven: {both}");
+    assert!(!out.contains("unlisted-rc=0"), "an unlisted host was reached through the proxy: {both}");
+    assert!(
+        both.contains("403") || both.to_lowercase().contains("unable to access"),
+        "the unlisted read did not fail at the proxy: {both}"
     );
     h.close();
 }
