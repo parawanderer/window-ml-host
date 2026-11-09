@@ -38,7 +38,7 @@ the host answers each as it finishes, not in order. A message that is not an obj
 `args: {}` → the host's identity and what it can do. Safe to call any time.
 
 ```jsonc
-{ "host": "window-ml-host", "version": "0.7.0", "protocol": 1, "platform": "macos",
+{ "host": "window-ml-host", "version": "0.8.0", "protocol": 1, "platform": "macos",
   "sandbox": { "kind": "seatbelt", "available": true, "landlockAbi": null },  // kind: "seatbelt" | "bwrap" | null; "reason" when unavailable; landlockAbi: number | null (Linux only)
   "modes": ["host"],                                                // "container" appears once a runner exists
   "peek": true,                                                     // this host answers `peek`; an older host has no such field
