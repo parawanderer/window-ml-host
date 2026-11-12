@@ -3106,6 +3106,16 @@ fn kill_pid(pid: u32) -> bool {
         .is_some_and(|p| rustix::process::kill_process(p, Signal::KILL).is_ok())
 }
 
+/// Whether `pid` has stopped running: gone, or a zombie (its files and sockets are closed before it becomes one), so
+/// a row waiting on this waits for the work to have ended, not for a signal to have been sent.
+fn finished(pid: u32) -> bool {
+    let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else { return true };
+    // The command name may hold spaces and parentheses: the fields start after the LAST `)`.
+    stat.rsplit_once(')')
+        .and_then(|(_, rest)| rest.split_whitespace().next())
+        .is_some_and(|state| state == "Z" || state == "X")
+}
+
 #[test]
 fn another_calls_proxy_socket_is_not_in_a_linux_calls_view_and_its_own_is() {
     // The session's `sock/` is masked (a tmpfs) and only the call's own directory is bound back after the masks
@@ -3197,10 +3207,10 @@ fn another_calls_proxy_socket_is_not_in_a_linux_calls_view_and_its_own_is() {
 fn killing_a_linux_calls_forwarder_leaves_no_route_out() {
     // The forwarder is started before the call's ruleset applies (src/exec_under.rs) and is killed here from the
     // TEST's side, by host pid, found as the `wmlhost forward` process whose argv names this call's socket path: the
-    // call's own view of `/proc` and of its pid namespace is not something this row may rely on (measured below: the
-    // call's ruleset can deny `/proc`, and no live pid above its own is visible). What the call must not gain from the
-    // forwarder's death is a route: the network namespace is empty (`--unshare-net`), and the only address in it was the
-    // forwarder's port. Measured around the kill, the listed name through the proxy and GitHub by address.
+    // call's own view is not something this row may rely on (on the ubuntu job its ruleset denied it `/proc`, and its
+    // pid namespace showed no live pid above its own). What the call must not gain from the forwarder's death is a
+    // route: the network namespace is empty (`--unshare-net`), and the only address in it was the forwarder's port.
+    // Measured around the kill, the listed name through the proxy and GitHub by address.
     // Weakened guard it was re-run against: `--unshare-net` dropped from `bwrap_fixed_args`, after which the direct
     // dial reaches 443 and reds the last assertion.
     if !cfg!(target_os = "linux") {
@@ -3219,14 +3229,11 @@ fn killing_a_linux_calls_forwarder_leaves_no_route_out() {
     };
     let ip = ip.ip();
     // Two phases, so the kill lands between them: the first dial goes through the forwarder, the call then says
-    // `dialed` and waits for `kill-it`, and the second pair of dials runs after the forwarder died.
+    // `dialed` and waits for `kill-it` (which the test writes only once the forwarder's process has ENDED, not merely
+    // been signalled), and the second pair of dials runs after it.
     let body = format!(
         "P=${{HTTPS_PROXY##*:}}\n\
          (exec 5<>/dev/tcp/127.0.0.1/$P; printf 'CONNECT github.com:443 HTTP/1.1\\r\\n\\r\\n' >&5; read -r l <&5; echo \"before=$l\") 2>&1\n\
-         echo \"self=$$\"\n\
-         seen=\"\"\n\
-         for p in {{2..64}}; do kill -0 \"$p\" 2>/dev/null && seen=\"$seen $p\"; done\n\
-         echo \"seen=$seen\"\n\
          : > ./dialed\n\
          while [ ! -e ./kill-it ]; do :; done\n\
          (exec 6<>/dev/tcp/127.0.0.1/$P) 2>&1; echo \"after-local-rc=$?\"\n\
@@ -3264,6 +3271,15 @@ fn killing_a_linux_calls_forwarder_leaves_no_route_out() {
     let fwd = pids_naming(&sock);
     assert_eq!(fwd.len(), 1, "control: one forwarder serves this call's socket, {}: {fwd:?}", sock.display());
     assert!(kill_pid(fwd[0]), "the row could not signal the forwarder ({}), so it did not run", fwd[0]);
+    // A signal that has been sent is not a process that has ended: its listening socket closes when it does, so the
+    // call is released only after that, or the second dial races the teardown and answers from a forwarder still alive.
+    for _ in 0..250 {
+        if finished(fwd[0]) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(finished(fwd[0]), "control: the forwarder ({}) had ended before the call dialled again", fwd[0]);
     std::fs::write(r.join("kill-it"), b"").unwrap();
     let d = h.done(&id);
     let out = text(&h.read_all(&d["stdout"]));
