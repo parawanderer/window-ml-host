@@ -3062,6 +3062,244 @@ fn a_credentialed_gh_reaches_only_its_proxy_and_the_proxy_only_the_listed_hosts(
     h.close();
 }
 
+// --- red team: the Linux edges of a credentialed call (PR 2b, session window-ml-redteam-e3, rule 10) ---
+//
+// On Linux the host's proxy is a unix socket under the session's `sock/`, one private directory per call, and the
+// sandbox hides `sock/` while binding back only the call's own directory; the call reaches it through a forwarder in
+// its own empty network namespace. The rows above pin what the call may reach THROUGH that route. These pin the route
+// itself: the other sockets in the same session are not in the call's view, and the forwarder is the only way out.
+// Each was re-run against a weakened guard (noted beside it) so neither can pass with the guard gone.
+
+/// The session directory the host made for its run: `wmlhost-<pid>-<hex>` under the system temp dir, as `Store::create`
+/// makes it. One host, one session; more than one means the row would read a stranger's sockets.
+fn session_store(h: &Host) -> PathBuf {
+    let pre = format!("wmlhost-{}-", h.child.id());
+    let mut found: Vec<PathBuf> = std::fs::read_dir(std::env::temp_dir())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(&pre)))
+        .collect();
+    assert_eq!(found.len(), 1, "exactly one session directory for this host: {found:?}");
+    found.pop().unwrap()
+}
+
+/// Every host pid whose argv carries `needle` as one whole argument, read from the TEST's own `/proc`: a call's
+/// ruleset may deny it that view, and its pid namespace may not hold the process at all, so the row finds the
+/// forwarder from here. An exact argument match, so only this call's forwarder can match.
+fn pids_naming(needle: &Path) -> Vec<u32> {
+    let want = needle.as_os_str().as_encoded_bytes();
+    let Ok(dir) = std::fs::read_dir("/proc") else { return vec![] };
+    dir.filter_map(|e| e.ok())
+        .filter_map(|e| Some((e.file_name().to_str()?.parse::<u32>().ok()?, e.path())))
+        .filter(|(_, p)| std::fs::read(p.join("cmdline")).is_ok_and(|raw| raw.split(|b| *b == 0).any(|a| a == want)))
+        .map(|(pid, _)| pid)
+        .collect()
+}
+
+/// SIGKILLs `pid` from the test's side, as `src/runner.rs` kills a call's tree.
+fn kill_pid(pid: u32) -> bool {
+    use rustix::process::{Pid, Signal};
+    i32::try_from(pid)
+        .ok()
+        .and_then(Pid::from_raw)
+        .is_some_and(|p| rustix::process::kill_process(p, Signal::KILL).is_ok())
+}
+
+/// Whether `pid` has stopped running: gone, or a zombie (its files and sockets are closed before it becomes one), so
+/// a row waiting on this waits for the work to have ended, not for a signal to have been sent.
+fn finished(pid: u32) -> bool {
+    let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else { return true };
+    // The command name may hold spaces and parentheses: the fields start after the LAST `)`.
+    stat.rsplit_once(')')
+        .and_then(|(_, rest)| rest.split_whitespace().next())
+        .is_some_and(|state| state == "Z" || state == "X")
+}
+
+#[test]
+fn another_calls_proxy_socket_is_not_in_a_linux_calls_view_and_its_own_is() {
+    // The session's `sock/` is masked (a tmpfs) and only the call's own directory is bound back after the masks
+    // (src/sandbox.rs `bwrap_args`), so a call cannot borrow another call's proxy — a second route to the same hosts,
+    // held by a call whose own grant may be older or wider. A credentialed call's socket is bound at START, not spawn
+    // (src/session.rs reads the token and starts the proxy there), and it is unlinked when that call ends, so the other
+    // call is STARTED and held open (its body spins until the test writes `finish`) while this row's call runs: the mask
+    // is measured against a socket that really exists outside it. Measured against the real mount: the body names its
+    // own socket from its TMPDIR and takes the other call's path from a file the test wrote, so nothing is guessed.
+    // Weakened guard it was re-run against: `sock/` dropped from `plan.hidden` (src/session.rs), which lists the other
+    // call's directory and reds the exact-set assertion.
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+    let (_d, r) = root();
+    let body = "if [ \"$2\" = /hold ]; then while [ ! -e ./finish ]; do :; done; exit 0; fi\n\
+                STORE=${TMPDIR%/tmp/*}\n\
+                ID=${TMPDIR##*/}\n\
+                S=$STORE/sock\n\
+                OWN=$S/$ID/p.sock\n\
+                FOREIGN=\"\"\n\
+                read -r FOREIGN < ./foreign-file 2>/dev/null\n\
+                echo \"own=$OWN\"\n\
+                if [ -S \"$OWN\" ]; then echo own=socket; else echo own=absent; fi\n\
+                for d in \"$S\"/*; do echo \"seen=$d\"; done\n\
+                if [ -e \"$FOREIGN\" ]; then echo foreign=present; else echo foreign=absent; fi\n\
+                if [ -e \"${FOREIGN%/*}\" ]; then echo foreign-dir=present; else echo foreign-dir=absent; fi";
+    let (_b, bin) = fake_program("gh", body);
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    if !holds_credentials(&mut h) {
+        eprintln!(
+            "this Linux sandbox has no Landlock, so a credentialed call cannot run; the socket mask is not checked"
+        );
+        return h.close();
+    }
+    let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
+    // Another call in the same session, STARTED and held open (its body spins until `finish`), so its socket is bound
+    // and not yet unlinked while this row's call runs.
+    let other = h.ok(
+        "spawn",
+        json!({ "argv": ["gh", "api", "/hold"], "cwd": r, "timeoutMs": 60_000, "credential": cred.clone() }),
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    h.ok("start", json!({ "id": other }));
+    let store = session_store(&h);
+    let sock = store.join("sock");
+    let foreign = sock.join(&other).join("p.sock");
+    for _ in 0..250 {
+        if foreign.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(foreign.exists(), "control: the other call's socket was bound at start: {}", foreign.display());
+    // The path the call is told to look for, in a file in its root; the call itself is spawned after it is written.
+    std::fs::write(r.join("foreign-file"), foreign.to_string_lossy().as_bytes()).unwrap();
+    let id =
+        h.ok("spawn", json!({ "argv": ["gh", "api", "/z"], "cwd": r, "timeoutMs": 60_000, "credential": cred }))["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+    h.ok("start", json!({ "id": id }));
+    let d = h.done(&id);
+    let out = text(&h.read_all(&d["stdout"]));
+    let mine: PathBuf = out.lines().find_map(|l| l.strip_prefix("own=")).map(PathBuf::from).unwrap_or_default();
+    assert_eq!(mine, sock.join(&id).join("p.sock"), "the body's own socket is where the host put this call's: {out}");
+    let seen: Vec<&str> = out.lines().filter(|l| l.starts_with("seen=")).collect();
+    assert_eq!(
+        seen,
+        vec![format!("seen={}", sock.join(&id).display())],
+        "the call's socket directory holds exactly its own: {out}"
+    );
+    assert!(out.contains("own=socket"), "control: the call's own socket is bound back and reads as a socket: {out}");
+    assert!(out.contains("foreign=absent"), "another call's socket was in a Linux call's view: {out}");
+    assert!(out.contains("foreign-dir=absent"), "another call's socket DIRECTORY was in a Linux call's view: {out}");
+    // Release the held call: the spin ends with the file, and cancel ends the call either way.
+    std::fs::write(r.join("finish"), b"").unwrap();
+    let _ = h.call("cancel", json!({ "id": other }));
+    h.close();
+}
+
+#[test]
+fn killing_a_linux_calls_forwarder_leaves_no_route_out() {
+    // The forwarder is started before the call's ruleset applies (src/exec_under.rs) and is killed here from the
+    // TEST's side, by host pid, found as the `wmlhost forward` process whose argv names this call's socket path: the
+    // call's own view is not something this row may rely on (on the ubuntu job its ruleset denied it `/proc`, and its
+    // pid namespace showed no live pid above its own). What the call must not gain from the forwarder's death is a
+    // route: the network namespace is empty (`--unshare-net`), and the only address in it was the forwarder's port.
+    // Measured around the kill, the listed name through the proxy and GitHub by address.
+    // Weakened guard it was re-run against: `--unshare-net` dropped from `bwrap_fixed_args`, after which the direct
+    // dial reaches 443 and reds the last assertion.
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+    use std::net::ToSocketAddrs;
+    let (_d, r) = root();
+    let required = std::env::var("WMLHOST_REQUIRE_SANDBOX").as_deref() == Ok("1");
+    let Some(ip) = ("github.com", 443).to_socket_addrs().ok().and_then(|mut a| a.find(|a| a.is_ipv4())) else {
+        assert!(
+            !required,
+            "github.com does not resolve on CI; the call's route out after its forwarder died went unchecked"
+        );
+        eprintln!("github.com does not resolve here; the forwarder's death is not checked");
+        return;
+    };
+    let ip = ip.ip();
+    // Two phases, so the kill lands between them: the first dial goes through the forwarder, the call then says
+    // `dialed` and waits for `kill-it` (which the test writes only once the forwarder's process has ENDED, not merely
+    // been signalled), and the second pair of dials runs after it.
+    let body = format!(
+        "P=${{HTTPS_PROXY##*:}}\n\
+         (exec 5<>/dev/tcp/127.0.0.1/$P; printf 'CONNECT github.com:443 HTTP/1.1\\r\\n\\r\\n' >&5; read -r l <&5; echo \"before=$l\") 2>&1\n\
+         : > ./dialed\n\
+         while [ ! -e ./kill-it ]; do :; done\n\
+         (exec 6<>/dev/tcp/127.0.0.1/$P) 2>&1; echo \"after-local-rc=$?\"\n\
+         (exec 7<>/dev/tcp/{ip}/443) 2>&1; echo \"after-direct-rc=$?\""
+    );
+    let (_b, bin) = fake_program("gh", &body);
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    if !holds_credentials(&mut h) {
+        eprintln!(
+            "this Linux sandbox has no Landlock, so a credentialed call cannot run; the route out is not checked"
+        );
+        return h.close();
+    }
+    let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
+    let id =
+        h.ok("spawn", json!({ "argv": ["gh", "api", "/x"], "cwd": r, "timeoutMs": 60_000, "credential": cred }))["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+    h.ok("start", json!({ "id": id }));
+    let dialed = r.join("dialed");
+    for _ in 0..500 {
+        if dialed.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(dialed.exists(), "control: the call reached its first dial and asked for the kill");
+    // The forwarder, exactly: the process whose argv carries THIS call's socket path.
+    let sock = session_store(&h).join("sock").join(&id).join("p.sock");
+    let fwd = pids_naming(&sock);
+    assert_eq!(fwd.len(), 1, "control: one forwarder serves this call's socket, {}: {fwd:?}", sock.display());
+    assert!(kill_pid(fwd[0]), "the row could not signal the forwarder ({}), so it did not run", fwd[0]);
+    // A signal that has been sent is not a process that has ended: its listening socket closes when it does, so the
+    // call is released only after that, or the second dial races the teardown and answers from a forwarder still alive.
+    for _ in 0..250 {
+        if finished(fwd[0]) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(finished(fwd[0]), "control: the forwarder ({}) had ended before the call dialled again", fwd[0]);
+    std::fs::write(r.join("kill-it"), b"").unwrap();
+    let d = h.done(&id);
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(
+        out.contains("before=HTTP/1.1 200"),
+        "control: the listed host was answered through the forwarder before it died: {out}"
+    );
+    assert!(!out.contains("after-local-rc=0"), "the forwarder's port still answered after its death: {out}");
+    assert!(!out.contains("after-direct-rc=0"), "with the forwarder dead the call reached GitHub by address: {out}");
+    // Both negative assertions above are vacuous unless the second phase ran: a call that died between `dialed` and
+    // `kill-it` leaves stdout at `before=…`, with neither `after-*` line to fail.
+    for k in ["after-local-rc=", "after-direct-rc="] {
+        assert!(
+            out.lines().any(|l| l.starts_with(k)),
+            "the second phase ran, so the two negatives are not vacuous: {out}"
+        );
+    }
+    h.close();
+}
+
 #[test]
 fn no_token_is_secret_unavailable_and_the_program_never_runs() {
     use std::os::unix::fs::PermissionsExt;
