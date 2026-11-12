@@ -3084,6 +3084,28 @@ fn session_store(h: &Host) -> PathBuf {
     found.pop().unwrap()
 }
 
+/// Every host pid whose argv carries `needle` as one whole argument, read from the TEST's own `/proc`: a call's
+/// ruleset may deny it that view, and its pid namespace may not hold the process at all, so the row finds the
+/// forwarder from here. An exact argument match, so only this call's forwarder can match.
+fn pids_naming(needle: &Path) -> Vec<u32> {
+    let want = needle.as_os_str().as_encoded_bytes();
+    let Ok(dir) = std::fs::read_dir("/proc") else { return vec![] };
+    dir.filter_map(|e| e.ok())
+        .filter_map(|e| Some((e.file_name().to_str()?.parse::<u32>().ok()?, e.path())))
+        .filter(|(_, p)| std::fs::read(p.join("cmdline")).is_ok_and(|raw| raw.split(|b| *b == 0).any(|a| a == want)))
+        .map(|(pid, _)| pid)
+        .collect()
+}
+
+/// SIGKILLs `pid` from the test's side, as `src/runner.rs` kills a call's tree.
+fn kill_pid(pid: u32) -> bool {
+    use rustix::process::{Pid, Signal};
+    i32::try_from(pid)
+        .ok()
+        .and_then(Pid::from_raw)
+        .is_some_and(|p| rustix::process::kill_process(p, Signal::KILL).is_ok())
+}
+
 #[test]
 fn another_calls_proxy_socket_is_not_in_a_linux_calls_view_and_its_own_is() {
     // The session's `sock/` is masked (a tmpfs) and only the call's own directory is bound back after the masks
@@ -3173,13 +3195,12 @@ fn another_calls_proxy_socket_is_not_in_a_linux_calls_view_and_its_own_is() {
 
 #[test]
 fn killing_a_linux_calls_forwarder_leaves_no_route_out() {
-    // The forwarder is the call's own child, started before the ruleset applies (src/exec_under.rs), so the call can
-    // signal it. It is found by its `comm` when the call may read `/proc` at all, and otherwise as the only live pid
-    // above 1 in the call's own pid namespace (`kill -0`, no `/proc` needed: the call's ruleset may deny reading it);
-    // both are printed, so a row that could not find it says so instead of passing. What the call must not gain by
-    // killing it is a route: the network namespace is empty (`--unshare-net`), and the only address in it was the
-    // forwarder's port. Measured by killing it and dialling again, the listed name through the proxy and GitHub by
-    // address around it.
+    // The forwarder is started before the call's ruleset applies (src/exec_under.rs) and is killed here from the
+    // TEST's side, by host pid, found as the `wmlhost forward` process whose argv names this call's socket path: the
+    // call's own view of `/proc` and of its pid namespace is not something this row may rely on (measured below: the
+    // call's ruleset can deny `/proc`, and no live pid above its own is visible). What the call must not gain from the
+    // forwarder's death is a route: the network namespace is empty (`--unshare-net`), and the only address in it was the
+    // forwarder's port. Measured around the kill, the listed name through the proxy and GitHub by address.
     // Weakened guard it was re-run against: `--unshare-net` dropped from `bwrap_fixed_args`, after which the direct
     // dial reaches 443 and reds the last assertion.
     if !cfg!(target_os = "linux") {
@@ -3197,17 +3218,17 @@ fn killing_a_linux_calls_forwarder_leaves_no_route_out() {
         return;
     };
     let ip = ip.ip();
+    // Two phases, so the kill lands between them: the first dial goes through the forwarder, the call then says
+    // `dialed` and waits for `kill-it`, and the second pair of dials runs after the forwarder died.
     let body = format!(
         "P=${{HTTPS_PROXY##*:}}\n\
          (exec 5<>/dev/tcp/127.0.0.1/$P; printf 'CONNECT github.com:443 HTTP/1.1\\r\\n\\r\\n' >&5; read -r l <&5; echo \"before=$l\") 2>&1\n\
-         n2=\"\"; {{ read -r n2 < /proc/2/comm; }} 2>/dev/null\n\
-         echo \"pid2-comm=[$n2]\"\n\
-         fwd=\"\"\n\
-         for p in 2 3 4 5 6 7 8 9 10; do n=\"\"; {{ read -r n < \"/proc/$p/comm\"; }} 2>/dev/null; \
-           [ \"$n\" = wmlhost ] && {{ fwd=$p; break; }}; done\n\
-         if [ -z \"$fwd\" ]; then for p in 2 3 4 5 6 7 8 9 10; do kill -0 \"$p\" 2>/dev/null && {{ fwd=$p; break; }}; done; fi\n\
-         echo \"fwd=$fwd\"\n\
-         [ -n \"$fwd\" ] && kill -9 \"$fwd\"; echo \"kill-rc=$?\"\n\
+         echo \"self=$$\"\n\
+         seen=\"\"\n\
+         for p in {{2..64}}; do kill -0 \"$p\" 2>/dev/null && seen=\"$seen $p\"; done\n\
+         echo \"seen=$seen\"\n\
+         : > ./dialed\n\
+         while [ ! -e ./kill-it ]; do :; done\n\
          (exec 6<>/dev/tcp/127.0.0.1/$P) 2>&1; echo \"after-local-rc=$?\"\n\
          (exec 7<>/dev/tcp/{ip}/443) 2>&1; echo \"after-direct-rc=$?\""
     );
@@ -3224,15 +3245,32 @@ fn killing_a_linux_calls_forwarder_leaves_no_route_out() {
         return h.close();
     }
     let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
-    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": cred }));
+    let id =
+        h.ok("spawn", json!({ "argv": ["gh", "api", "/x"], "cwd": r, "timeoutMs": 60_000, "credential": cred }))["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+    h.ok("start", json!({ "id": id }));
+    let dialed = r.join("dialed");
+    for _ in 0..500 {
+        if dialed.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(dialed.exists(), "control: the call reached its first dial and asked for the kill");
+    // The forwarder, exactly: the process whose argv carries THIS call's socket path.
+    let sock = session_store(&h).join("sock").join(&id).join("p.sock");
+    let fwd = pids_naming(&sock);
+    assert_eq!(fwd.len(), 1, "control: one forwarder serves this call's socket, {}: {fwd:?}", sock.display());
+    assert!(kill_pid(fwd[0]), "the row could not signal the forwarder ({}), so it did not run", fwd[0]);
+    std::fs::write(r.join("kill-it"), b"").unwrap();
+    let d = h.done(&id);
     let out = text(&h.read_all(&d["stdout"]));
     assert!(
         out.contains("before=HTTP/1.1 200"),
         "control: the listed host was answered through the forwarder before it died: {out}"
     );
-    let fwd = out.lines().find_map(|l| l.strip_prefix("fwd=")).unwrap_or("");
-    assert!(!fwd.is_empty(), "control: the forwarder was found in the call's own process view: {out}");
-    assert!(out.contains("kill-rc=0"), "the call could not signal its own forwarder, so the row did not run: {out}");
     assert!(!out.contains("after-local-rc=0"), "the forwarder's port still answered after its death: {out}");
     assert!(!out.contains("after-direct-rc=0"), "with the forwarder dead the call reached GitHub by address: {out}");
     h.close();
