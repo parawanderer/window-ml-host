@@ -1,5 +1,6 @@
-//! exec_under.rs — the two Linux-only Landlock entry points of the `wmlhost` binary: `landlock-abi`
-//! (probe, run as a child at start) and `exec-under` (apply a ruleset the host computed, then exec).
+//! exec_under.rs — the Linux-only Landlock entry points of the `wmlhost` binary: `landlock-abi`
+//! (probe, run as a child at start), `exec-under` (apply a ruleset the host computed, then exec) and
+//! `forward` (a credentialed call's in-sandbox end of its proxy, which `exec-under` starts).
 //! The host owns the policy; this module only enforces it. `unsafe` stays forbidden: the `landlock`
 //! crate provides the syscalls.
 
@@ -55,6 +56,12 @@ pub fn exec_under_main(args: &[String]) -> i32 {
     };
     #[cfg(target_os = "linux")]
     {
+        if let Some(f) = &rules.forward
+            && let Err(e) = start_forwarder(f, rules.abi)
+        {
+            eprintln!("wmlhost exec-under: forwarder: {e}");
+            return 2;
+        }
         if let Err(e) = apply_and_exec(&rules, std::path::Path::new(program), prog_args) {
             eprintln!("wmlhost exec-under: {e}");
             return 2;
@@ -67,6 +74,135 @@ pub fn exec_under_main(args: &[String]) -> i32 {
         eprintln!("wmlhost exec-under: Landlock is Linux-only");
         2
     }
+}
+
+/// `wmlhost forward <abi> <port> <socket>` — a credentialed call's in-sandbox end of its proxy: listens on
+/// `127.0.0.1:<port>` in the call's empty network namespace and carries each connection to the host's proxy on the
+/// unix socket `socket`, byte for byte. It restricts itself before serving (no file access, no exec, and from ABI 4
+/// no TCP bind or connect), in a Landlock domain of its own, so the call cannot trace it to step outside its own
+/// ruleset. Prints `ready` once listening. It ends with the sandbox: bubblewrap's pid 1 exits with the call.
+pub fn forward_main(args: &[String]) -> i32 {
+    let [abi, port, socket] = args else {
+        eprintln!("wmlhost forward: usage: forward <abi> <port> <socket>");
+        return 2;
+    };
+    let (Ok(abi), Ok(port)) = (abi.parse::<i32>(), port.parse::<u16>()) else {
+        eprintln!("wmlhost forward: bad <abi> or <port>");
+        return 2;
+    };
+    #[cfg(target_os = "linux")]
+    {
+        match forward(abi, port, std::path::Path::new(socket)) {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("wmlhost forward: {e}");
+                2
+            }
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (abi, port, socket);
+        eprintln!("wmlhost forward: Linux-only");
+        2
+    }
+}
+
+/// The most connections the forwarder carries at once, as the proxy's own cap ([`crate::proxy::MAX_CONNS`]).
+#[cfg(target_os = "linux")]
+const FORWARD_MAX_CONNS: usize = crate::proxy::MAX_CONNS;
+
+#[cfg(target_os = "linux")]
+fn forward(abi: i32, port: u16, socket: &std::path::Path) -> Result<(), String> {
+    use std::io::Write;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let listener = std::net::TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("bind {port}: {e}"))?;
+    restrict_forwarder(abi)?;
+    let mut out = std::io::stdout();
+    writeln!(out, "ready").and_then(|_| out.flush()).map_err(|e| format!("ready: {e}"))?;
+    let live = Arc::new(AtomicUsize::new(0));
+    for client in listener.incoming() {
+        let Ok(client) = client else { continue };
+        if live.load(Ordering::SeqCst) >= FORWARD_MAX_CONNS {
+            continue;
+        }
+        let Ok(up) = std::os::unix::net::UnixStream::connect(socket) else { continue };
+        live.fetch_add(1, Ordering::SeqCst);
+        let live = live.clone();
+        std::thread::spawn(move || {
+            splice(client, up);
+            live.fetch_sub(1, Ordering::SeqCst);
+        });
+    }
+    Ok(())
+}
+
+/// Copies both ways until both directions end, half-closing each side as its source ends.
+#[cfg(target_os = "linux")]
+fn splice(client: std::net::TcpStream, up: std::os::unix::net::UnixStream) {
+    use std::net::Shutdown;
+    let (Ok(mut c2), Ok(mut u2)) = (client.try_clone(), up.try_clone()) else { return };
+    let (mut c, mut u) = (client, up);
+    let t = std::thread::spawn(move || {
+        let _ = std::io::copy(&mut u2, &mut c2);
+        let _ = c2.shutdown(Shutdown::Write);
+    });
+    let _ = std::io::copy(&mut c, &mut u);
+    let _ = u.shutdown(Shutdown::Write);
+    let _ = t.join();
+}
+
+/// The forwarder's own ruleset: every file access handled with no grant (a pathname unix connect, ABI 9's
+/// `ResolveUnix`, excepted: it is the one thing it does), no exec, and from ABI 4 no TCP bind or connect.
+#[cfg(target_os = "linux")]
+fn restrict_forwarder(abi: i32) -> Result<(), String> {
+    use landlock::{ABI, Access, AccessFs, AccessNet, CompatLevel, Compatible, Ruleset, RulesetAttr, RulesetStatus};
+    let abi = ABI::from(abi);
+    if abi == ABI::Unsupported {
+        return Err("unsupported Landlock ABI".into());
+    }
+    let fs = AccessFs::from_all(abi) & !landlock::BitFlags::from(AccessFs::ResolveUnix);
+    let mut r = Ruleset::default()
+        .set_compatibility(CompatLevel::HardRequirement)
+        .handle_access(fs)
+        .map_err(|e| format!("handle_access: {e}"))?;
+    if abi >= ABI::V4 {
+        r = r.handle_access(AccessNet::from_all(abi)).map_err(|e| format!("handle_access net: {e}"))?;
+    }
+    let status =
+        r.create().map_err(|e| format!("create: {e}"))?.restrict_self().map_err(|e| format!("restrict_self: {e}"))?;
+    if status.ruleset != RulesetStatus::FullyEnforced {
+        return Err(format!("forwarder ruleset only {:?}", status.ruleset));
+    }
+    Ok(())
+}
+
+/// Starts `wmlhost forward` as a child, BEFORE the call's ruleset applies (so the forwarder is not in the call's
+/// domain), and waits for it to say it is listening. Fails closed: no `ready`, no call.
+#[cfg(target_os = "linux")]
+fn start_forwarder(f: &crate::sandbox::Forward, abi: i32) -> Result<(), String> {
+    use std::io::BufRead;
+    use std::process::{Command, Stdio};
+    let exe = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
+    let mut child = Command::new(exe)
+        .arg("forward")
+        .arg(abi.to_string())
+        .arg(f.port.to_string())
+        .arg(&f.socket)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|e| format!("spawn: {e}"))?;
+    let mut line = String::new();
+    let read = child.stdout.take().map(|o| std::io::BufReader::new(o).read_line(&mut line));
+    if !matches!(read, Some(Ok(_))) || line.trim() != "ready" {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("did not start".into());
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]

@@ -43,7 +43,7 @@ the host answers each as it finishes, not in order. A message that is not an obj
   "modes": ["host"],                                                // "container" appears once a runner exists
   "peek": true,                                                     // this host answers `peek`; an older host has no such field
   "tilde": true,                                                    // this host expands a leading `~` in argv and cwd (see `spawn`); an older host has no such field
-  "credentials": ["github"],                                        // the credential providers a `spawn` may name (see "A credentialed call"); [] where the sandbox cannot hold the profile (Linux, this version) and over the hub; an older host has no such field
+  "credentials": ["github"],                                        // the credential providers a `spawn` may name (see "A credentialed call"); [] where the sandbox cannot hold the profile (Linux without Landlock) and over the hub; an older host has no such field
   "put": { "max": 67108864 },                                       // this host answers `put`, `write` and `commit`; `max` is the most bytes one put may declare; `null` over the hub, where the three are refused; an older host has no such field
   "owners": { "ledger": true, "register": true },                   // ledger false: the table is in memory only; register false over the hub (see "Owners")
   "memory": { "metric": "phys_footprint", "enforcer": "watchdog", "everyMs": 100 },
@@ -197,8 +197,8 @@ one that answers anonymously without saying so:
   (`gh`, found on `PATH`, never a path), the manifest's `program` and the resolved binary's name are too, and the
   resolved binary is outside every root, else `CredentialRefused`. The token fetch runs that binary unconfined, so a
   `gh` a repository could have planted is never it.
-- The session is sandboxed with a sandbox that can hold the profile: macOS's Seatbelt in this version. A session with
-  `sandbox: false`, Linux and a machine with no sandbox answer `SandboxFailed`.
+- The session is sandboxed with a sandbox that can hold the profile: macOS's Seatbelt, or bubblewrap with Landlock. A session with
+  `sandbox: false`, Linux without Landlock and a machine with no sandbox answer `SandboxFailed`.
 - Not over the hub (`CredentialRefused`): only a connection on this machine may send the person's token.
 
 The facts then carry `"credential": { "provider": "github", "ports": [443], "hosts": [<names>], "profile":
@@ -215,6 +215,9 @@ directory under its `$TMPDIR` (none of the person's gh config is read), `GH_PROM
 never crosses the protocol.
 
 The host starts a CONNECT proxy for the call on `127.0.0.1:<ephemeral>` (`src/proxy.rs`) and closes it before `done`.
+On Linux the call has no network of its own (`--unshare-net`): the proxy listens on a unix socket bound into the
+sandbox, and `wmlhost exec-under` starts `wmlhost forward`, which carries the call's `127.0.0.1:18443` to it; the
+proxy env names that port. A Linux host without Landlock offers no credential.
 It admits only a request line `CONNECT <name>:<port> HTTP/1.1` (or `1.0`) whose name, ASCII-lowercased with one
 trailing dot dropped, is exactly one of the granted hosts and whose port is one of the granted ports; anything else (an
 IP literal, userinfo, an escape, another method) gets `403` and no outbound connection. It resolves the name with the
@@ -583,7 +586,7 @@ These are the host's own; the worker maps them onto the `ml` wire's codes (`Refu
 | `Unsupported` | `mode: "container"` this version |
 | `UnknownId` | `start`/`discard`/`cancel`/`pipe`/`peek`/`write`/`commit` of an id that never existed, expired, or already started (`start`, `pipe`) |
 | `UnknownPtr` | `read`/`release` of a pointer that does not exist |
-| `SandboxFailed` | the sandbox program itself could not be started (a refusal by the sandbox shows in `done`); a `start`/`pipe` with an `envelope` on a call that is not sandboxed (an envelope is a request for a bound; an unsandboxed call holds none); a `write: "roots"` or `exec: "program-only"` on Linux without Landlock; a `credential` on a session or platform that cannot hold the credentialed profile (unsandboxed, Linux) |
+| `SandboxFailed` | the sandbox program itself could not be started (a refusal by the sandbox shows in `done`); a `start`/`pipe` with an `envelope` on a call that is not sandboxed (an envelope is a request for a bound; an unsandboxed call holds none); a `write: "roots"` or `exec: "program-only"` on Linux without Landlock; a `credential` on a session or platform that cannot hold the credentialed profile (unsandboxed, Linux without Landlock) |
 | `SpawnFailed` | the OS refused to start the program |
 | `PinChanged` | `start`/`pipe` of a call whose hashed path argument changed since its facts were read |
 | `Busy` | 256 calls already wait for a verdict, or 32 are running (a `pipe` counts its stages) |
