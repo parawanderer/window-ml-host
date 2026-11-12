@@ -3062,6 +3062,160 @@ fn a_credentialed_gh_reaches_only_its_proxy_and_the_proxy_only_the_listed_hosts(
     h.close();
 }
 
+// --- red team: the Linux edges of a credentialed call (PR 2b, session window-ml-redteam-e3, rule 10) ---
+//
+// On Linux the host's proxy is a unix socket under the session's `sock/`, one private directory per call, and the
+// sandbox hides `sock/` while binding back only the call's own directory; the call reaches it through a forwarder in
+// its own empty network namespace. The rows above pin what the call may reach THROUGH that route. These pin the route
+// itself: the other sockets in the same session are not in the call's view, and the forwarder is the only way out.
+// Each was re-run against a weakened guard (noted beside it) so neither can pass with the guard gone.
+
+/// The session directory the host made for its run: `wmlhost-<pid>-<hex>` under the system temp dir, as `Store::create`
+/// makes it. One host, one session; more than one means the row would read a stranger's sockets.
+fn session_store(h: &Host) -> PathBuf {
+    let pre = format!("wmlhost-{}-", h.child.id());
+    let mut found: Vec<PathBuf> = std::fs::read_dir(std::env::temp_dir())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(&pre)))
+        .collect();
+    assert_eq!(found.len(), 1, "exactly one session directory for this host: {found:?}");
+    found.pop().unwrap()
+}
+
+#[test]
+fn another_calls_proxy_socket_is_not_in_a_linux_calls_view_and_its_own_is() {
+    // The session's `sock/` is masked (a tmpfs) and only the call's own directory is bound back after the masks
+    // (src/sandbox.rs `bwrap_args`), so a call cannot borrow another call's proxy — a second route to the same hosts,
+    // held by a call whose own grant may be older or wider. Measured against the real mount: the body names its own
+    // socket from its TMPDIR and takes the other call's path from a file the test wrote, so nothing is guessed.
+    // Weakened guard it was re-run against: `sock/` dropped from `plan.hidden` (src/session.rs), which lists the other
+    // call's directory and reds the exact-set assertion.
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+    let (_d, r) = root();
+    let body = "STORE=${TMPDIR%/tmp/*}\n\
+                ID=${TMPDIR##*/}\n\
+                S=$STORE/sock\n\
+                OWN=$S/$ID/p.sock\n\
+                FOREIGN=\"\"\n\
+                read -r FOREIGN < ./foreign-file 2>/dev/null\n\
+                echo \"own=$OWN\"\n\
+                if [ -S \"$OWN\" ]; then echo own=socket; else echo own=absent; fi\n\
+                for d in \"$S\"/*; do echo \"seen=$d\"; done\n\
+                if [ -e \"$FOREIGN\" ]; then echo foreign=present; else echo foreign=absent; fi\n\
+                if [ -e \"${FOREIGN%/*}\" ]; then echo foreign-dir=present; else echo foreign-dir=absent; fi";
+    let (_b, bin) = fake_program("gh", body);
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    if !holds_credentials(&mut h) {
+        eprintln!(
+            "this Linux sandbox has no Landlock, so a credentialed call cannot run; the socket mask is not checked"
+        );
+        return h.close();
+    }
+    let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
+    // Another call in the same session: its socket is made at spawn, so it exists while this row's call runs.
+    let other = h.ok(
+        "spawn",
+        json!({ "argv": ["gh", "api", "/other"], "cwd": r, "timeoutMs": 60_000, "credential": cred.clone() }),
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let store = session_store(&h);
+    let sock = store.join("sock");
+    let foreign = sock.join(&other).join("p.sock");
+    assert!(foreign.exists(), "control: the other call's socket was made at spawn: {}", foreign.display());
+    // The path the call is told to look for, in a file in its root; the call itself is spawned after it is written.
+    std::fs::write(r.join("foreign-file"), foreign.to_string_lossy().as_bytes()).unwrap();
+    let id =
+        h.ok("spawn", json!({ "argv": ["gh", "api", "/z"], "cwd": r, "timeoutMs": 60_000, "credential": cred }))["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+    h.ok("start", json!({ "id": id }));
+    let d = h.done(&id);
+    let out = text(&h.read_all(&d["stdout"]));
+    let mine: PathBuf = out.lines().find_map(|l| l.strip_prefix("own=")).map(PathBuf::from).unwrap_or_default();
+    assert_eq!(mine, sock.join(&id).join("p.sock"), "the body's own socket is where the host put this call's: {out}");
+    let seen: Vec<&str> = out.lines().filter(|l| l.starts_with("seen=")).collect();
+    assert_eq!(
+        seen,
+        vec![format!("seen={}", sock.join(&id).display())],
+        "the call's socket directory holds exactly its own: {out}"
+    );
+    assert!(out.contains("own=socket"), "control: the call's own socket is bound back and reads as a socket: {out}");
+    assert!(out.contains("foreign=absent"), "another call's socket was in a Linux call's view: {out}");
+    assert!(out.contains("foreign-dir=absent"), "another call's socket DIRECTORY was in a Linux call's view: {out}");
+    h.close();
+}
+
+#[test]
+fn killing_a_linux_calls_forwarder_leaves_no_route_out() {
+    // The forwarder is the call's own child, started before the ruleset applies (src/exec_under.rs), so the call can
+    // signal it. What it must not gain by that is a route: the call's network namespace is empty (`--unshare-net`), and
+    // the only address in it is the forwarder's port. Measured by killing it and dialling again, the listed name
+    // through the proxy and GitHub by address around it.
+    // Weakened guard it was re-run against: `--unshare-net` dropped from `bwrap_fixed_args`, after which the direct
+    // dial reaches 443 and reds the last assertion.
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+    use std::net::ToSocketAddrs;
+    let (_d, r) = root();
+    let required = std::env::var("WMLHOST_REQUIRE_SANDBOX").as_deref() == Ok("1");
+    let Some(ip) = ("github.com", 443).to_socket_addrs().ok().and_then(|mut a| a.find(|a| a.is_ipv4())) else {
+        assert!(
+            !required,
+            "github.com does not resolve on CI; the call's route out after its forwarder died went unchecked"
+        );
+        eprintln!("github.com does not resolve here; the forwarder's death is not checked");
+        return;
+    };
+    let ip = ip.ip();
+    let body = format!(
+        "P=${{HTTPS_PROXY##*:}}\n\
+         (exec 5<>/dev/tcp/127.0.0.1/$P; printf 'CONNECT github.com:443 HTTP/1.1\\r\\n\\r\\n' >&5; read -r l <&5; echo \"before=$l\") 2>&1\n\
+         fwd=\"\"\n\
+         for c in /proc/[0-9]*/comm; do n=\"\"; read -r n < \"$c\" 2>/dev/null; [ \"$n\" = wmlhost ] && {{ fwd=${{c#/proc/}}; fwd=${{fwd%/comm}}; }}; done\n\
+         echo \"fwd=$fwd\"\n\
+         [ -n \"$fwd\" ] && kill -9 \"$fwd\"; echo \"kill-rc=$?\"\n\
+         (exec 6<>/dev/tcp/127.0.0.1/$P) 2>&1; echo \"after-local-rc=$?\"\n\
+         (exec 7<>/{ip}/443) 2>&1; echo \"after-direct-rc=$?\""
+    );
+    let (_b, bin) = fake_program("gh", &body);
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    configure_with(&mut h, &r, &bin, true);
+    if !holds_credentials(&mut h) {
+        eprintln!(
+            "this Linux sandbox has no Landlock, so a credentialed call cannot run; the route out is not checked"
+        );
+        return h.close();
+    }
+    let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
+    let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": cred }));
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(
+        out.contains("before=HTTP/1.1 200"),
+        "control: the listed host was answered through the forwarder before it died: {out}"
+    );
+    let fwd = out.lines().find_map(|l| l.strip_prefix("fwd=")).unwrap_or("");
+    assert!(!fwd.is_empty(), "control: the forwarder was found in the call's own process view: {out}");
+    assert!(out.contains("kill-rc=0"), "the call could not signal its own forwarder, so the row did not run: {out}");
+    assert!(!out.contains("after-local-rc=0"), "the forwarder's port still answered after its death: {out}");
+    assert!(!out.contains("after-direct-rc=0"), "with the forwarder dead the call reached GitHub by address: {out}");
+    h.close();
+}
+
 #[test]
 fn no_token_is_secret_unavailable_and_the_program_never_runs() {
     use std::os::unix::fs::PermissionsExt;
