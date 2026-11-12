@@ -3088,15 +3088,19 @@ fn session_store(h: &Host) -> PathBuf {
 fn another_calls_proxy_socket_is_not_in_a_linux_calls_view_and_its_own_is() {
     // The session's `sock/` is masked (a tmpfs) and only the call's own directory is bound back after the masks
     // (src/sandbox.rs `bwrap_args`), so a call cannot borrow another call's proxy — a second route to the same hosts,
-    // held by a call whose own grant may be older or wider. Measured against the real mount: the body names its own
-    // socket from its TMPDIR and takes the other call's path from a file the test wrote, so nothing is guessed.
+    // held by a call whose own grant may be older or wider. A credentialed call's socket is bound at START, not spawn
+    // (src/session.rs reads the token and starts the proxy there), and it is unlinked when that call ends, so the other
+    // call is STARTED and held open (its body spins until the test writes `finish`) while this row's call runs: the mask
+    // is measured against a socket that really exists outside it. Measured against the real mount: the body names its
+    // own socket from its TMPDIR and takes the other call's path from a file the test wrote, so nothing is guessed.
     // Weakened guard it was re-run against: `sock/` dropped from `plan.hidden` (src/session.rs), which lists the other
     // call's directory and reds the exact-set assertion.
     if !cfg!(target_os = "linux") {
         return;
     }
     let (_d, r) = root();
-    let body = "STORE=${TMPDIR%/tmp/*}\n\
+    let body = "if [ \"$2\" = /hold ]; then while [ ! -e ./finish ]; do :; done; exit 0; fi\n\
+                STORE=${TMPDIR%/tmp/*}\n\
                 ID=${TMPDIR##*/}\n\
                 S=$STORE/sock\n\
                 OWN=$S/$ID/p.sock\n\
@@ -3120,18 +3124,26 @@ fn another_calls_proxy_socket_is_not_in_a_linux_calls_view_and_its_own_is() {
         return h.close();
     }
     let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
-    // Another call in the same session: its socket is made at spawn, so it exists while this row's call runs.
+    // Another call in the same session, STARTED and held open (its body spins until `finish`), so its socket is bound
+    // and not yet unlinked while this row's call runs.
     let other = h.ok(
         "spawn",
-        json!({ "argv": ["gh", "api", "/other"], "cwd": r, "timeoutMs": 60_000, "credential": cred.clone() }),
+        json!({ "argv": ["gh", "api", "/hold"], "cwd": r, "timeoutMs": 60_000, "credential": cred.clone() }),
     )["id"]
         .as_str()
         .unwrap()
         .to_string();
+    h.ok("start", json!({ "id": other }));
     let store = session_store(&h);
     let sock = store.join("sock");
     let foreign = sock.join(&other).join("p.sock");
-    assert!(foreign.exists(), "control: the other call's socket was made at spawn: {}", foreign.display());
+    for _ in 0..250 {
+        if foreign.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(foreign.exists(), "control: the other call's socket was bound at start: {}", foreign.display());
     // The path the call is told to look for, in a file in its root; the call itself is spawned after it is written.
     std::fs::write(r.join("foreign-file"), foreign.to_string_lossy().as_bytes()).unwrap();
     let id =
@@ -3153,15 +3165,21 @@ fn another_calls_proxy_socket_is_not_in_a_linux_calls_view_and_its_own_is() {
     assert!(out.contains("own=socket"), "control: the call's own socket is bound back and reads as a socket: {out}");
     assert!(out.contains("foreign=absent"), "another call's socket was in a Linux call's view: {out}");
     assert!(out.contains("foreign-dir=absent"), "another call's socket DIRECTORY was in a Linux call's view: {out}");
+    // Release the held call: the spin ends with the file, and cancel ends the call either way.
+    std::fs::write(r.join("finish"), b"").unwrap();
+    let _ = h.call("cancel", json!({ "id": other }));
     h.close();
 }
 
 #[test]
 fn killing_a_linux_calls_forwarder_leaves_no_route_out() {
     // The forwarder is the call's own child, started before the ruleset applies (src/exec_under.rs), so the call can
-    // signal it. What it must not gain by that is a route: the call's network namespace is empty (`--unshare-net`), and
-    // the only address in it is the forwarder's port. Measured by killing it and dialling again, the listed name
-    // through the proxy and GitHub by address around it.
+    // signal it. It is found by its `comm` when the call may read `/proc` at all, and otherwise as the only live pid
+    // above 1 in the call's own pid namespace (`kill -0`, no `/proc` needed: the call's ruleset may deny reading it);
+    // both are printed, so a row that could not find it says so instead of passing. What the call must not gain by
+    // killing it is a route: the network namespace is empty (`--unshare-net`), and the only address in it was the
+    // forwarder's port. Measured by killing it and dialling again, the listed name through the proxy and GitHub by
+    // address around it.
     // Weakened guard it was re-run against: `--unshare-net` dropped from `bwrap_fixed_args`, after which the direct
     // dial reaches 443 and reds the last assertion.
     if !cfg!(target_os = "linux") {
@@ -3182,12 +3200,16 @@ fn killing_a_linux_calls_forwarder_leaves_no_route_out() {
     let body = format!(
         "P=${{HTTPS_PROXY##*:}}\n\
          (exec 5<>/dev/tcp/127.0.0.1/$P; printf 'CONNECT github.com:443 HTTP/1.1\\r\\n\\r\\n' >&5; read -r l <&5; echo \"before=$l\") 2>&1\n\
+         n2=\"\"; {{ read -r n2 < /proc/2/comm; }} 2>/dev/null\n\
+         echo \"pid2-comm=[$n2]\"\n\
          fwd=\"\"\n\
-         for c in /proc/[0-9]*/comm; do n=\"\"; read -r n < \"$c\" 2>/dev/null; [ \"$n\" = wmlhost ] && {{ fwd=${{c#/proc/}}; fwd=${{fwd%/comm}}; }}; done\n\
+         for p in 2 3 4 5 6 7 8 9 10; do n=\"\"; {{ read -r n < \"/proc/$p/comm\"; }} 2>/dev/null; \
+           [ \"$n\" = wmlhost ] && {{ fwd=$p; break; }}; done\n\
+         if [ -z \"$fwd\" ]; then for p in 2 3 4 5 6 7 8 9 10; do kill -0 \"$p\" 2>/dev/null && {{ fwd=$p; break; }}; done; fi\n\
          echo \"fwd=$fwd\"\n\
          [ -n \"$fwd\" ] && kill -9 \"$fwd\"; echo \"kill-rc=$?\"\n\
          (exec 6<>/dev/tcp/127.0.0.1/$P) 2>&1; echo \"after-local-rc=$?\"\n\
-         (exec 7<>/{ip}/443) 2>&1; echo \"after-direct-rc=$?\""
+         (exec 7<>/dev/tcp/{ip}/443) 2>&1; echo \"after-direct-rc=$?\""
     );
     let (_b, bin) = fake_program("gh", &body);
     let mut h = Host::start();
