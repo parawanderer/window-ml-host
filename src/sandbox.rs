@@ -45,24 +45,28 @@ pub struct Availability {
 
 impl Availability {
     /// Whether this platform can hold every bound `plan` names. Seatbelt always can; Linux needs
-    /// Landlock for anything narrower than the bwrap floor (and for the name-immutable top level), and cannot
-    /// yet hold a credentialed profile's ports at all: `--unshare-net` is all or nothing.
+    /// Landlock for anything narrower than the bwrap floor (and for the name-immutable top level), and for a
+    /// credentialed call's proxy, whose forwarder `exec-under` starts.
     pub fn can_hold(&self, plan: &Plan) -> bool {
         match self.kind {
             Some(Kind::Seatbelt) => true,
             Some(Kind::Bwrap) => {
-                plan.proxy.is_none()
-                    && (self.landlock_abi.is_some()
-                        || (plan.write == WriteScope::Today && matches!(plan.exec, ExecScope::Any)))
+                self.landlock_abi.is_some()
+                    || (plan.proxy.is_none() && plan.write == WriteScope::Today && matches!(plan.exec, ExecScope::Any))
             }
             None => false,
         }
     }
 
-    /// Whether a credentialed call can run here at all: an available Seatbelt (Linux answers `SandboxFailed`
-    /// until the proxy lands).
+    /// Whether a credentialed call can run here at all: an available Seatbelt, or an available bubblewrap with
+    /// Landlock (the call's exec is program-only, and `exec-under` starts its forwarder).
     pub fn holds_credentials(&self) -> bool {
-        self.available && self.kind == Some(Kind::Seatbelt)
+        self.available
+            && match self.kind {
+                Some(Kind::Seatbelt) => true,
+                Some(Kind::Bwrap) => self.landlock_abi.is_some(),
+                None => false,
+            }
     }
 }
 
@@ -248,6 +252,9 @@ pub struct Plan {
     /// A credentialed call's proxy port (src/proxy.rs): the one outbound address, `localhost:<port>`, plus certificate
     /// checks. `None` is no network at all.
     pub proxy: Option<u16>,
+    /// Linux: the unix socket the proxy listens on. Its directory is bound into the sandbox, and `exec-under`'s
+    /// forwarder carries `127.0.0.1:<proxy>` to it.
+    pub proxy_socket: Option<PathBuf>,
 }
 
 /// The command that runs `program` with `args` under the sandbox in `cwd`. `program` is a realpath.
@@ -272,7 +279,8 @@ pub fn wrap(
             // applies the Landlock ruleset the host computed. An ABSENT envelope is today's floor and
             // gets plain bwrap (the documented gap stays). Without Landlock a narrow plan is refused
             // (`can_hold`), never run wide.
-            let narrow = plan.write != WriteScope::Today || !matches!(plan.exec, ExecScope::Any);
+            let narrow =
+                plan.write != WriteScope::Today || !matches!(plan.exec, ExecScope::Any) || plan.proxy.is_some();
             if narrow {
                 let abi = av.landlock_abi?;
                 let exe = std::env::current_exe().ok()?;
@@ -333,6 +341,17 @@ pub struct LandlockRules {
     pub write_files: Vec<PathBuf>,
     /// Full write grants (a tree that may take new directories). Directories only.
     pub write_trees: Vec<PathBuf>,
+    /// A credentialed call's forwarder, started before the ruleset applies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forward: Option<Forward>,
+}
+
+/// What `wmlhost forward` carries: the sandbox's `127.0.0.1:<port>` to the host's proxy on `socket`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Forward {
+    pub port: u16,
+    pub socket: PathBuf,
 }
 
 /// The Landlock ruleset for one call.
@@ -401,7 +420,11 @@ pub fn landlock_rules(plan: &Plan, abi: i32) -> LandlockRules {
         }
         WriteScope::None => {}
     }
-    LandlockRules { abi, exec, write_edit, write_files, write_trees }
+    let forward = match (plan.proxy, &plan.proxy_socket) {
+        (Some(port), Some(socket)) => Some(Forward { port, socket: socket.clone() }),
+        _ => None,
+    };
+    LandlockRules { abi, exec, write_edit, write_files, write_trees, forward }
 }
 
 /// The exec set of one call: `program` plus its `#!` chain (including `env`'s target, resolved
@@ -731,6 +754,11 @@ pub fn bwrap_args(plan: &Plan, cwd: &Path) -> Vec<OsString> {
             _ => {}
         }
     }
+    // A credentialed call's proxy socket: its own directory, bound after the masks (the session's socket directory is
+    // among `hidden`), so no other call's socket is reachable.
+    if let Some(dir) = plan.proxy_socket.as_ref().and_then(|p| p.parent()) {
+        push(&[&s("--bind"), &dir.into(), &dir.into()]);
+    }
     push(&[&s("--chdir"), &cwd.into()]);
     a
 }
@@ -752,6 +780,7 @@ mod tests {
             write: WriteScope::Today,
             exec: ExecScope::Any,
             proxy: None,
+            proxy_socket: None,
         }
     }
 
@@ -779,8 +808,35 @@ mod tests {
             reason: None,
             landlock_abi: Some(6),
         };
-        assert!(!bwrap.can_hold(&Plan { proxy: Some(50123), ..plan() }), "bwrap has no forwarder yet");
-        assert!(!bwrap.holds_credentials());
+        let cred = Plan { proxy: Some(18443), proxy_socket: Some(PathBuf::from("/t/s/sock/c1/p.sock")), ..plan() };
+        assert!(bwrap.can_hold(&cred), "bwrap with Landlock holds a credentialed call through its forwarder");
+        assert!(bwrap.holds_credentials());
+        let no_landlock = Availability { landlock_abi: None, ..bwrap.clone() };
+        assert!(!no_landlock.can_hold(&cred), "without Landlock there is no exec-under, so no forwarder");
+        assert!(!no_landlock.holds_credentials());
+        assert!(!Availability { available: false, ..bwrap }.holds_credentials());
+    }
+
+    #[test]
+    fn a_credentialed_bwrap_call_binds_its_own_socket_dir_after_the_masks_and_forwards_through_exec_under() {
+        let cred = Plan {
+            hidden: vec![PathBuf::from("/t/s/out"), PathBuf::from("/t/s/sock")],
+            proxy: Some(18443),
+            proxy_socket: Some(PathBuf::from("/t/s/sock/c1/p.sock")),
+            ..plan()
+        };
+        let args: Vec<String> =
+            bwrap_args(&cred, Path::new("/w/proj")).iter().map(|a| a.to_string_lossy().into()).collect();
+        assert!(args.iter().any(|a| a == "--unshare-net"), "the call keeps no network of its own");
+        let bind = args.windows(3).position(|w| w == ["--bind", "/t/s/sock/c1", "/t/s/sock/c1"]);
+        assert!(bind.is_some(), "the call's socket dir is bound: {args:?}");
+        assert!(!args.iter().any(|a| a == "/t/s/sock/c1/p.sock"), "the dir is bound, not the socket itself");
+        assert!(!bwrap_args(&plan(), Path::new("/w/proj")).iter().any(|a| a.to_string_lossy().contains("sock")));
+        let rules = landlock_rules(&cred, 6);
+        assert_eq!(rules.forward, Some(Forward { port: 18443, socket: PathBuf::from("/t/s/sock/c1/p.sock") }));
+        assert_eq!(landlock_rules(&plan(), 6).forward, None);
+        let json = serde_json::to_string(&landlock_rules(&plan(), 6)).unwrap();
+        assert!(!json.contains("forward"), "an ordinary ruleset's wire shape is unchanged: {json}");
     }
 
     // --- the envelope: every accepted value is a SUBSET of today's Plan ---
@@ -812,6 +868,7 @@ mod tests {
             write: WriteScope::Today,
             exec: ExecScope::Any,
             proxy: None,
+            proxy_socket: None,
         };
 
         // write: none drops every root write, keeps tmp
@@ -904,6 +961,7 @@ mod tests {
             write: WriteScope::Roots,
             exec: ExecScope::Any,
             proxy: None,
+            proxy_socket: None,
         };
         let a: Vec<String> = bwrap_args(&pl, root.path()).iter().map(|s| s.to_string_lossy().into_owned()).collect();
         let joined = a.join(" ");
@@ -940,6 +998,7 @@ mod tests {
             write: WriteScope::Roots,
             exec: ExecScope::Any,
             proxy: None,
+            proxy_socket: None,
         };
         let a: Vec<String> = bwrap_args(&pl, root.path()).iter().map(|s| s.to_string_lossy().into_owned()).collect();
         for rel in &rels {

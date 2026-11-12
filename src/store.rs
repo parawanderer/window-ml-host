@@ -62,6 +62,7 @@ pub struct Store {
     dir: PathBuf,
     out: PathBuf,
     tmp: PathBuf,
+    sock: PathBuf,
     held: Mutex<HashMap<String, Held>>,
 }
 
@@ -74,7 +75,7 @@ pub fn random_hex(bytes: usize) -> String {
 
 impl Store {
     /// Creates the session directory under `base` (the system temp dir in production): private, with `out/` for held
-    /// output and `tmp/` for the calls' temp directories.
+    /// output, `tmp/` for the calls' temp directories and `sock/` for their proxies' sockets (Linux).
     pub fn create(base: &Path) -> io::Result<Store> {
         let dir = base.canonicalize()?.join(format!("wmlhost-{}-{}", std::process::id(), random_hex(8)));
         let mut b = std::fs::DirBuilder::new();
@@ -82,7 +83,14 @@ impl Store {
         b.create(&dir)?;
         b.create(dir.join("out"))?;
         b.create(dir.join("tmp"))?;
-        Ok(Store { out: dir.join("out"), tmp: dir.join("tmp"), dir, held: Mutex::new(HashMap::new()) })
+        b.create(dir.join("sock"))?;
+        Ok(Store {
+            out: dir.join("out"),
+            tmp: dir.join("tmp"),
+            sock: dir.join("sock"),
+            dir,
+            held: Mutex::new(HashMap::new()),
+        })
     }
 
     /// The directory a child must never read or write (the sandbox hides it).
@@ -99,6 +107,19 @@ impl Store {
 
     pub fn remove_call_tmp(&self, id: &str) {
         let _ = std::fs::remove_dir_all(self.tmp.join(id));
+        let _ = std::fs::remove_dir_all(self.sock.join(id));
+    }
+
+    /// Where every call's proxy socket lives; the sandbox hides it, then binds back the call's own directory.
+    pub fn sock_dir(&self) -> &Path {
+        &self.sock
+    }
+
+    /// A private directory for one call's proxy socket, and the socket's path in it. Removed with the call's tmp.
+    pub fn call_sock(&self, id: &str) -> io::Result<PathBuf> {
+        let d = self.sock.join(id);
+        std::fs::DirBuilder::new().mode(0o700).create(&d)?;
+        Ok(d.join("p.sock"))
     }
 
     /// Reads `stream` to its end into a new held file: keeps at most `cap` bytes, drains the rest so the writer is

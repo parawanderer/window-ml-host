@@ -426,8 +426,8 @@ impl Session {
             "modes": ["host"],
             "peek": true,
             "tilde": true,
-            // The credential providers a spawn may name: none where the sandbox cannot hold the profile (Linux, in
-            // this version), and none over the hub. The worker's only gate.
+            // The credential providers a spawn may name: none where the sandbox cannot hold the profile (Linux without
+            // Landlock), and none over the hub. The worker's only gate.
             "credentials": if self.host.sandbox.holds_credentials() && matches!(self.host.transport, Transport::Native) {
                 credential::PROVIDERS.iter().map(|p| p.name).collect::<Vec<_>>()
             } else {
@@ -633,7 +633,7 @@ impl Session {
                 if !(config.sandbox && self.host.sandbox.holds_credentials()) {
                     return fail(
                         "SandboxFailed",
-                        "a credentialed call runs only under a sandbox that can hold its profile (macOS's, in this version)",
+                        "a credentialed call runs only under a sandbox that can hold its profile (macOS's, or bubblewrap with Landlock)",
                     );
                 }
                 Some(grant)
@@ -937,8 +937,14 @@ impl Session {
             envmap.insert(g.provider.token_env.into(), token);
             envmap.insert(g.provider.config_env.into(), config_dir.to_string_lossy().into_owned());
             envmap.extend(g.provider.fixed_env.iter().map(|(k, v)| (k.to_string(), v.to_string())));
-            // The call's one way out (src/proxy.rs): the profile allows only this port, and the env routes to it.
-            let px = match crate::proxy::start(g.hosts.clone(), g.ports.clone()) {
+            // The call's one way out (src/proxy.rs): the profile allows only this port, and the env routes to it. On
+            // Linux the proxy is a unix socket bound into the sandbox, which the call's forwarder serves on this port.
+            let started = if cfg!(target_os = "linux") {
+                store.call_sock(id).and_then(|s| crate::proxy::start_unix(&s, g.hosts.clone(), g.ports.clone()))
+            } else {
+                crate::proxy::start(g.hosts.clone(), g.ports.clone())
+            };
+            let px = match started {
                 Ok(px) => px,
                 Err(e) => return failed(Fail("SpawnFailed", format!("proxy: {e}"))),
             };
@@ -975,13 +981,14 @@ impl Session {
             let plan = Plan {
                 roots: p.config.roots.clone(),
                 tmp: tmp.clone(),
-                hidden: vec![store.out_dir().to_path_buf()],
+                hidden: vec![store.out_dir().to_path_buf(), store.sock_dir().to_path_buf()],
                 allow_read: p.named_secrets.clone(),
                 home: (self.host.host_env)("HOME").map(PathBuf::from),
                 outlives_host: matches!(p.owner_loss, OwnerLoss::Orphan(_)),
                 write: env.write,
                 exec,
                 proxy: call_proxy.as_ref().map(|x| x.port),
+                proxy_socket: call_proxy.as_ref().and_then(|x| x.socket.clone()),
             };
             if !self.host.sandbox.can_hold(&plan) {
                 return failed(Fail(

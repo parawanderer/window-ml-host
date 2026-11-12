@@ -2947,14 +2947,20 @@ fn configure_with(h: &mut Host, r: &Path, bin: &Path, sandbox: bool) {
     h.ok("configure", json!({ "roots": [r], "sandbox": sandbox, "path": [bin, "/usr/bin", "/bin"] }));
 }
 
+/// Whether this host offers the github credential: macOS, or bubblewrap with Landlock.
+fn holds_credentials(h: &mut Host) -> bool {
+    h.ok("hello", json!({}))["credentials"] == json!(["github"])
+}
+
 #[test]
 fn hello_offers_the_github_credential_only_where_the_sandbox_holds_it() {
     let mut h = Host::start();
     let v = h.ok("hello", json!({}));
-    if cfg!(target_os = "macos") {
+    let sandbox = v["sandbox"]["available"] == json!(true);
+    if cfg!(target_os = "macos") || (sandbox && v["sandbox"]["landlockAbi"].is_i64()) {
         assert_eq!(v["credentials"], json!(["github"]), "{v}");
     } else {
-        assert_eq!(v["credentials"], json!([]), "Linux holds no credentialed profile yet: {v}");
+        assert_eq!(v["credentials"], json!([]), "bubblewrap without Landlock holds no credentialed profile: {v}");
     }
     h.close();
 }
@@ -2968,7 +2974,10 @@ fn a_credentialed_gh_reaches_only_its_proxy_and_the_proxy_only_the_listed_hosts(
     // By address: bash 3.2's /dev/tcp does not resolve github.com on macOS even unconfined. A failed `exec` redirect
     // ends a non-interactive bash, so each probe runs in its own subshell.
     use std::net::ToSocketAddrs;
+    // CI (WMLHOST_REQUIRE_SANDBOX) has the network, so there a skip is a failure, not a silent pass.
+    let required = std::env::var("WMLHOST_REQUIRE_SANDBOX").as_deref() == Ok("1");
     let Some(ip) = ("github.com", 443).to_socket_addrs().ok().and_then(|mut a| a.find(|a| a.is_ipv4())) else {
+        assert!(!required, "github.com does not resolve on CI; the credentialed profile's network went unchecked");
         eprintln!("github.com does not resolve here; the credentialed profile's network is not checked");
         return;
     };
@@ -2988,16 +2997,20 @@ fn a_credentialed_gh_reaches_only_its_proxy_and_the_proxy_only_the_listed_hosts(
         return h.close();
     }
     let cred = json!({ "provider": "github", "manifest": gh_manifest_hash() });
-    if !cfg!(target_os = "macos") {
+    if !holds_credentials(&mut h) {
         configure_with(&mut h, &r, &bin, true);
         let e = h.call("spawn", json!({ "argv": ["gh", "api", "/x"], "cwd": r, "credential": cred })).unwrap_err();
-        assert_eq!(e.0, "SandboxFailed", "Linux refuses the credentialed profile, never runs it ordinary: {e:?}");
+        assert_eq!(
+            e.0, "SandboxFailed",
+            "without Landlock the credentialed profile is refused, never run ordinary: {e:?}"
+        );
         return h.close();
     }
     // Control: unsandboxed, github.com:443 is reachable from here, so the sandboxed result below means something.
     configure_with(&mut h, &r, &bin, false);
     let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r }));
     if !text(&h.read_all(&d["stdout"])).contains("reached-443") {
+        assert!(!required, "github.com:443 is unreachable on CI; the credentialed profile's network went unchecked");
         eprintln!("github.com:443 is unreachable from this machine; the credentialed profile's network is not checked");
         return h.close();
     }
@@ -3036,10 +3049,15 @@ fn a_credentialed_gh_reaches_only_its_proxy_and_the_proxy_only_the_listed_hosts(
         d["envelope"],
         json!({ "write": "today", "exec": "program-only", "profile": "credentialed:github", "hosts": hosts })
     );
-    // The proxy closed with the call.
+    // The proxy closed with the call. On Linux the call's port is its forwarder's, in a namespace that ended with it;
+    // the host's end is a unix socket, removed with the proxy (src/proxy.rs, unit-tested there).
     let proxy_port: u16 =
         out.split("proxy=http://127.0.0.1:").nth(1).unwrap().split(' ').next().unwrap().parse().unwrap();
-    assert!(std::net::TcpStream::connect(("127.0.0.1", proxy_port)).is_err(), "the call's proxy outlived it");
+    if cfg!(target_os = "linux") {
+        assert_eq!(proxy_port, 18443, "a Linux call reaches its proxy through the forwarder's fixed port: {out}");
+    } else {
+        assert!(std::net::TcpStream::connect(("127.0.0.1", proxy_port)).is_err(), "the call's proxy outlived it");
+    }
     assert!(!Path::new(tmp).exists(), "the call's tmp, config dir included, is gone after the call");
     h.close();
 }
@@ -3055,7 +3073,7 @@ fn no_token_is_secret_unavailable_and_the_program_never_runs() {
         .unwrap();
     std::fs::set_permissions(bin.join("gh"), std::fs::Permissions::from_mode(0o755)).unwrap();
     let mut h = Host::start();
-    if !cfg!(target_os = "macos") || !h.sandbox_available() {
+    if !h.sandbox_available() || !holds_credentials(&mut h) {
         return h.close();
     }
     configure_with(&mut h, &r, &bin, true);

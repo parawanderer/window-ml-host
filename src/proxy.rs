@@ -1,13 +1,17 @@
-//! The CONNECT proxy a credentialed call reaches the network through. The call's Seatbelt profile allows one outbound
-//! address, this listener's `localhost:<port>`; the proxy admits only `CONNECT <listed host>:<listed port>` and then
+//! The CONNECT proxy a credentialed call reaches the network through. On macOS the call's Seatbelt profile allows one
+//! outbound address, this listener's `localhost:<port>`. On Linux the call has no network at all (`--unshare-net`): the
+//! proxy listens on a unix socket bound into the sandbox, and `wmlhost forward` (src/exec_under.rs) carries the call's
+//! `127.0.0.1:<IN_SANDBOX_PORT>` to it. Either way the proxy admits only `CONNECT <listed host>:<listed port>` and then
 //! splices bytes. It never terminates TLS, so the token passes through nothing it parses. One proxy per call, closed
-//! when the call ends (dropping [`Proxy`] aborts the listener and every connection).
+//! when the call ends (dropping [`Proxy`] aborts the listener and every connection, and removes its socket).
 
+use std::future::Future;
 use std::io;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream, UnixListener};
 use tokio::task::{JoinHandle, JoinSet};
 
 /// The most a request head may be, its headers included.
@@ -19,15 +23,45 @@ pub const CONNECT_DEADLINE: Duration = Duration::from_secs(10);
 /// The most connections one call may hold open at once; a further one is closed unanswered.
 pub const MAX_CONNS: usize = 64;
 
+/// The port a Linux call's forwarder listens on inside the sandbox. Its network namespace is its own and empty, so
+/// one fixed port collides with nothing.
+pub const IN_SANDBOX_PORT: u16 = 18443;
+
 /// A running proxy. Dropping it closes the listener and every connection it holds.
 pub struct Proxy {
+    /// The port the call connects to: this listener's on macOS, [`IN_SANDBOX_PORT`] for a unix-socket proxy.
     pub port: u16,
+    /// The unix socket a Linux call's forwarder reaches this proxy on.
+    pub socket: Option<PathBuf>,
     task: JoinHandle<()>,
 }
 
 impl Drop for Proxy {
     fn drop(&mut self) {
         self.task.abort();
+        if let Some(s) = &self.socket {
+            let _ = std::fs::remove_file(s);
+        }
+    }
+}
+
+/// A listener the proxy accepts on: TCP on macOS, a unix socket on Linux.
+trait Accept: Send + 'static {
+    type Stream: AsyncRead + AsyncWrite + Unpin + Send + 'static;
+    fn next(&self) -> impl Future<Output = io::Result<Self::Stream>> + Send;
+}
+
+impl Accept for TcpListener {
+    type Stream = TcpStream;
+    async fn next(&self) -> io::Result<TcpStream> {
+        self.accept().await.map(|(s, _)| s)
+    }
+}
+
+impl Accept for UnixListener {
+    type Stream = tokio::net::UnixStream;
+    async fn next(&self) -> io::Result<tokio::net::UnixStream> {
+        self.accept().await.map(|(s, _)| s)
     }
 }
 
@@ -37,10 +71,21 @@ pub fn start(hosts: Vec<&'static str>, ports: Vec<u16>) -> io::Result<Proxy> {
     std.set_nonblocking(true)?;
     let port = std.local_addr()?.port();
     let listener = TcpListener::from_std(std)?;
-    let task = tokio::spawn(async move {
+    Ok(Proxy { port, socket: None, task: accept_loop(listener, hosts, ports) })
+}
+
+/// Starts a proxy on the unix socket `path` (which must not exist; its directory is the call's own, 0700) that admits
+/// `hosts` on `ports`. Must be called inside the tokio runtime.
+pub fn start_unix(path: &Path, hosts: Vec<&'static str>, ports: Vec<u16>) -> io::Result<Proxy> {
+    let listener = UnixListener::bind(path)?;
+    Ok(Proxy { port: IN_SANDBOX_PORT, socket: Some(path.to_path_buf()), task: accept_loop(listener, hosts, ports) })
+}
+
+fn accept_loop<L: Accept>(listener: L, hosts: Vec<&'static str>, ports: Vec<u16>) -> JoinHandle<()> {
+    tokio::spawn(async move {
         let mut conns = JoinSet::new();
         loop {
-            let Ok((client, _)) = listener.accept().await else { continue };
+            let Ok(client) = listener.next().await else { continue };
             while conns.try_join_next().is_some() {}
             if conns.len() >= MAX_CONNS {
                 drop(client);
@@ -51,12 +96,11 @@ pub fn start(hosts: Vec<&'static str>, ports: Vec<u16>) -> io::Result<Proxy> {
                 let _ = serve(client, &hosts, &ports).await;
             });
         }
-    });
-    Ok(Proxy { port, task })
+    })
 }
 
 /// One client connection: read the head, admit or refuse it, then splice.
-async fn serve(mut client: TcpStream, hosts: &[&str], ports: &[u16]) -> io::Result<()> {
+async fn serve<S: AsyncRead + AsyncWrite + Unpin>(mut client: S, hosts: &[&str], ports: &[u16]) -> io::Result<()> {
     let Ok(Ok((head, rest))) = tokio::time::timeout(HEAD_DEADLINE, read_head(&mut client)).await else {
         return Ok(());
     };
@@ -82,7 +126,7 @@ async fn serve(mut client: TcpStream, hosts: &[&str], ports: &[u16]) -> io::Resu
 
 /// Reads up to the end of the request head (`\r\n\r\n`), at most [`MAX_HEAD`] bytes. Returns the head and whatever
 /// followed it in the same reads.
-async fn read_head(c: &mut TcpStream) -> io::Result<(Vec<u8>, Vec<u8>)> {
+async fn read_head<S: AsyncRead + Unpin>(c: &mut S) -> io::Result<(Vec<u8>, Vec<u8>)> {
     let mut buf = Vec::with_capacity(1024);
     let mut chunk = [0u8; 1024];
     loop {
@@ -237,6 +281,32 @@ mod tests {
         head.extend(std::iter::repeat_n(b'a', MAX_HEAD));
         let r = ask(p.port, &head).await;
         assert_eq!(r, "", "an oversized head got an answer");
+    }
+
+    #[tokio::test]
+    async fn a_unix_socket_proxy_admits_and_refuses_as_the_tcp_one_and_removes_its_socket_when_dropped() {
+        let up = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let up_port = up.local_addr().unwrap().port();
+        let d = tempfile::tempdir().unwrap();
+        let sock = d.path().join("p.sock");
+        let p = start_unix(&sock, vec!["localhost"], vec![up_port]).unwrap();
+        assert_eq!(p.port, IN_SANDBOX_PORT);
+        let ask_unix = |head: String| {
+            let sock = sock.clone();
+            async move {
+                let mut c = tokio::net::UnixStream::connect(&sock).await.unwrap();
+                c.write_all(head.as_bytes()).await.unwrap();
+                let mut out = vec![0u8; 64];
+                let n = tokio::time::timeout(Duration::from_secs(5), c.read(&mut out)).await.unwrap().unwrap();
+                String::from_utf8_lossy(&out[..n]).into_owned()
+            }
+        };
+        let r = ask_unix("CONNECT example.com:443 HTTP/1.1\r\n\r\n".into()).await;
+        assert!(r.starts_with("HTTP/1.1 403"), "{r}");
+        let r = ask_unix(format!("CONNECT localhost:{up_port} HTTP/1.1\r\n\r\n")).await;
+        assert!(r.starts_with("HTTP/1.1 200"), "{r}");
+        drop(p);
+        assert!(!sock.exists(), "the socket outlived its proxy");
     }
 
     #[tokio::test]
