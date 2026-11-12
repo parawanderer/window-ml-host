@@ -2974,7 +2974,10 @@ fn a_credentialed_gh_reaches_only_its_proxy_and_the_proxy_only_the_listed_hosts(
     // By address: bash 3.2's /dev/tcp does not resolve github.com on macOS even unconfined. A failed `exec` redirect
     // ends a non-interactive bash, so each probe runs in its own subshell.
     use std::net::ToSocketAddrs;
+    // CI (WMLHOST_REQUIRE_SANDBOX) has the network, so there a skip is a failure, not a silent pass.
+    let required = std::env::var("WMLHOST_REQUIRE_SANDBOX").as_deref() == Ok("1");
     let Some(ip) = ("github.com", 443).to_socket_addrs().ok().and_then(|mut a| a.find(|a| a.is_ipv4())) else {
+        assert!(!required, "github.com does not resolve on CI; the credentialed profile's network went unchecked");
         eprintln!("github.com does not resolve here; the credentialed profile's network is not checked");
         return;
     };
@@ -3007,6 +3010,7 @@ fn a_credentialed_gh_reaches_only_its_proxy_and_the_proxy_only_the_listed_hosts(
     configure_with(&mut h, &r, &bin, false);
     let (_, d) = h.run(json!({ "argv": ["gh", "api", "/x"], "cwd": r }));
     if !text(&h.read_all(&d["stdout"])).contains("reached-443") {
+        assert!(!required, "github.com:443 is unreachable on CI; the credentialed profile's network went unchecked");
         eprintln!("github.com:443 is unreachable from this machine; the credentialed profile's network is not checked");
         return h.close();
     }
