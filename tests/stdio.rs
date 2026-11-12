@@ -3289,6 +3289,14 @@ fn killing_a_linux_calls_forwarder_leaves_no_route_out() {
     );
     assert!(!out.contains("after-local-rc=0"), "the forwarder's port still answered after its death: {out}");
     assert!(!out.contains("after-direct-rc=0"), "with the forwarder dead the call reached GitHub by address: {out}");
+    // Both negative assertions above are vacuous unless the second phase ran: a call that died between `dialed` and
+    // `kill-it` leaves stdout at `before=…`, with neither `after-*` line to fail.
+    for k in ["after-local-rc=", "after-direct-rc="] {
+        assert!(
+            out.lines().any(|l| l.starts_with(k)),
+            "the second phase ran, so the two negatives are not vacuous: {out}"
+        );
+    }
     h.close();
 }
 
