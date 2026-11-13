@@ -9,11 +9,13 @@ pub mod facts;
 pub mod framing;
 pub mod fsx;
 pub mod gitconfig;
+pub mod gitfacts;
 pub mod glob;
 #[cfg(feature = "hub")]
 pub mod hub;
 pub mod install;
 pub mod manifest;
+pub mod mounts;
 pub mod owners;
 pub mod procs;
 pub mod proxy;

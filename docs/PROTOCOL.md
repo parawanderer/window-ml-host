@@ -45,6 +45,7 @@ the host answers each as it finishes, not in order. A message that is not an obj
   "tilde": true,                                                    // this host expands a leading `~` in argv and cwd (see `spawn`); an older host has no such field
   "credentials": ["github"],                                        // the credential providers a `spawn` may name (see "A credentialed call"); [] where the sandbox cannot hold the profile (Linux without Landlock) and over the hub; an older host has no such field
   "put": { "max": 67108864 },                                       // this host answers `put`, `write` and `commit`; `max` is the most bytes one put may declare; `null` over the hub, where the three are refused; an older host has no such field
+  "mounts": true,                                                   // this host answers the mount calls (see "Mounts"); false over the hub, where they are refused; an older host has no such field, and the worker never probes by calling
   "owners": { "ledger": true, "register": true },                   // ledger false: the table is in memory only; register false over the hub (see "Owners")
   "memory": { "metric": "phys_footprint", "enforcer": "watchdog", "everyMs": 100 },
   "cpu": { "metric": "user+system, with reaped children" } }        // what `cpuMs` counts: measured, never bounded
@@ -88,7 +89,7 @@ is `BadRequest` naming it, no `hub-roots` (or an empty one) is `NotConfigured`, 
 machine with no working sandbox answers `SandboxFailed`. A refused `configure` changes nothing.
 
 `sandboxed` in the answer is whether calls will run under the OS sandbox: `sandbox` asked for it AND it is available.
-Reconfiguring drops every pending spawn (their facts were judged against the old roots); running processes continue.
+Reconfiguring drops every pending spawn, put and store (their facts were judged against the old roots); running processes continue. It also drops every mount whose path is not inside the new roots; the others stay ("Mounts").
 
 ### `spawn`: resolve the facts, start nothing
 
@@ -331,7 +332,7 @@ the person the names a command will receive instead of a pattern a shell would e
 
 ### `discard`
 
-`args: { "id": "c3" }` → `{}`. The worker denied the call; forget it. (Unstarted ids also expire on their own.)
+`args: { "id": "c3" }` → `{}`. The worker denied the call; forget it. (Unstarted ids also expire on their own.) It also drops a put or a `store` ("Mounts") by its id, deleting the temp file.
 
 ### `cancel`
 
@@ -367,7 +368,7 @@ of this connection.
 
 ### put / write / commit: write bytes to a file in a root
 
-Three calls write one file: `put` resolves the target and writes nothing, `write` sends the bytes in chunks, `commit` puts them in place. They follow `spawn`'s shape: the host resolves the facts, the worker judges, the host acts. A put shares `spawn`'s pending table: the same 30-minute TTL (`expiresInMs`), the same `Busy` limit of 256 and the same id counter, with ids of the form `p3` where a spawn's are `c3`. `discard` drops a put. Offered over a native connection only: over the hub all three are `Refused` with `reason: "scope"`, before their arguments are read.
+Three calls write one file: `put` resolves the target and writes nothing, `write` sends the bytes in chunks, `commit` puts them in place. They follow `spawn`'s shape: the host resolves the facts, the worker judges, the host acts. A put shares `spawn`'s pending table: the same 30-minute TTL (`expiresInMs`), the same `Busy` limit of 256 and the same id counter, with ids of the form `p3` where a spawn's are `c3`. `discard` drops a put. Offered over a native connection only: over the hub all three are `Refused` with `reason: "scope"`, before their arguments are read, with the eight mount calls ("Mounts").
 
 ```jsonc
 put    args:  { "path": "inbox/report.pdf", "cwd": "/Users/sb/work", "size": 48213 }   // cwd required for a relative path; a leading ~ expands as for spawn
@@ -385,7 +386,182 @@ commit args:  { "id": "p3", "replace": false }                                  
 
 `commit` needs `received == size` (`BadRequest` otherwise, and the put stays open to continue). It sets the temp file's mode to `0666` less the umask (what the person's own tools would produce; the umask is read once at start), syncs it, and renames it into place through the held descriptor. With `replace: false` the rename refuses to replace: `renameat2(RENAME_NOREPLACE)` on Linux, `renameatx_np(RENAME_EXCL)` on macOS, and `link` then `unlink` where the OS or filesystem has no such flag. A file that appeared since `put` is `Exists`. With `replace: true` (the worker sends it only once the person approved overwriting) the host looks at the target again, refuses a symlink or directory as `put` did, and renames over it. A commit consumes the put, whatever its outcome. `sha256` is of the bytes written.
 
-The temp file is deleted by `discard`, by TTL expiry, by a failed `commit`, by a `configure` (which drops pending calls) and when the connection ends.
+The temp file is deleted by `discard`, by TTL expiry, by a failed `commit`, by a `configure` (which drops pending calls) and when the connection ends. `write`, `commit` and `discard` also take the id of a `store` ("Mounts"), which shares this table.
+
+### Mounts: a chat session's folders
+
+A mount is a directory inside a configured root that the host holds open for one chat session, so a cell's file request
+is resolved against a descriptor the host already has instead of a path it must re-trust. The design is window-ml's
+[`FILE_ATTACHMENTS.md`](https://github.com/parawanderer/window-ml/blob/main/docs/spec/FILE_ATTACHMENTS.md), "What
+window-ml-host must do for mounts, `/files` and `ml.sh` diffs" (H1 to H8). The split is the one `spawn` has: the host
+resolves facts and refuses what no policy may lift; whether a read or write is free or asks the person is the worker's
+judgment, made over the facts and sent back as a `basis`. Offered over a native connection only: over the hub the eight
+calls below are `Refused` with `reason: "scope"`, before their arguments are read, and `hello.mounts` is `false`.
+
+```jsonc
+mount   args:  { "session": "chat-7f", "path": "/Users/sb/work/proj", "mode": "rw",         // "rw" | "ro"
+                 "uploads": "uploads" }                       // optional: the uploads folder, relative to the mount
+        value: { "id": "m4", "path": "/Users/sb/work/proj", "root": "/Users/sb/work", "mode": "rw", "uploads": "uploads" }
+unmount args:  { "session": "chat-7f", "mount": "m4" }        value: {}
+stat    args:  { "session": "chat-7f", "mount": "m4", "path": "src/a.rs" }                  // "" is the mount itself
+        value: { "mount": "m4", "path": "src/a.rs", "inMount": true, "mode": "rw", "secret": false, "protected": false,
+                 "kind": "file", "exists": true, "inUploads": false, "inAttached": false,
+                 "ignored": false, "gitUndoable": true, "hardLinked": false,
+                 "basis": { "dev": 16777234, "ino": 8812345, "size": 912, "mtimeNs": 1760000000123456789, "sha256": "<hex>" } }
+list    args:  { "session": "…", "mount": "m4", "path": "src", "offset": 0, "limit": 2000 }       // offset, limit optional
+        value: { "mount": "m4", "path": "src", "total": 2, "more": false,
+                 "entries": [{ "name": "a.rs", "kind": "file", "size": 912, "mtimeNs": 1760000000123456789 }] }
+fetch   args:  { "session": "…", "mount": "m4", "path": "src/a.rs", "basis": { … },
+                 "offset": 0, "length": 524288, "cap": 67108864 }                  // offset, length, cap optional
+        value: { "mount": "m4", "path": "src/a.rs", "offset": 0, "size": 912, "eof": true, "data": { "$bytes": "<base64>" } }
+store   args:  { "session": "…", "mount": "m4", "path": "src/a.rs", "size": 948, "basis": { … }, "cap": 67108864 }
+        value: { "id": "s5", "mount": "m4", "path": "src/a.rs", "size": 948, "expiresInMs": 1800000 }
+write   args:  { "id": "s5", "offset": 0, "bytes": { "$bytes": "<base64>" } }              // as for a put
+commit  args:  { "id": "s5" }
+        value: { "id": "s5", "mount": "m4", "path": "src/a.rs", "size": 948, "sha256": "<hex>" }
+remove  args:  { "session": "…", "mount": "m4", "path": "src/old.rs", "basis": { … } }   value: { "mount": "m4", "path": "src/old.rs", "removed": true }
+rename  args:  { "session": "…", "mount": "m4", "from": "src/a.rs", "to": "src/b.rs", "basis": { … } }
+        value: { "mount": "m4", "from": "src/a.rs", "to": "src/b.rs" }
+```
+
+**The session is the worker's stamp.** Every call but `write`, `commit` and `discard` carries `session`, a string of 1 to
+256 bytes (else `BadRequest`), and speaks only for the mounts that session made: a mount id of another session is
+`UnknownMount`, the same answer as one that never existed. The host cannot tell sessions apart, because one port carries
+them all and the worker sets the stamp; the cell never does. This is a stated trust, not a check. `write`, `commit` and
+`discard` name a store by its id, as they name a put.
+
+**A mount's life.** `mount` allocates an id `m<n>` from the id counter `spawn` and `put` share, and holds the directory
+until one of: `unmount` (which also drops that mount's stores, deleting their temp files); a `configure` after which the
+mount's root is no longer the deepest root holding its path (its protected names were read against that root; a mount
+whose root is still that root stays); or the connection closing. At most 64 mounts per connection (`Busy`). A mount is the realpath of `path`,
+which must be absolute, so a symlink in the given path is followed once, at `mount`, and never again. `mode` is the
+mount's ceiling: on `"ro"` `store`, `remove` and `rename` are `EROFS`. `uploads` names a directory of the mount holding
+a directory `attached/`; both are held by device and inode, and every `stat` reports `inUploads` and `inAttached` for a
+path in them (the folder itself included). An `uploads` that is not a directory
+with an `attached/` inside is `MountRefused`.
+
+**What `mount` refuses**, whatever a policy would say (`MountRefused`, the message naming the path it ran into). Every
+check is on the realpath, and "overlaps" means at, under or above:
+
+- a path that is not an existing directory;
+- one that overlaps a cell path the sandbox reserves: `/files`, `/tmp`, `/lib`, `/home/pyodide`, `/dev`, `/proc` (H2);
+- the home directory or any directory above it (a project inside it is fine);
+- one that overlaps the browser's or the host's own state: the data directory of Chrome, Chrome Beta, Chromium, Brave
+  and Edge (the profile lives there), `~/.config/wmlhost`, and the owner table's state directory, each as given and as
+  its realpath. The archive folder cannot be refused here: it is a File System Access handle in the browser with no
+  path the host could compare, so the worker refuses it;
+- one that overlaps another mount of the SAME session (two sessions may mount overlapping folders);
+- one outside every configured root.
+
+`mount` before `configure` is `NotConfigured`.
+
+**The path rule.** Every `path`, `from` and `to` is relative to the mount and is split on `/` into components
+(`rel_parts`). Refused as `BadRequest`, on every platform: more than 4096 bytes, a NUL, a `\`, a leading `/` (so `//`),
+a leading drive letter (`C:`), and a component that is empty, `.`, `..` or only dots. `""` names the mount itself and is
+accepted by `stat` and `list` only. The host never lexically cleans a path; it refuses the ones that need it.
+
+**The walk.** A path is walked one component at a time from the held descriptor (`openat` with `O_NOFOLLOW |
+O_DIRECTORY`), so no component is resolved by the OS from `/`, and no symlink is ever followed: a symlink on the way is
+`IsSymlink`, a file where a directory should be `NotADirectory`, a missing directory on the way `NotFound` for `list`
+and, for the others, the same as a missing last component (`exists: false`, or `NoParent` for a write). The last
+component is opened `O_NOFOLLOW | O_NONBLOCK`, so a symlink is never read through and a FIFO never blocks the host. A
+symlink as the last component is reported by `stat` as `kind: "symlink"` and listed as one; `fetch`, `store`, `remove`
+and `rename` of it are `IsSymlink`, of a directory `IsDirectory`, of anything that is neither (a socket, a device)
+`BadRequest`.
+
+**H3: a replaced folder.** Before every call but `mount`, `unmount`, `write` and `discard`, the host checks that the
+mount's path still names the directory it holds (device and inode, by `lstat`). A folder moved away and replaced, or
+deleted, answers `MountReplaced` to every request on the mount until it is unmounted. The commit of a `store` checks
+this too, and consumes the store whatever the outcome.
+
+**`stat`** resolves the facts and reads no bytes into the answer. `kind` is `"file"`, `"dir"`, `"symlink"` or `"other"`
+(`null` when it does not exist). `secret` is the host's name check on the full path (`facts::looks_secret`, as for
+`spawn`). `protected` is true for a protected name of the mount's root (as `put` refuses, relative to the ROOT, so the
+mount's own place in it counts) and for anything with a `.git` component, compared case-insensitively: a write there
+would run as code. `hardLinked` is `st_nlink > 1` of a regular file. `ignored` is whether git ignores the path,
+`gitUndoable` whether a git checkout would give back the bytes the file holds now, both below. `basis` is the identity
+the worker judges on, and is `null` for anything but a regular file:
+
+```jsonc
+{ "dev": 16777234, "ino": 8812345, "size": 912, "mtimeNs": 1760000000123456789, "sha256": "<hex>" }
+```
+
+`sha256` is present only for a file of at most 1 MiB (`DIFF_CAP`), hashed from the same descriptor the other fields
+came from; past it the basis is identity, size and time alone. The worker sends the basis back as it got it.
+
+**`list`** is one page of the directory's entries, sorted bytewise by name, `.` and `..` left out. `limit` is clamped to
+1..=2000 and defaults to 2000, `offset` defaults to 0 and `more` says entries remain past the page. An entry is
+`{ name, kind, size, mtimeNs }` from an `lstat`, so a symlink is a symlink and its target is never touched; `kind`,
+`size` and `mtimeNs` are `null` for an entry that vanished between the read and the `lstat`, and a name that is not
+UTF-8 is lossily converted and carries `"lossy": true`.
+
+**`fetch`** reads one chunk of a regular file. `length` is clamped to 512 KiB, `offset` past the end gives zero bytes
+with `eof: true`, and `cap` (default and ceiling 64 MiB, `put`'s) is the most bytes the file may have. The order of the
+checks is: the cap, then the basis. A file over the cap is `EFBIG` (H5) and nothing is read. A `basis` that is absent
+or is not the file's now is `ChangedSinceJudged` (H8): a fetch without a basis never succeeds, since the worker judges
+on a `stat` first. The basis is compared on the descriptor the bytes are then read from.
+
+**`store`** writes a whole file in the three steps a put does, and shares the put's machinery: `store` checks and holds
+the target's directory (writing nothing) and answers a store id `s<n>`; the bytes go through `write` (the same chunk
+rules, 512 KiB, `offset` equal to the bytes so far); `commit` puts them in place. A store shares the put's pending table:
+the same 30-minute TTL (`expiresInMs`), the same limit of 256 waiting calls and the same id counter, and `discard`, a
+`configure`, an `unmount` of its mount and the connection closing delete its temp file (`.wmlhost-put-<id>-<random>`)
+as they delete a put's. `write` and `discard` take either id. `store` checks, in order: the mount is `rw` (`EROFS`);
+the path (`BadRequest`); the walk, and that no directory on it is `attached/` (`InAttached`: the uploads as they were
+given); that the target is not protected (the same rule as `stat`'s `protected`; `Protected`); that its directory
+exists (`NoParent`); `size` against `cap` (default and ceiling 64 MiB; over it `EFBIG`, H5), after the hard refusals so
+a write no size could make allowed says why; and the target's kind (as under the walk). Then it decides by the pair of the target and the `basis`:
+
+| Target now | `basis` | Result |
+| --- | --- | --- |
+| absent | absent | a new file, mode `0666` less the umask |
+| a regular file | present and equal | replaces it, keeping its permission bits (`st_mode & 0777`) |
+| a regular file with another name (`st_nlink` > 1) | present | `HardLinked`: replacing it would leave the other name with the old bytes |
+| a regular file | absent or different | `ChangedSinceJudged` |
+| absent | present | `ChangedSinceJudged` |
+
+`commit` needs every declared byte (`BadRequest` otherwise, the store staying open to continue), syncs the temp file
+and then does the compare-and-swap (H8) through the held directory. With a basis: the target is opened again and must
+still be a regular file with one link and the same basis, else `ChangedSinceJudged`; it is then replaced by `rename`.
+Without one: the rename refuses to replace (as a put's `replace: false` does), and a file that appeared is
+`ChangedSinceJudged` where a put says `Exists`. **The stated residual:** the compare and the rename are two steps and
+no OS call does both, so a writer that lands between them is lost. The window is the two syscalls; nothing closes it.
+
+**`remove`** unlinks a regular file whose basis is the one judged (`ChangedSinceJudged` otherwise, a missing file
+included). It is `EROFS` on a read-only mount and `Protected` for a protected name. It is allowed in `attached/`: the
+worker asks the person first (H6), and the host keeps no rule the worker cannot lift, as it does for `store` and
+`rename`, which are `InAttached` there. A directory is `IsDirectory`; a hard-linked file is removed (only the name goes).
+
+**`rename`** moves a regular file within the mount to a name that is free, with `renameat2(RENAME_NOREPLACE)` or
+`renameatx_np(RENAME_EXCL)`, and `link` then `unlink` where the OS has none. It is `EROFS`, `InAttached` (the source or
+the destination in `attached/`, in either direction), `Protected` (either name), `NoParent` (the destination's
+directory), `ChangedSinceJudged` (the source's basis), and `Exists` when the destination is there. A move across
+filesystems is `EXDEV`: the host never falls back to copy and delete, since the rename would no longer be one step.
+
+#### Git facts
+
+`stat` asks git two questions about the path, with the host's own `git` (found on the session's `PATH`, the one
+`configure` gave), not through a call. These are the host's queries and run under a stricter belt than a call does
+(`src/gitfacts.rs`): the person's global and system config are not read (`GIT_CONFIG_GLOBAL=/dev/null`,
+`GIT_CONFIG_NOSYSTEM=1`; a `filter.lfs.clean` there would run in a content compare), `GIT_DIR` and `GIT_WORK_TREE` are
+named explicitly from the host's own read of the repository (`gitconfig`), so a `core.worktree` cannot point the query
+elsewhere, `core.fsmonitor` is off and `core.pager` is `cat`, the environment is cleared, there is no prompt and no
+optional lock, each query has a 10 s limit, and no command that compares the work tree's content (`diff`, `status`,
+`add`) is ever run.
+
+- **`ignored`**: `git check-ignore -q`. `false` when the path is in no repository, or is the work tree's root; `null`
+  when git cannot be asked (no `git` on the path, the query failed or timed out) and, as for `gitUndoable`, when the
+  repository's config runs code: no query of the host's reads such a config.
+- **`gitUndoable`**: true when `git checkout` of the path would give back the bytes the file holds now. It is decided by
+  hashing the file's bytes with `git hash-object --no-filters` (no clean filter runs) and comparing the blob with the
+  index's entry and with HEAD's: the path must be a tracked regular file at stage 0 whose index entry carries neither
+  the assume-unchanged nor the skip-worktree bit (either hides a change from git, so both read false), and its index
+  blob, HEAD blob and the file's own hash must be the same. `false` for an untracked, modified, ignored or conflicted
+  file, a symlink entry, a repository with no commit, and a file over 64 MiB. `null` when the repository's own config
+  makes git run a program (`repoConfigRunsCode`, `spawn`'s fact: the undo itself would run it) or git cannot be asked.
+  `false` outside a repository, and for anything that is not a regular file.
+
+`null` is unknown, never "no": the worker asks the person on `null`, as on `false`, but may say why.
 
 ### `register`: own a process group this connection started
 
@@ -576,7 +752,7 @@ These are the host's own; the worker maps them onto the `ml` wire's codes (`Refu
 | Code | When |
 | --- | --- |
 | `BadRequest` | malformed message, unknown call, a field of the wrong type |
-| `NotConfigured` | `spawn` or `glob` before `configure` |
+| `NotConfigured` | `spawn`, `glob` or `mount` before `configure` |
 | `BadRoot` | a root that is not an absolute existing directory, or is `/` |
 | `ProgramNotFound` | `argv[0]` not found on `PATH`, or not an executable file |
 | `CwdOutsideRoots` | `cwd` (of `spawn`, `glob` or `put`) missing, not a directory, or resolving outside every root |
@@ -584,21 +760,32 @@ These are the host's own; the worker maps them onto the `ml` wire's codes (`Refu
 | `CredentialRefused` | `spawn`: a `credential` the host does not honour: an unknown provider, a manifest hash it did not pin or whose manifest names no such credential, another program, or the hub transport |
 | `SecretUnavailable` | an `env` handle the host's store does not hold; `start`/`pipe` of a credentialed call whose provider gave no token |
 | `Unsupported` | `mode: "container"` this version |
-| `UnknownId` | `start`/`discard`/`cancel`/`pipe`/`peek`/`write`/`commit` of an id that never existed, expired, or already started (`start`, `pipe`) |
+| `UnknownId` | `start`/`discard`/`cancel`/`pipe`/`peek`/`write`/`commit` (a put's or a store's) of an id that never existed, expired, or already started (`start`, `pipe`) |
 | `UnknownPtr` | `read`/`release` of a pointer that does not exist |
 | `SandboxFailed` | the sandbox program itself could not be started (a refusal by the sandbox shows in `done`); a `start`/`pipe` with an `envelope` on a call that is not sandboxed (an envelope is a request for a bound; an unsandboxed call holds none); a `write: "roots"` or `exec: "program-only"` on Linux without Landlock; a `credential` on a session or platform that cannot hold the credentialed profile (unsandboxed, Linux without Landlock) |
 | `SpawnFailed` | the OS refused to start the program |
 | `PinChanged` | `start`/`pipe` of a call whose hashed path argument changed since its facts were read |
-| `Busy` | 256 calls already wait for a verdict, or 32 are running (a `pipe` counts its stages) |
+| `Busy` | 256 calls already wait for a verdict, or 32 are running (a `pipe` counts its stages); 64 mounts are held |
 | `Failed` | reading held output failed on disk |
 | `Refused` | over the hub only: the host's own checks refused the caller before the call was looked at; `reason` is `scope`, `revoked`, `stale` or `notACaller` (`docs/HUB.md`) |
 | `TooLarge` | the answer would exceed 1 MiB (an `argv` that large, echoed back in the facts); a `put` whose `size` is over `hello.put.max` |
-| `NoParent` | `put`: the parent directory of the target does not exist, or is not a directory |
+| `NoParent` | `put`/`store`/`rename`: the parent directory of the target does not exist, or is not a directory |
 | `OutsideRoots` | `put`: the parent directory's realpath is in no root |
-| `IsSymlink` | `put`/`commit`: the target is a symbolic link |
-| `IsDirectory` | `put`/`commit`: the target is a directory |
-| `Protected` | `put`: the target is a protected name of its root (`.git/hooks`, `.bashrc`, …) or looks like a credential |
-| `Exists` | `commit` without `replace`: a file is at the target now |
+| `IsSymlink` | `put`/`commit`: the target is a symbolic link; a mount call: a symlink on the path or as the file operated on |
+| `IsDirectory` | `put`/`commit`: the target is a directory; `fetch`/`store`/`remove`/`rename`: the path names a directory |
+| `Protected` | `put`: the target is a protected name of its root (`.git/hooks`, `.bashrc`, …) or looks like a credential; `store`/`remove`/`rename`: a protected name of the root, or any path with a `.git` component |
+| `Exists` | `commit` without `replace`: a file is at the target now; `rename`: the destination exists |
+| `NotADirectory` | a mount call: a file where a directory is needed on the path |
+| `NotFound` | `list`: a directory on the path does not exist |
+| `MountRefused` | `mount`: not an existing directory, or at, under or above something no mount may reach (reserved cell paths, home or above, the browser's and the host's state, another mount of the session), or outside every root; a bad `uploads` |
+| `UnknownMount` | a mount call naming a mount this session does not hold (another session's included), or a `commit` whose mount is gone |
+| `MountReplaced` | a mount call whose mount path no longer names the folder held (H3) |
+| `ChangedSinceJudged` | `fetch`/`store`/`commit`/`remove`/`rename`: the file is not what the `basis` judged (absent, different, or no basis where one is needed); a `store`'s target appeared or changed before its commit |
+| `EROFS` | `store`/`remove`/`rename` on a read-only mount |
+| `EFBIG` | `fetch` of a file, or `store` of a `size`, over `cap`; the error also carries `size` and `cap` (bytes) beside `code` and `message` |
+| `InAttached` | `store`/`rename` into or out of a directory the mount's `uploads` names `attached/` (`remove` is allowed there) |
+| `HardLinked` | `store` replacing a file that has another name |
+| `EXDEV` | `rename` across filesystems; never made a copy and a delete |
 
 ## Not in v1, and where it will go
 

@@ -218,22 +218,39 @@ impl Staged {
     /// Syncs the temp file and puts it in place; the hex sha256 of what was written. With `replace` false a file
     /// that is there now is `Exists`. On any error the temp file is left for `Drop`.
     pub fn finish(&mut self, replace: bool) -> Result<String, Fail> {
+        let rel = self.rel.clone();
+        self.finish_as(committed_mode(), "Exists", &mut |parent, name| {
+            if replace {
+                // A rename replaces a link and never writes through it, but the rule stays the one `put` applied.
+                kind_refusal(&kind_at(parent, name).map_err(io_fail)?, &rel)?;
+            }
+            Ok(replace)
+        })
+    }
+
+    /// [`Staged::finish`] with the committed file's `mode`, and a `check` of the target, run through the held parent
+    /// right before the rename, that answers whether to replace it. Without replacing, a file that is there now is
+    /// `exists_code`.
+    pub fn finish_as(
+        &mut self,
+        mode: Mode,
+        exists_code: &'static str,
+        check: &mut dyn FnMut(&OwnedFd, &str) -> Result<bool, Fail>,
+    ) -> Result<String, Fail> {
         if self.received != self.size {
             return fail("BadRequest", format!("{} of the declared {} bytes arrived", self.received, self.size));
         }
         let tmp = self.tmp_file()?;
-        rustix::fs::fchmod(&*tmp, committed_mode()).map_err(io_fail)?;
+        rustix::fs::fchmod(&*tmp, mode).map_err(io_fail)?;
         tmp.sync_all().map_err(io_fail)?;
-        if replace {
-            // A rename replaces a link and never writes through it, but the rule stays the one `put` applied.
-            kind_refusal(&self.target().map_err(io_fail)?, &self.rel)?;
+        if check(&self.parent, &self.name)? {
             rustix::fs::renameat(&self.parent, self.tmp_name.as_str(), &self.parent, self.name.as_str())
                 .map_err(io_fail)?;
         } else {
             match rename_noreplace(&self.parent, &self.tmp_name, &self.name) {
                 Ok(()) => {}
                 Err(e) if e == rustix::io::Errno::EXIST => {
-                    return fail("Exists", format!("{} appeared since the put", self.rel));
+                    return fail(exists_code, format!("{} appeared since it was checked", self.rel));
                 }
                 Err(e) => return Err(io_fail(e)),
             }
