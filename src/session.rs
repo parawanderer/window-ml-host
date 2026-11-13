@@ -687,7 +687,7 @@ impl Session {
             Some(_) => return fail("BadRequest", "credential is {provider, manifest}"),
         };
         let paths = self.path_facts(a.get("pathArgs"), &argv, &cwd, &config.roots)?;
-        self.refuse_written_attached(a.get("pathArgs"), &paths)?;
+        self.refuse_written_attached(a.get("pathArgs"), &paths, &files)?;
         let mut cwd_fact = json!({ "path": cwd, "inRoot": true });
         if opt_bool(a, "walkCwd")?.unwrap_or(false) {
             cwd_fact["containsSecret"] = json!(walk::contains_secret(&cwd, walk::WALK_CAP));
@@ -824,21 +824,23 @@ impl Session {
 
     /// H9 (H6 for a process): a path the program WRITES (`role: "write"`, from the manifest's operand roles) that
     /// resolves into a held `attached/`, by either name, refuses the call, and so does a written path the program
-    /// walks (`walk`) that holds one beneath it. An absent role reads as read.
-    fn refuse_written_attached(&self, spec: Option<&Value>, paths: &[Value]) -> Result<(), Fail> {
+    /// walks (`walk`) that holds one beneath it. An absent role reads as read. The refusal names the path as the call
+    /// wrote it (`/files/…` when it was mapped) and teaches the retry.
+    fn refuse_written_attached(&self, spec: Option<&Value>, paths: &[Value], files: &[Value]) -> Result<(), Fail> {
         let specs = spec.and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
-        let mut written: Vec<(&str, PathBuf, bool)> = Vec::new();
+        let mut written: Vec<(String, PathBuf, bool)> = Vec::new();
         for (e, fact) in specs.iter().zip(paths) {
             match e.get("role") {
                 None => {}
                 Some(Value::String(r)) if r == "read" => {}
                 Some(Value::String(r)) if r == "write" => {
-                    let given = fact["given"].as_str().unwrap_or_default();
+                    let mapped = files.iter().find(|m| m["index"] == fact["arg"]).and_then(|m| m["from"].as_str());
+                    let given = mapped.or(fact["given"].as_str()).unwrap_or_default().to_string();
                     let walked = e.get("walk") == Some(&Value::Bool(true));
                     // The link's own place too: a names write acts on the link.
                     for k in ["path", "link"] {
                         if let Some(p) = fact.get(k).and_then(Value::as_str) {
-                            written.push((given, PathBuf::from(p), walked));
+                            written.push((given.clone(), PathBuf::from(p), walked));
                         }
                     }
                 }
@@ -862,7 +864,8 @@ impl Session {
                 return fail(
                     "InAttached",
                     format!(
-                        "{given} holds attached/, which a recursive write there could change: name a path beside it"
+                        "{given} holds attached/, which a recursive write there could change: name the file instead, as in mv notes.txt {d}/notes.txt rather than mv notes.txt {d}/",
+                        d = given.trim_end_matches('/')
                     ),
                 );
             }

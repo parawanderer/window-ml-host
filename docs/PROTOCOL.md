@@ -193,8 +193,11 @@ FILE_ATTACHMENTS.md H9). The mount is checked as every mount request is: another
 mount with no `uploads` is `BadRequest`. Then, before anything else reads them (after `~`), each `pathArgs` entry (the
 whole argument, or its part after `split`) and the `cwd` that are exactly `/files` or start with `/files/` become the
 folder's realpath plus the rest. The rest must pass the mount-relative path rule, so `/files/../x`, `/files//x` and
-`/files/./x` are `BadRequest`, never resolved; a trailing `/` is kept. An argument not in `pathArgs` is never mapped, so
-a pattern or a message naming `/files` reaches the program as written. Each mapping is listed in `files`:
+`/files/./x` are `BadRequest`, never resolved; a trailing `/` is kept. An argument not in `pathArgs` is never mapped and never refused here, so
+a pattern or a message naming `/files` reaches the program as written. That is a stated trust, like the session stamp:
+the host holds no description of the call, so it cannot tell a pattern from a path the manifest did not place, and the
+worker refuses the latter before `spawn`. One that slips past reaches the program as the literal `/files/…`, which
+names nothing on this disk unless the host has a `/files` of its own. Each mapping is listed in `files`:
 `{ "index": 2, "from": "/files/data.csv", "to": "/Users/me/proj/window-ml-files/data.csv" }`, `index` an argv position
 or `"cwd"`; `argv`, `paths[].given` and the facts' paths carry the mapped string. Without `files`, nothing is mapped:
 a host with a `/files` directory of its own keeps it. `hello.filesArgv` says the host takes `files`.
@@ -202,7 +205,7 @@ a host with a `/files` directory of its own keeps it. `hello.filesArgv` says the
 Whether or not `files` is given, a `pathArgs` entry with `role: "write"` whose resolved path (or its `link`) is a held
 `attached/` or lies beneath one, by its path or by the device and inode of an existing ancestor, refuses the call with
 `InAttached`. A copy OUT of `attached/` runs; a copy into it, a move out of it (`mv`'s source is written: it is
-removed) and an `rm` in it do not. The mount call `remove` asks there instead, since the person approves it. A written path the program also walks (`walk: true`: `rm -r`, `cp -R`, every `mv` operand) that HOLDS a held `attached/` beneath it is `InAttached` too, since the program can change `attached/` without naming it (`rm -r /files`, `cp -R x/attached /files/`, `mv notes.txt /files/`); a path beside `attached/` (`/files/notes.txt`) is not.
+removed) and an `rm` in it do not. The mount call `remove` asks there instead, since the person approves it. A written path the program also walks (`walk: true`: `rm -r`, `cp -R`, every `mv` operand) that HOLDS a held `attached/` beneath it is `InAttached` too, with a message that names the path as the call wrote it and the retry (`name the file instead, as in mv notes.txt /files/notes.txt`), since the program can change `attached/` without naming it (`rm -r /files`, `cp -R x/attached /files/`, `mv notes.txt /files/`); a path beside `attached/` (`/files/notes.txt`) is not.
 
 #### A credentialed call
 

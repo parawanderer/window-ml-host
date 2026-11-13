@@ -997,6 +997,22 @@ fn a_recursive_write_on_a_folder_that_holds_attached_is_refused() {
     let a =
         spawn_args(&e, &m, &["/bin/rm", "-r", "/files"], json!([{ "arg": 2, "role": "write", "walk": true }]), true);
     assert_eq!(e.code("spawn", a), "InAttached", "rm -r of the uploads folder removes attached/ with it");
+    let a = spawn_args(
+        &e,
+        &m,
+        &["/bin/mv", "notes.txt", "/files/"],
+        json!([{ "arg": 1, "role": "write", "walk": true }, { "arg": 2, "role": "write", "walk": true }]),
+        true,
+    );
+    let r = e.h.raw("spawn", a).unwrap_err();
+    assert_eq!(code_of(&r), "InAttached");
+    assert_eq!(
+        r["message"],
+        json!(
+            "/files/ holds attached/, which a recursive write there could change: name the file instead, as in mv notes.txt /files/notes.txt rather than mv notes.txt /files/"
+        ),
+        "the path as the call wrote it, and the retry"
+    );
     let proj = e.proj.to_string_lossy().into_owned();
     let a = spawn_args(&e, &m, &["/bin/rm", "-r", &proj], json!([{ "arg": 2, "role": "write", "walk": true }]), false);
     assert_eq!(e.code("spawn", a), "InAttached", "by any name, and from further up");
