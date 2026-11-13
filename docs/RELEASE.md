@@ -22,6 +22,7 @@ without attesting or publishing.
 | `wmlhost-<tag>-<target>.tar.gz` | a directory `wmlhost-<tag>-<target>/` holding `wmlhost`, `LICENSE`, `README.md` |
 | `wmlhost-<tag>-<target>.tar.gz.sha256` | that archive's sha256, in `shasum -a 256` format |
 | `SHA256SUMS` | every archive's sha256, one `<sha256>  <file>` line each, sorted by file name |
+| `install.sh` | the installer with those hashes written in ([INSTALL.md](INSTALL.md)) |
 
 Targets: `x86_64-unknown-linux-gnu` (built on Ubuntu 24.04, so glibc 2.39 or newer), `aarch64-unknown-linux-gnu`
 (Ubuntu 24.04 arm), `aarch64-apple-darwin` (macOS 15). Each is the default feature set: `native`, no `hub`. Linux needs

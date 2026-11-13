@@ -58,6 +58,8 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: Test
         run: cargo test --locked
+      - name: The installer, against a fake release
+        run: cargo build --release --locked && sh tools/test-install.sh
         # On Linux the sandbox must start: a test that finds it unavailable fails instead of taking the fail-closed path.
         env:
           WMLHOST_REQUIRE_SANDBOX: ${{ runner.os == 'Linux' && '1' || '' }}

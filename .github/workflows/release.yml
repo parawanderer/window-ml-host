@@ -158,6 +158,14 @@ jobs:
           shasum -a 256 *.tar.gz | LC_ALL=C sort -k2 > SHA256SUMS
           shasum -a 256 -c SHA256SUMS
           cat SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
+      # The installer for THIS tag: tools/install.sh.in with these archives' sha256 written in (docs/INSTALL.md). It is
+      # an asset of the release, so its hashes and the bytes they name are fixed together.
+      - name: install.sh with this release's hashes
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          tools/render-install.sh "$tag" dist/SHA256SUMS > dist/install.sh
+          sh -n dist/install.sh
+          ! grep -q '@[A-Z_0-9]*@' dist/install.sh
       # The repository has immutable releases on: once a release is PUBLISHED its assets and tag are fixed, and no asset
       # can be added. So the release is made as a DRAFT holding every asset, then published. A published release under
       # the tag fails here; a draft left by a failed run is filled (a draft is not public, so nothing pins it yet).
@@ -166,7 +174,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ inputs.tag || github.ref_name }}"
-          files=(dist/*.tar.gz dist/*.sha256 dist/SHA256SUMS)
+          files=(dist/*.tar.gz dist/*.sha256 dist/SHA256SUMS dist/install.sh)
           if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
             if [ "$draft" != true ]; then
               echo "::error::$tag is already published, and a published release never changes. Cut a new tag."
