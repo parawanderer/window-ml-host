@@ -990,3 +990,34 @@ fn files_names_only_this_sessions_uploads_mount_and_one_still_held() {
     assert_eq!(e.code("spawn", a), "MountReplaced", "the uploads folder was replaced");
     e.h.close();
 }
+
+#[test]
+fn a_recursive_write_on_a_folder_that_holds_attached_is_refused() {
+    let (mut e, m) = uploads_env();
+    let a =
+        spawn_args(&e, &m, &["/bin/rm", "-r", "/files"], json!([{ "arg": 2, "role": "write", "walk": true }]), true);
+    assert_eq!(e.code("spawn", a), "InAttached", "rm -r of the uploads folder removes attached/ with it");
+    let proj = e.proj.to_string_lossy().into_owned();
+    let a = spawn_args(&e, &m, &["/bin/rm", "-r", &proj], json!([{ "arg": 2, "role": "write", "walk": true }]), false);
+    assert_eq!(e.code("spawn", a), "InAttached", "by any name, and from further up");
+    let a = spawn_args(
+        &e,
+        &m,
+        &["/bin/cp", "-R", "/x/attached", "/files/"],
+        json!([{ "arg": 2, "walk": true }, { "arg": 3, "role": "write", "walk": true }]),
+        true,
+    );
+    assert_eq!(e.code("spawn", a), "InAttached", "cp -R of a folder named attached merges into attached/");
+    let a =
+        spawn_args(&e, &m, &["/bin/cp", "/x", "/files/"], json!([{ "arg": 1 }, { "arg": 2, "role": "write" }]), true);
+    assert!(e.h.raw("spawn", a).is_ok(), "a plain copy into the folder creates one name beside attached/");
+    let a = spawn_args(
+        &e,
+        &m,
+        &["/bin/rm", "-r", "/files/sub"],
+        json!([{ "arg": 2, "role": "write", "walk": true }]),
+        true,
+    );
+    assert!(e.h.raw("spawn", a).is_ok(), "a folder beside attached/ holds nothing of it");
+    e.h.close();
+}

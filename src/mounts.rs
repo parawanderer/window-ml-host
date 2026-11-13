@@ -279,6 +279,14 @@ impl Mount {
         path.ancestors().any(|a| rustix::fs::lstat(a).is_ok_and(|st| dev_ino(&st) == u.attached))
     }
 
+    /// Whether this mount's `attached/` lies strictly beneath `path`: a recursive write there (`rm -r`, `cp -R x dir`)
+    /// can change it without naming it.
+    pub fn attached_beneath(&self, path: &Path) -> bool {
+        let Some(u) = &self.uploads else { return false };
+        let attached = self.path.join(&u.rel).join("attached");
+        attached != path && attached.starts_with(path)
+    }
+
     /// A fresh descriptor of the mount's directory.
     fn top(&self) -> Result<OwnedFd, Fail> {
         rustix::fs::openat(&self.fd, ".", DIR_FLAGS, Mode::empty()).map_err(io_fail)

@@ -823,20 +823,22 @@ impl Session {
     }
 
     /// H9 (H6 for a process): a path the program WRITES (`role: "write"`, from the manifest's operand roles) that
-    /// resolves into a held `attached/`, by either name, refuses the call. An absent role reads as read.
+    /// resolves into a held `attached/`, by either name, refuses the call, and so does a written path the program
+    /// walks (`walk`) that holds one beneath it. An absent role reads as read.
     fn refuse_written_attached(&self, spec: Option<&Value>, paths: &[Value]) -> Result<(), Fail> {
         let specs = spec.and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
-        let mut written: Vec<(&str, PathBuf)> = Vec::new();
+        let mut written: Vec<(&str, PathBuf, bool)> = Vec::new();
         for (e, fact) in specs.iter().zip(paths) {
             match e.get("role") {
                 None => {}
                 Some(Value::String(r)) if r == "read" => {}
                 Some(Value::String(r)) if r == "write" => {
                     let given = fact["given"].as_str().unwrap_or_default();
+                    let walked = e.get("walk") == Some(&Value::Bool(true));
                     // The link's own place too: a names write acts on the link.
                     for k in ["path", "link"] {
                         if let Some(p) = fact.get(k).and_then(Value::as_str) {
-                            written.push((given, PathBuf::from(p)));
+                            written.push((given, PathBuf::from(p), walked));
                         }
                     }
                 }
@@ -847,12 +849,20 @@ impl Session {
             return Ok(());
         }
         let mounts: Vec<Arc<Mount>> = self.state.lock().unwrap().mounts.values().cloned().collect();
-        for (given, p) in &written {
+        for (given, p, walked) in &written {
             if mounts.iter().any(|m| m.holds_in_attached(p)) {
                 return fail(
                     "InAttached",
                     format!(
                         "{given} is in attached/, which holds the uploads as they were given: copy out of it, never into it"
+                    ),
+                );
+            }
+            if *walked && mounts.iter().any(|m| m.attached_beneath(p)) {
+                return fail(
+                    "InAttached",
+                    format!(
+                        "{given} holds attached/, which a recursive write there could change: name a path beside it"
                     ),
                 );
             }

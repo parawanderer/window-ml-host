@@ -202,7 +202,7 @@ a host with a `/files` directory of its own keeps it. `hello.filesArgv` says the
 Whether or not `files` is given, a `pathArgs` entry with `role: "write"` whose resolved path (or its `link`) is a held
 `attached/` or lies beneath one, by its path or by the device and inode of an existing ancestor, refuses the call with
 `InAttached`. A copy OUT of `attached/` runs; a copy into it, a move out of it (`mv`'s source is written: it is
-removed) and an `rm` in it do not. The mount call `remove` asks there instead, since the person approves it.
+removed) and an `rm` in it do not. The mount call `remove` asks there instead, since the person approves it. A written path the program also walks (`walk: true`: `rm -r`, `cp -R`, every `mv` operand) that HOLDS a held `attached/` beneath it is `InAttached` too, since the program can change `attached/` without naming it (`rm -r /files`, `cp -R x/attached /files/`, `mv notes.txt /files/`); a path beside `attached/` (`/files/notes.txt`) is not.
 
 #### A credentialed call
 
