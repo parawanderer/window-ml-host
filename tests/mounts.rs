@@ -826,3 +826,167 @@ fn redteam_a_mount_goes_when_a_reconfigure_makes_a_deeper_root_hold_it() {
     );
     e.h.close();
 }
+
+// --- `/files` in a spawn's argv (window-ml FILE_ATTACHMENTS.md H9) ---
+
+/// A spawn of `argv` in the project with `pathArgs`, naming the uploads mount `m` as `/files` when `files` is set.
+fn spawn_args(e: &Env, m: &str, argv: &[&str], path_args: Value, files: bool) -> Value {
+    let mut a = json!({ "argv": argv, "cwd": e.proj, "pathArgs": path_args });
+    if files {
+        a["files"] = json!({ "mount": m, "session": "s1" });
+    }
+    a
+}
+
+#[test]
+fn hello_says_the_host_maps_files() {
+    let mut h = Host::start(&tmp_home().1);
+    assert_eq!(h.ok("hello", json!({}))["filesArgv"], json!(true));
+    h.close();
+}
+
+#[test]
+fn a_files_path_argument_and_the_cwd_are_mapped_to_the_uploads_folder_and_listed() {
+    let (mut e, m) = uploads_env();
+    let folder = e.proj.join("window-ml-files");
+    let argv = ["/bin/cp", "/files/attached/in.txt", "/files/copy.txt"];
+    let a = spawn_args(&e, &m, &argv, json!([{ "arg": 1 }, { "arg": 2, "role": "write" }]), true);
+    let f = e.h.ok("spawn", a);
+    let to = |r: &str| folder.join(r).to_string_lossy().into_owned();
+    assert_eq!(f["argv"], json!(["/bin/cp", to("attached/in.txt"), to("copy.txt")]), "{f}");
+    assert_eq!(
+        f["files"],
+        json!([{ "index": 1, "from": "/files/attached/in.txt", "to": to("attached/in.txt") },
+               { "index": 2, "from": "/files/copy.txt", "to": to("copy.txt") }])
+    );
+    assert_eq!(f["paths"][0]["path"], json!(to("attached/in.txt")), "the mapped path's facts are the real file's");
+    assert_eq!(f["paths"][0]["exists"], json!(true));
+    // The part after `split`, and the cwd.
+    let mut a = spawn_args(&e, &m, &["/bin/cat", "--out=/files/o.txt"], json!([{ "arg": 1, "split": "=" }]), true);
+    a["cwd"] = json!("/files");
+    let f = e.h.ok("spawn", a);
+    assert_eq!(f["argv"][1], json!(format!("--out={}", to("o.txt"))));
+    assert_eq!(f["cwd"]["path"], json!(folder));
+    assert_eq!(f["files"][1], json!({ "index": "cwd", "from": "/files", "to": folder }));
+    e.h.close();
+}
+
+#[test]
+fn an_argument_the_worker_does_not_mark_as_a_path_is_never_mapped() {
+    let (mut e, m) = uploads_env();
+    let a = spawn_args(&e, &m, &["/bin/cat", "/files/x", "/files/y"], json!([{ "arg": 2 }]), true);
+    let f = e.h.ok("spawn", a);
+    assert_eq!(f["argv"][1], json!("/files/x"), "a pattern or a value stays as written");
+    assert_ne!(f["argv"][2], json!("/files/y"));
+    for a in ["/filesystem/x", "/files.txt", "files/x", "x/files/y"] {
+        let f = e.h.ok("spawn", spawn_args(&e, &m, &["/bin/cat", a], json!([{ "arg": 1 }]), true));
+        assert_eq!(f["argv"][1], json!(a), "{a} is not /files");
+    }
+    e.h.close();
+}
+
+#[test]
+fn without_files_a_host_path_named_files_is_left_alone() {
+    let (mut e, m) = uploads_env();
+    let f = e.h.ok("spawn", spawn_args(&e, &m, &["/bin/cat", "/files/x"], json!([{ "arg": 1 }]), false));
+    assert_eq!(f["argv"][1], json!("/files/x"));
+    assert_eq!(f["files"], json!([]));
+    e.h.close();
+}
+
+#[test]
+fn a_files_path_that_would_leave_the_folder_after_mapping_is_refused() {
+    let (mut e, m) = uploads_env();
+    for a in ["/files/../out.txt", "/files/attached/../../x", "/files//x", "/files/./x", "/files/a\\b", "/files/..."] {
+        let c = e.code("spawn", spawn_args(&e, &m, &["/bin/cat", a], json!([{ "arg": 1 }]), true));
+        assert_eq!(c, "BadRequest", "{a}");
+    }
+    let mut a = spawn_args(&e, &m, &["/bin/cat"], json!([]), true);
+    a["cwd"] = json!("/files/..");
+    assert_eq!(e.code("spawn", a), "BadRequest", "the cwd too");
+    e.h.close();
+}
+
+#[test]
+fn a_written_path_in_attached_is_refused_by_either_name_and_a_read_one_is_not() {
+    let (mut e, m) = uploads_env();
+    let real = e.proj.join("window-ml-files/attached/new.txt").to_string_lossy().into_owned();
+    for (to, files) in [("/files/attached/new.txt", true), (real.as_str(), false), (real.as_str(), true)] {
+        let a = spawn_args(&e, &m, &["/bin/cp", "/x", to], json!([{ "arg": 1 }, { "arg": 2, "role": "write" }]), files);
+        assert_eq!(e.code("spawn", a), "InAttached", "{to}");
+    }
+    let a = spawn_args(
+        &e,
+        &m,
+        &["/bin/cp", "-R", "/files/attached", "/files/copy"],
+        json!([{ "arg": 2, "walk": true }, { "arg": 3, "role": "write", "walk": true }]),
+        true,
+    );
+    assert!(e.h.raw("spawn", a).is_ok(), "reading attached/ itself, recursively, is allowed");
+    let out = e.proj.join("out.txt").to_string_lossy().into_owned();
+    let a = spawn_args(
+        &e,
+        &m,
+        &["/bin/cp", "/files/attached/in.txt", &out],
+        json!([{ "arg": 1 }, { "arg": 2, "role": "write" }]),
+        true,
+    );
+    assert!(e.h.raw("spawn", a).is_ok(), "a copy OUT of attached/ is allowed");
+    let a = spawn_args(
+        &e,
+        &m,
+        &["/bin/mv", "/files/attached/in.txt", &out],
+        json!([{ "arg": 1, "role": "write" }, { "arg": 2, "role": "write" }]),
+        true,
+    );
+    assert_eq!(e.code("spawn", a), "InAttached", "mv's source is written: it is removed");
+    let a = spawn_args(&e, &m, &["/bin/rm", "/files/attached"], json!([{ "arg": 1, "role": "write" }]), true);
+    assert_eq!(e.code("spawn", a), "InAttached", "attached/ itself");
+    if e.proj.join("window-ml-files/Attached").exists() {
+        let a = spawn_args(
+            &e,
+            &m,
+            &["/bin/cp", "/x", "/files/Attached/n"],
+            json!([{ "arg": 1 }, { "arg": 2, "role": "write" }]),
+            true,
+        );
+        assert_eq!(
+            e.code("spawn", a),
+            "InAttached",
+            "a case-insensitive filesystem reaches attached/ by another spelling"
+        );
+    }
+    e.h.close();
+}
+
+#[test]
+fn a_role_that_is_neither_read_nor_write_is_a_bad_request_and_an_absent_one_reads() {
+    let (mut e, m) = uploads_env();
+    for r in [json!("w"), json!(true), json!(null)] {
+        let a = spawn_args(&e, &m, &["/bin/rm", "/files/out.txt"], json!([{ "arg": 1, "role": r }]), true);
+        assert_eq!(e.code("spawn", a), "BadRequest", "{r}");
+    }
+    let a = spawn_args(&e, &m, &["/bin/rm", "/files/attached/in.txt"], json!([{ "arg": 1 }]), true);
+    assert!(e.h.raw("spawn", a).is_ok(), "an older worker sends no role: read, as before");
+    e.h.close();
+}
+
+#[test]
+fn files_names_only_this_sessions_uploads_mount_and_one_still_held() {
+    let (mut e, m) = uploads_env();
+    let mut a = spawn_args(&e, &m, &["/bin/cat", "/files/out.txt"], json!([{ "arg": 1 }]), true);
+    a["files"]["session"] = json!("s2");
+    assert_eq!(e.code("spawn", a), "UnknownMount", "another session's mount");
+    let other = e.root.join("plain");
+    std::fs::create_dir(&other).unwrap();
+    let plain = e.mount_at("s2", &other, "rw", None);
+    let mut a = spawn_args(&e, &plain, &["/bin/cat", "/files/out.txt"], json!([{ "arg": 1 }]), true);
+    a["files"]["session"] = json!("s2");
+    assert_eq!(e.code("spawn", a), "BadRequest", "a mount with no uploads folder has no /files");
+    let folder = e.proj.join("window-ml-files");
+    std::fs::rename(&folder, e.proj.join("moved")).unwrap();
+    std::fs::create_dir_all(folder.join("attached")).unwrap();
+    let a = spawn_args(&e, &m, &["/bin/cat", "/files/out.txt"], json!([{ "arg": 1 }]), true);
+    assert_eq!(e.code("spawn", a), "MountReplaced", "the uploads folder was replaced");
+    e.h.close();
+}

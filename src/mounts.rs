@@ -257,6 +257,28 @@ impl Mount {
         }
     }
 
+    /// The uploads folder's realpath, for mapping `/files` in an argv (H9): `None` when the mount has none. The
+    /// folder the name reaches now must still be the one held, as the mount itself must be (H3).
+    pub fn uploads_dir(&self) -> Result<Option<PathBuf>, Fail> {
+        let Some(u) = &self.uploads else { return Ok(None) };
+        let dir = self.path.join(&u.rel);
+        match rustix::fs::lstat(&dir) {
+            Ok(st) if dev_ino(&st) == u.dir => Ok(Some(dir)),
+            _ => fail("MountReplaced", format!("{} is no longer the uploads folder of {}", dir.display(), self.id)),
+        }
+    }
+
+    /// Whether `path` (absolute, as the host resolved it) is this mount's `attached/` or lies beneath it: by name, and
+    /// by the device and inode of each of its existing ancestors, so another name for the folder (a bind mount, a
+    /// path the realpath did not fold) is caught too.
+    pub fn holds_in_attached(&self, path: &Path) -> bool {
+        let Some(u) = &self.uploads else { return false };
+        if path.starts_with(self.path.join(&u.rel).join("attached")) {
+            return true;
+        }
+        path.ancestors().any(|a| rustix::fs::lstat(a).is_ok_and(|st| dev_ino(&st) == u.attached))
+    }
+
     /// A fresh descriptor of the mount's directory.
     fn top(&self) -> Result<OwnedFd, Fail> {
         rustix::fs::openat(&self.fd, ".", DIR_FLAGS, Mode::empty()).map_err(io_fail)

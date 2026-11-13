@@ -472,6 +472,8 @@ impl Session {
             "put": if matches!(self.host.transport, Transport::Hub { .. }) { Value::Null } else { json!({ "max": put::MAX_PUT }) },
             // The mount calls (src/mounts.rs), refused over the hub like `put`.
             "mounts": matches!(self.host.transport, Transport::Native),
+            // `spawn.files` maps `/files` to a mount's uploads folder (FILE_ATTACHMENTS.md H9): a mount is native-only.
+            "filesArgv": matches!(self.host.transport, Transport::Native),
             "owners": { "ledger": self.ledger.is_some(),
                         "register": !matches!(self.host.transport, Transport::Hub { .. }) },
             "cpu": { "metric": procs::CPU_METRIC },
@@ -626,6 +628,9 @@ impl Session {
         if let Some(c) = cwd_arg.as_mut() {
             tilde.extend(tilde::apply(c, json!("cwd"), home));
         }
+        // `/files` (window-ml FILE_ATTACHMENTS.md H9) becomes the uploads folder of the mount `files` names, in the
+        // arguments the worker marks as paths and in the cwd, here for the same reason `~` is.
+        let files = self.map_files(a, &mut argv, &mut cwd_arg)?;
         match a.get("mode").and_then(Value::as_str).unwrap_or("host") {
             "host" => {}
             "container" => return fail("Unsupported", "container mode has no runner in this version"),
@@ -682,6 +687,7 @@ impl Session {
             Some(_) => return fail("BadRequest", "credential is {provider, manifest}"),
         };
         let paths = self.path_facts(a.get("pathArgs"), &argv, &cwd, &config.roots)?;
+        self.refuse_written_attached(a.get("pathArgs"), &paths)?;
         let mut cwd_fact = json!({ "path": cwd, "inRoot": true });
         if opt_bool(a, "walkCwd")?.unwrap_or(false) {
             cwd_fact["containsSecret"] = json!(walk::contains_secret(&cwd, walk::WALK_CAP));
@@ -725,6 +731,7 @@ impl Session {
             "id": id,
             "argv": argv,
             "tilde": tilde,
+            "files": files,
             "program": { "path": program, "inRoot": facts::in_roots(&program, &config.roots),
                          "fingerprint": facts::fingerprint(&program) },
             "cwd": cwd_fact,
@@ -768,6 +775,89 @@ impl Session {
             },
         );
         Ok(facts)
+    }
+
+    /// H9: maps each `pathArgs` entry (the whole argument, or its part after `split`) and the cwd that are `/files` or
+    /// start with `/files/` to the uploads folder of the mount `files` names, checked as every mount request is (H3).
+    /// Returns the mappings as the facts list them. Without `files`, nothing is mapped: a host with a `/files` of its
+    /// own keeps it.
+    fn map_files(
+        &self,
+        a: &Map<String, Value>,
+        argv: &mut [String],
+        cwd: &mut Option<String>,
+    ) -> Result<Vec<Value>, Fail> {
+        let Some(f) = a.get("files") else { return Ok(vec![]) };
+        let Value::Object(f) = f else { return fail("BadRequest", "files is {mount, session}") };
+        let m = self.mount_of(f)?;
+        let Some(dir) = m.uploads_dir()? else {
+            return fail("BadRequest", format!("mount {:?} has no uploads folder for /files to name", m.id));
+        };
+        let mut out = Vec::new();
+        for e in a.get("pathArgs").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]) {
+            // A bad index or split is path_facts' to refuse.
+            let Some(i) =
+                e.get("arg").and_then(Value::as_u64).map(|i| i as usize).filter(|i| (1..argv.len()).contains(i))
+            else {
+                continue;
+            };
+            let (head, given) = match e.get("split").and_then(Value::as_str) {
+                Some(sep) if !sep.is_empty() => match argv[i].split_once(sep) {
+                    Some((h, v)) => (format!("{h}{sep}"), v.to_string()),
+                    None => continue,
+                },
+                _ => (String::new(), argv[i].clone()),
+            };
+            if let Some(to) = files_to(&given, &dir)? {
+                argv[i] = format!("{head}{to}");
+                out.push(json!({ "index": i, "from": given, "to": to }));
+            }
+        }
+        if let Some(c) = cwd.as_mut()
+            && let Some(to) = files_to(c, &dir)?
+        {
+            out.push(json!({ "index": "cwd", "from": c.clone(), "to": to }));
+            *c = to;
+        }
+        Ok(out)
+    }
+
+    /// H9 (H6 for a process): a path the program WRITES (`role: "write"`, from the manifest's operand roles) that
+    /// resolves into a held `attached/`, by either name, refuses the call. An absent role reads as read.
+    fn refuse_written_attached(&self, spec: Option<&Value>, paths: &[Value]) -> Result<(), Fail> {
+        let specs = spec.and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+        let mut written: Vec<(&str, PathBuf)> = Vec::new();
+        for (e, fact) in specs.iter().zip(paths) {
+            match e.get("role") {
+                None => {}
+                Some(Value::String(r)) if r == "read" => {}
+                Some(Value::String(r)) if r == "write" => {
+                    let given = fact["given"].as_str().unwrap_or_default();
+                    // The link's own place too: a names write acts on the link.
+                    for k in ["path", "link"] {
+                        if let Some(p) = fact.get(k).and_then(Value::as_str) {
+                            written.push((given, PathBuf::from(p)));
+                        }
+                    }
+                }
+                Some(_) => return fail("BadRequest", "pathArgs[].role is \"read\" or \"write\""),
+            }
+        }
+        if written.is_empty() {
+            return Ok(());
+        }
+        let mounts: Vec<Arc<Mount>> = self.state.lock().unwrap().mounts.values().cloned().collect();
+        for (given, p) in &written {
+            if mounts.iter().any(|m| m.holds_in_attached(p)) {
+                return fail(
+                    "InAttached",
+                    format!(
+                        "{given} is in attached/, which holds the uploads as they were given: copy out of it, never into it"
+                    ),
+                );
+            }
+        }
+        Ok(())
     }
 
     fn path_facts(
@@ -1824,6 +1914,23 @@ fn string_array(v: Option<&Value>) -> Option<Vec<String>> {
 }
 
 /// The chat session a mount call speaks for: the worker's stamp, never the cell's (FILE_ATTACHMENTS.md, H3).
+/// `/files` or a path under it, as the uploads folder `dir` names it: `None` for any other argument. The rest must pass
+/// the mount-relative path rule (H2), so `/files/../x` is refused, never resolved; a trailing `/` is kept.
+fn files_to(given: &str, dir: &Path) -> Result<Option<String>, Fail> {
+    let rest = match given.strip_prefix("/files") {
+        Some("") => "",
+        Some(r) if r.starts_with('/') => &r[1..],
+        _ => return Ok(None),
+    };
+    let inner = rest.strip_suffix('/').unwrap_or(rest);
+    mounts::rel_parts(inner, true).map_err(|Fail(_, m)| Fail("BadRequest", format!("{given}: {m}")))?;
+    let mut to = if inner.is_empty() { dir.to_path_buf() } else { dir.join(inner) }.to_string_lossy().into_owned();
+    if rest.ends_with('/') {
+        to.push('/');
+    }
+    Ok(Some(to))
+}
+
 fn session_of(a: &Map<String, Value>) -> Result<&str, Fail> {
     match a.get("session").and_then(Value::as_str) {
         Some(s) if !s.is_empty() && s.len() <= mounts::MAX_SESSION => Ok(s),
