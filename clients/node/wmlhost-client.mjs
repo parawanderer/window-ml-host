@@ -201,6 +201,26 @@ export class HostClient {
   /** Whose process `pid` is: `{ owner, id, kind, pgid, host, orphan }`, or `{ owner: null }` when no row reaches it. */
   owner(pid) { return this.call("owner", { pid }); }
 
+  // --- mounts (PROTOCOL.md, "Mounts"): a chat session's folders; `session` is the caller's stamp ---
+
+  /** Holds a folder for a session: `{ id, path, root, mode, uploads }`. */
+  mount(session, path, mode, uploads) {
+    return this.call("mount", uploads === undefined ? { session, path, mode } : { session, path, mode, uploads });
+  }
+  unmount(session, mount) { return this.call("unmount", { session, mount }); }
+  /** The facts and the `basis` of a path in a mount. */
+  stat(session, mount, path) { return this.call("stat", { session, mount, path }); }
+  list(session, mount, path, offset = 0, limit) {
+    return this.call("list", limit === undefined ? { session, mount, path, offset } : { session, mount, path, offset, limit });
+  }
+  fetch(args) { return this.call("fetch", args); }
+  /** Checks a whole-file write and answers a store id; send the bytes with `write`, then `commit({ id })`. */
+  store(args) { return this.call("store", args); }
+  write(id, offset, bytes) { return this.call("write", { id, offset, bytes: { $bytes: Buffer.from(bytes).toString("base64") } }); }
+  commit(args) { return this.call("commit", args); }
+  remove(args) { return this.call("remove", args); }
+  rename(args) { return this.call("rename", args); }
+
   /**
    * Reads a held output pointer to its end, in ranges, and returns the bytes.
    * @param {string} ptr

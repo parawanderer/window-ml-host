@@ -19,6 +19,9 @@ pub struct RepoConfig {
     pub runs_code: bool,
     /// Each key or include that makes it so, as `key = value` or a sentence.
     pub reasons: Vec<String>,
+    /// The repository's own git directory (a linked worktree's, for one), resolved: what the host's own git queries
+    /// name as `GIT_DIR` (src/gitfacts.rs). `None` when it could not be found, which makes `runs_code` true.
+    pub git_dir: Option<PathBuf>,
 }
 
 /// Finds the repository containing `dir` (walking up to the first `.git`) and inspects its config. `None` when `dir`
@@ -32,7 +35,7 @@ pub fn inspect(dir: &Path) -> Option<RepoConfig> {
             md => Some((a.to_path_buf(), p, md)),
         }
     })?;
-    let mut r = RepoConfig { root: root.clone(), runs_code: false, reasons: vec![] };
+    let mut r = RepoConfig { root: root.clone(), runs_code: false, reasons: vec![], git_dir: None };
     let mut flag = |why: String| {
         r.runs_code = true;
         r.reasons.push(why);
@@ -93,6 +96,7 @@ pub fn inspect(dir: &Path) -> Option<RepoConfig> {
             }
         }
     };
+    let git_dir = gitdir.canonicalize().ok();
     let trusted: Vec<PathBuf> = [root.canonicalize().ok(), gitdir.canonicalize().ok(), common.canonicalize().ok()]
         .into_iter()
         .flatten()
@@ -103,6 +107,7 @@ pub fn inspect(dir: &Path) -> Option<RepoConfig> {
             scan_file(&f, &trusted, 0, &mut seen, &mut flag);
         }
     }
+    r.git_dir = git_dir;
     Some(r)
 }
 

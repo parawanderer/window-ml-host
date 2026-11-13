@@ -18,7 +18,9 @@ use crate::env::{self, CallEnv, EnvError, NoSecrets, SecretStore};
 use crate::facts;
 use crate::framing::{self, FrameError, MAX_OUT};
 use crate::gitconfig;
+use crate::gitfacts::Git;
 use crate::glob;
+use crate::mounts::{self, Basis, Mount, Refusal, Stored};
 use crate::owners::{self, Entry, Ledger};
 use crate::procs;
 use crate::put::{self, Staged};
@@ -156,6 +158,10 @@ struct State {
     /// Puts waiting for their bytes or their commit. They share `pending`'s TTL, `MAX_PENDING` and id counter, and
     /// each deletes its temp file when it is dropped from here.
     puts: HashMap<String, Staged>,
+    /// The chat sessions' mounts (src/mounts.rs), and their stores waiting for bytes or a commit, which share the
+    /// puts' TTL, limit and `write`.
+    mounts: HashMap<String, Arc<Mount>>,
+    stores: HashMap<String, Stored>,
     running: HashMap<String, Call>,
     next_id: u64,
     /// Whether this host's warden has been started (on the first call that runs).
@@ -169,6 +175,7 @@ impl State {
     fn sweep(&mut self) {
         self.pending.retain(|_, p| p.created.elapsed() < PENDING_TTL);
         self.puts.retain(|_, p| p.created.elapsed() < PENDING_TTL);
+        self.stores.retain(|_, p| p.staged.created.elapsed() < PENDING_TTL);
     }
 
     fn entries(&self) -> Vec<Entry> {
@@ -271,6 +278,8 @@ where
             config: None,
             pending: HashMap::new(),
             puts: HashMap::new(),
+            mounts: HashMap::new(),
+            stores: HashMap::new(),
             running: HashMap::new(),
             next_id: 1,
             warden: false,
@@ -295,6 +304,8 @@ where
         let mut st = s.state.lock().unwrap();
         st.pending.clear();
         st.puts.clear();
+        st.stores.clear();
+        st.mounts.clear();
     }
     s.host.store.cleanup();
     drop(s);
@@ -385,13 +396,20 @@ impl Session {
             "status" => Ok(self.status()),
             // A remote principal registering a group on this machine would hold a kill over any process of this
             // user, through owner loss and the memory bound: refused before its arguments are read.
-            "register" | "put" | "write" | "commit" if matches!(self.host.transport, Transport::Hub { .. }) => {
-                // Likewise a remote principal writing files on this machine: the window.ml side refuses first, and
-                // a hub-relayed caller never gets this far.
-                let message = if call == "register" {
-                    "register is not offered over the hub: only a connection on this machine may declare its processes"
-                } else {
-                    "put is not offered over the hub: only a connection on this machine may write its files"
+            "register" | "put" | "write" | "commit" | "mount" | "unmount" | "stat" | "list" | "fetch" | "store"
+            | "remove" | "rename"
+                if matches!(self.host.transport, Transport::Hub { .. }) =>
+            {
+                // Likewise a remote principal writing files on this machine, or reading a chat session's folders:
+                // the window.ml side refuses first, and a hub-relayed caller never gets this far.
+                let message = match call {
+                    "register" => {
+                        "register is not offered over the hub: only a connection on this machine may declare its processes"
+                    }
+                    "put" | "write" | "commit" => {
+                        "put is not offered over the hub: only a connection on this machine may write its files"
+                    }
+                    _ => "mounts are not offered over the hub: only a connection on this machine may mount its folders",
                 };
                 return self.send(
                     json!({ "seq": seq, "error": { "code": "Refused", "reason": "scope", "message": message } }),
@@ -401,6 +419,23 @@ impl Session {
             "put" => self.put(args),
             "write" => self.write(args),
             "commit" => self.commit(args),
+            "mount" => self.mount(args),
+            "unmount" => self.unmount(args),
+            "stat" => self.stat(args),
+            "list" => self.list(args),
+            "fetch" | "store" => {
+                let r = if call == "fetch" { self.fetch(args) } else { self.store(args) };
+                match r {
+                    Ok(v) => Ok(v),
+                    Err(Refusal::Fail(f)) => Err(f),
+                    Err(Refusal::TooBig { message, size, cap }) => {
+                        let error = json!({ "code": "EFBIG", "message": message, "size": size, "cap": cap });
+                        return self.send(json!({ "seq": seq, "error": error }));
+                    }
+                }
+            }
+            "remove" => self.remove(args),
+            "rename" => self.rename(args),
             "owner" => self.owner_of(args),
             other => fail("BadRequest", format!("unknown call {other:?}")),
         };
@@ -435,6 +470,8 @@ impl Session {
             },
             // Over the hub `put` is refused, so it is not offered: the file would land on another machine.
             "put": if matches!(self.host.transport, Transport::Hub { .. }) { Value::Null } else { json!({ "max": put::MAX_PUT }) },
+            // The mount calls (src/mounts.rs), refused over the hub like `put`.
+            "mounts": matches!(self.host.transport, Transport::Native),
             "owners": { "ledger": self.ledger.is_some(),
                         "register": !matches!(self.host.transport, Transport::Hub { .. }) },
             "cpu": { "metric": procs::CPU_METRIC },
@@ -527,6 +564,10 @@ impl Session {
         let mut st = self.state.lock().unwrap();
         st.pending.clear();
         st.puts.clear();
+        st.stores.clear();
+        // A mount whose root is no longer the deepest root holding it goes: its protected names were read against that
+        // root, and the roots are the ceiling it was checked against. The rest stay.
+        st.mounts.retain(|_, m| put::root_of(&m.path, &roots) == Some(&m.root));
         st.config = Some(Config { roots, sandbox, path, timeout_ms, output_cap, memory_bound, memory_max, owner_loss });
         Ok(json!({ "roots": shown, "sandboxed": sandboxed, "memoryBound": memory_bound, "memoryMax": memory_max,
                    "onOwnerLoss": owner_loss.json() }))
@@ -675,7 +716,7 @@ impl Session {
 
         let mut st = self.state.lock().unwrap();
         st.sweep();
-        if st.pending.len() + st.puts.len() >= MAX_PENDING {
+        if st.pending.len() + st.puts.len() + st.stores.len() >= MAX_PENDING {
             return fail("Busy", format!("{MAX_PENDING} calls already wait for a verdict"));
         }
         let id = format!("c{}", st.next_id);
@@ -1300,7 +1341,7 @@ impl Session {
         let id = req_str(a, "id")?;
         let mut st = self.state.lock().unwrap();
         // A dropped put deletes its temp file.
-        if st.pending.remove(id).is_some() || st.puts.remove(id).is_some() {
+        if st.pending.remove(id).is_some() || st.puts.remove(id).is_some() || st.stores.remove(id).is_some() {
             Ok(json!({}))
         } else {
             fail("UnknownId", format!("no pending call {id:?}"))
@@ -1364,7 +1405,7 @@ impl Session {
         };
         let mut st = self.state.lock().unwrap();
         st.sweep();
-        if st.pending.len() + st.puts.len() >= MAX_PENDING {
+        if st.pending.len() + st.puts.len() + st.stores.len() >= MAX_PENDING {
             return fail("Busy", format!("{MAX_PENDING} calls already wait for a verdict"));
         }
         let id = format!("p{}", st.next_id);
@@ -1392,7 +1433,13 @@ impl Session {
             .map_err(|e| Fail("BadRequest", format!("bytes is not base64: {e}")))?;
         let mut st = self.state.lock().unwrap();
         st.sweep();
-        let Some(p) = st.puts.get_mut(id) else { return fail("UnknownId", format!("no put {id:?}")) };
+        let p = match st.puts.get_mut(id) {
+            Some(p) => p,
+            None => match st.stores.get_mut(id) {
+                Some(s) => &mut s.staged,
+                None => return fail("UnknownId", format!("no put or store {id:?}")),
+            },
+        };
         p.append(offset, &data, MAX_READ)?;
         Ok(json!({ "id": id, "received": p.received }))
     }
@@ -1405,8 +1452,12 @@ impl Session {
         let mut staged = {
             let mut st = self.state.lock().unwrap();
             st.sweep();
+            if st.stores.contains_key(id) {
+                drop(st);
+                return self.commit_store(id);
+            }
             match st.puts.get(id) {
-                None => return fail("UnknownId", format!("no put {id:?}")),
+                None => return fail("UnknownId", format!("no put or store {id:?}")),
                 Some(p) if p.received != p.size => {
                     return fail("BadRequest", format!("{} of the declared {} bytes arrived", p.received, p.size));
                 }
@@ -1417,6 +1468,166 @@ impl Session {
         // The hashing and the sync run without the state lock; a failure drops `staged`, which deletes the temp file.
         let sha256 = staged.finish(replace)?;
         Ok(json!({ "id": id, "path": staged.path, "rel": staged.rel, "size": staged.size, "sha256": sha256 }))
+    }
+
+    // --- mounts (src/mounts.rs; docs/PROTOCOL.md, "Mounts") ---
+
+    /// Holds a directory for one chat session: refused at, under or above what it must not reach (H2).
+    fn mount(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
+        let session = session_of(a)?.to_string();
+        let path = req_str(a, "path")?;
+        let writable = match req_str(a, "mode")? {
+            "rw" => true,
+            "ro" => false,
+            _ => return fail("BadRequest", "mode is \"rw\" or \"ro\""),
+        };
+        let uploads = match a.get("uploads") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(u)) => Some(u.as_str()),
+            Some(_) => return fail("BadRequest", "uploads is a path relative to the mount"),
+        };
+        let (config, others, id) = {
+            let mut st = self.state.lock().unwrap();
+            let Some(config) = st.config.clone() else { return fail("NotConfigured", "configure the session first") };
+            if st.mounts.len() >= mounts::MAX_MOUNTS {
+                return fail("Busy", format!("{} folders are already mounted", mounts::MAX_MOUNTS));
+            }
+            let others: Vec<Arc<Mount>> = st.mounts.values().filter(|m| m.session == session).cloned().collect();
+            let id = format!("m{}", st.next_id);
+            st.next_id += 1;
+            (config, others, id)
+        };
+        let home = self.host.home.as_deref().filter(|h| h.is_absolute());
+        let limits = mounts::Limits {
+            reserved: mounts::RESERVED.iter().map(PathBuf::from).collect(),
+            home,
+            forbidden: mounts::Limits::forbidden_dirs(home, self.host.owners_dir.as_deref()),
+            roots: &config.roots,
+        };
+        let other_paths: Vec<&Path> = others.iter().map(|m| m.path.as_path()).collect();
+        let m = Mount::open(id.clone(), session, path, writable, uploads, &limits, &other_paths)?;
+        let v = m.json();
+        let mut st = self.state.lock().unwrap();
+        // Checked again under the lock: two mounts may have raced.
+        if st.mounts.len() >= mounts::MAX_MOUNTS {
+            return fail("Busy", format!("{} folders are already mounted", mounts::MAX_MOUNTS));
+        }
+        if let Some(o) = st
+            .mounts
+            .values()
+            .find(|o| o.session == m.session && (o.path.starts_with(&m.path) || m.path.starts_with(&o.path)))
+        {
+            return fail(
+                "MountRefused",
+                format!("{} overlaps {}, already mounted in this session", m.path.display(), o.path.display()),
+            );
+        }
+        st.mounts.insert(id, Arc::new(m));
+        Ok(v)
+    }
+
+    /// The mount a request names, if it is the session's and still the folder held (H3).
+    fn mount_of(&self, a: &Map<String, Value>) -> Result<Arc<Mount>, Fail> {
+        let session = session_of(a)?;
+        let id = req_str(a, "mount")?;
+        let m = self.state.lock().unwrap().mounts.get(id).filter(|m| m.session == session).cloned();
+        // An id of another session reads exactly as one that does not exist.
+        let m = m.ok_or_else(|| Fail("UnknownMount", format!("no mount {id:?} in this session")))?;
+        m.check()?;
+        Ok(m)
+    }
+
+    fn unmount(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
+        let session = session_of(a)?;
+        let id = req_str(a, "mount")?;
+        let mut st = self.state.lock().unwrap();
+        if st.mounts.get(id).is_none_or(|m| m.session != session) {
+            return fail("UnknownMount", format!("no mount {id:?} in this session"));
+        }
+        st.mounts.remove(id);
+        st.stores.retain(|_, s| s.mount != id);
+        Ok(json!({}))
+    }
+
+    fn git(&self) -> Git {
+        let path = self.state.lock().unwrap().config.as_ref().map(|c| c.path.clone()).unwrap_or_default();
+        Git::on(&path)
+    }
+
+    fn stat(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
+        let m = self.mount_of(a)?;
+        m.stat(req_str(a, "path")?, &self.git())
+    }
+
+    fn list(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
+        let m = self.mount_of(a)?;
+        let offset = opt_u64(a, "offset")?.unwrap_or(0) as usize;
+        let limit = opt_u64(a, "limit")?.unwrap_or(mounts::MAX_LIST as u64) as usize;
+        m.list(req_str(a, "path")?, offset, limit)
+    }
+
+    fn fetch(&self, a: &Map<String, Value>) -> Result<Value, Refusal> {
+        let m = self.mount_of(a)?;
+        let basis = Basis::parse(a.get("basis"))?;
+        let offset = opt_u64(a, "offset")?.unwrap_or(0);
+        let length = opt_u64(a, "length")?.unwrap_or(mounts::MAX_CHUNK);
+        let cap = opt_u64(a, "cap")?.unwrap_or(mounts::MAX_CAP).min(mounts::MAX_CAP);
+        m.fetch(req_str(a, "path")?, basis.as_ref(), offset, length, cap)
+    }
+
+    /// Checks a whole-file write and holds its directory; the bytes come through `write`, as a put's do.
+    fn store(&self, a: &Map<String, Value>) -> Result<Value, Refusal> {
+        let m = self.mount_of(a)?;
+        let size = opt_u64(a, "size")?.ok_or_else(|| Fail("BadRequest", "size is a non-negative integer".into()))?;
+        let basis = Basis::parse(a.get("basis"))?;
+        let cap = opt_u64(a, "cap")?.unwrap_or(mounts::MAX_CAP).min(mounts::MAX_CAP);
+        let rel = req_str(a, "path")?;
+        let id = {
+            let mut st = self.state.lock().unwrap();
+            st.sweep();
+            if st.pending.len() + st.puts.len() + st.stores.len() >= MAX_PENDING {
+                return Err(Fail("Busy", format!("{MAX_PENDING} calls already wait for a verdict")).into());
+            }
+            let id = format!("s{}", st.next_id);
+            st.next_id += 1;
+            id
+        };
+        let stored = m.store(rel, size, basis, cap, &id)?;
+        self.state.lock().unwrap().stores.insert(id.clone(), stored);
+        Ok(json!({ "id": id, "mount": m.id, "path": rel, "size": size, "expiresInMs": PENDING_TTL.as_millis() as u64 }))
+    }
+
+    /// The commit of a store: its mount must still be held and the target still what was judged (H8).
+    fn commit_store(&self, id: &str) -> Result<Value, Fail> {
+        let mut stored = {
+            let mut st = self.state.lock().unwrap();
+            match st.stores.get(id) {
+                None => return fail("UnknownId", format!("no put or store {id:?}")),
+                Some(s) if s.staged.received != s.staged.size => {
+                    let (r, n) = (s.staged.received, s.staged.size);
+                    return fail("BadRequest", format!("{r} of the declared {n} bytes arrived"));
+                }
+                Some(_) => {}
+            }
+            let s = st.stores.remove(id).expect("just found");
+            match st.mounts.get(&s.mount) {
+                Some(m) if m.session == s.session => m.check()?,
+                _ => return fail("UnknownMount", format!("no mount {:?} in this session", s.mount)),
+            }
+            s
+        };
+        let sha256 = stored.commit()?;
+        Ok(json!({ "id": id, "mount": stored.mount, "path": stored.rel, "size": stored.staged.size, "sha256": sha256 }))
+    }
+
+    fn remove(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
+        let m = self.mount_of(a)?;
+        m.remove(req_str(a, "path")?, Basis::parse(a.get("basis"))?.as_ref())
+    }
+
+    fn rename(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
+        let m = self.mount_of(a)?;
+        m.rename(req_str(a, "from")?, req_str(a, "to")?, Basis::parse(a.get("basis"))?.as_ref())
     }
 
     fn cancel(&self, a: &Map<String, Value>) -> Result<Value, Fail> {
@@ -1612,6 +1823,14 @@ fn string_array(v: Option<&Value>) -> Option<Vec<String>> {
     v?.as_array()?.iter().map(|x| x.as_str().map(String::from)).collect()
 }
 
+/// The chat session a mount call speaks for: the worker's stamp, never the cell's (FILE_ATTACHMENTS.md, H3).
+fn session_of(a: &Map<String, Value>) -> Result<&str, Fail> {
+    match a.get("session").and_then(Value::as_str) {
+        Some(s) if !s.is_empty() && s.len() <= mounts::MAX_SESSION => Ok(s),
+        _ => fail("BadRequest", format!("session is a string of 1..={} bytes", mounts::MAX_SESSION)),
+    }
+}
+
 fn req_str<'a>(a: &'a Map<String, Value>, k: &str) -> Result<&'a str, Fail> {
     a.get(k).and_then(Value::as_str).ok_or_else(|| Fail("BadRequest", format!("{k} is a string")))
 }
@@ -1746,6 +1965,8 @@ mod tests {
             config: None,
             pending: HashMap::new(),
             puts: HashMap::new(),
+            mounts: HashMap::new(),
+            stores: HashMap::new(),
             running: HashMap::new(),
             next_id: 1,
             warden: false,
