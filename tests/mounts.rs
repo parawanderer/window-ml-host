@@ -769,3 +769,60 @@ fn a_reconfigure_with_a_root_that_no_longer_holds_the_mount_drops_it() {
     assert_eq!(e.code("stat", st(&m, "a.txt")), "UnknownMount");
     e.h.close();
 }
+
+// --- red team (e3, through the coordinator, rule 10, 2026-11-13) ---
+//
+// Two properties the suite above leaves to the store path alone, or to a root that stops holding the mount at all.
+// Each was red against its own weakened guard, named on the test.
+
+/// The brief's "a write reaching a root's protected names or any path with a `.git` component (case variants, a
+/// symlink or a rename that lands there, a path spelled two ways)": `store` is pinned by
+/// `a_git_directory_and_a_roots_protected_name_are_protected` and a rename into `.git` by
+/// `a_rename_across_subdirectories_moves_the_file`; a deletion and the other end of a rename are not. A case
+/// variant of the component must refuse too, on a case-sensitive filesystem as well, since the rule is the name.
+/// Red with `remove`'s `self.protected(rel)` check deleted: `.git/config` is removed. Red with `rename`'s
+/// `[from, to].find(|r| self.protected(r))` deleted: `a.txt` lands in `.GIT/hooks/`.
+#[test]
+fn redteam_a_remove_or_a_rename_through_a_git_component_or_a_protected_name_is_refused() {
+    let mut e = Env::new();
+    std::fs::create_dir_all(e.proj.join(".git/hooks")).unwrap();
+    std::fs::write(e.proj.join(".git/config"), "[core]").unwrap();
+    std::fs::write(e.proj.join("a.txt"), "A").unwrap();
+    let m = e.mount("s1");
+    let b = e.basis(&m, ".git/config");
+    let c = e.code("remove", json!({ "mount": m, "session": "s1", "path": ".git/config", "basis": b }));
+    assert_eq!(c, "Protected", "a delete under .git");
+    assert_eq!(std::fs::read(e.proj.join(".git/config")).unwrap(), b"[core]");
+    let b = e.basis(&m, "a.txt");
+    let to = ".GIT/hooks/pre-commit";
+    let c = e.code("rename", json!({ "mount": m, "session": "s1", "from": "a.txt", "to": to, "basis": b }));
+    assert_eq!(c, "Protected", "a rename into {to}");
+    assert!(!e.proj.join(".git/hooks/pre-commit").exists(), "{to} was created");
+    let b = e.basis(&m, ".git/config");
+    let c = e.code("rename", json!({ "mount": m, "session": "s1", "from": ".git/config", "to": "config", "basis": b }));
+    assert_eq!(c, "Protected", "a rename out of .git");
+    assert_eq!(std::fs::read(e.proj.join(".git/config")).unwrap(), b"[core]");
+    assert!(!e.proj.join("config").exists());
+    e.h.close();
+}
+
+/// The brief's "a mount surviving a configure once its root is no longer the deepest root": the test above moves the
+/// mount outside every root, so a retain that only asks "does SOME root hold it" passes it. Here a deeper root still
+/// holds the mount, and the mount was checked against the shallower one (its protected names, its `root` field), so it
+/// goes. Red with `configure`'s `put::root_of(&m.path, &roots) == Some(&m.root)` weakened to `.is_some()`: the mount
+/// answers `stat` after the configure.
+#[test]
+fn redteam_a_mount_goes_when_a_reconfigure_makes_a_deeper_root_hold_it() {
+    let mut e = Env::new();
+    std::fs::create_dir_all(e.root.join("x")).unwrap();
+    std::fs::write(e.root.join("x/a.txt"), "a").unwrap();
+    let m = e.mount_at("s1", &e.root.join("x"), "rw", None);
+    assert_eq!(e.stat(&m, "a.txt")["exists"], json!(true));
+    e.h.ok("configure", json!({ "roots": [e.root, e.root.join("x")], "sandbox": false }));
+    assert_eq!(
+        e.code("stat", st(&m, "a.txt")),
+        "UnknownMount",
+        "a deeper root now holds the mount, so the one it was checked against is not its ceiling"
+    );
+    e.h.close();
+}
