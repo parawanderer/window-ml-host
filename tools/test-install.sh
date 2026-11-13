@@ -8,19 +8,19 @@ w="$(mktemp -d)"; trap 'rm -rf "$w"' EXIT
 tag="v0.0.0"
 case "$(uname -s)-$(uname -m)" in
     Linux-x86_64) target=x86_64-unknown-linux-gnu ;; Linux-aarch64) target=aarch64-unknown-linux-gnu ;;
-    Darwin-arm64) target=aarch64-apple-darwin ;; *) echo "skip: no build target"; exit 0 ;;
+    Darwin-arm64) target=aarch64-apple-darwin ;; Darwin-x86_64) target=x86_64-apple-darwin ;; *) echo "skip: no build target"; exit 0 ;;
 esac
 name="wmlhost-$tag-$target"
 mkdir -p "$w/rel/$name" && cp "$bin" "$w/rel/$name/wmlhost"
 tar -czf "$w/rel/$name.tar.gz" -C "$w/rel" "$name"
 h="$( (sha256sum "$w/rel/$name.tar.gz" 2>/dev/null || shasum -a 256 "$w/rel/$name.tar.gz") | cut -d' ' -f1)"
-for t in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu aarch64-apple-darwin; do
+for t in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu aarch64-apple-darwin x86_64-apple-darwin; do
     [ "$t" = "$target" ] && x="$h" || x="$(printf '%064d' 0)"
     echo "$x  wmlhost-$tag-$t.tar.gz"
 done > "$w/SHA256SUMS"
 "$here/render-install.sh" "$tag" "$w/SHA256SUMS" > "$w/install.sh"
 id=abcdefghijklmnopabcdefghijklmnop
-export HOME="$w/home" XDG_DATA_HOME="$w/home/data" WMLHOST_BASE_URL="file://$w/rel"
+export HOME="$w/home" WMLHOST_BASE_URL="file://$w/rel"
 mkdir -p "$HOME"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
@@ -29,7 +29,10 @@ echo "$out" | grep -q 'sha256 verified' || fail "no verified line"
 echo "$out" | grep -q 'uninstall --browser chromium' || fail "no undo line"
 f="$(find "$HOME" -name com.parawanderer.window_ml_host.json)"; [ -n "$f" ] || fail "no manifest written"
 grep -q "chrome-extension://$id/" "$f" || fail "manifest does not name the extension"
-grep -q "$XDG_DATA_HOME/window-ml-host/$name/wmlhost" "$f" || fail "manifest does not name the unpacked binary"
+grep -q "\"path\": \"$HOME/.local/bin/wmlhost\"" "$f" || fail "manifest does not name the one installed path"
+[ -x "$HOME/.local/bin/wmlhost" ] || fail "no binary at the one path"
+echo "$out" | grep -q 'export PATH=' || fail "no PATH line though the folder is not on PATH"
+"$HOME/.local/bin/wmlhost" --version >/dev/null || fail "the installed binary does not run"
 
 echo tampered >> "$w/rel/$name.tar.gz"
 rm -f "$f"

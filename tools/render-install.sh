@@ -12,5 +12,5 @@ hash_of() {
     [ "${#h}" -eq 64 ] || { echo "render-install: bad sha256 for $1" >&2; exit 1; }
     printf '%s' "$h"
 }
-a="$(hash_of x86_64-unknown-linux-gnu)"; b="$(hash_of aarch64-unknown-linux-gnu)"; c="$(hash_of aarch64-apple-darwin)"
-sed -e "s/@TAG@/$tag/g" -e "s/@SHA_X86_64_LINUX@/$a/" -e "s/@SHA_AARCH64_LINUX@/$b/" -e "s/@SHA_AARCH64_MACOS@/$c/" "$here/install.sh.in"
+a="$(hash_of x86_64-unknown-linux-gnu)"; b="$(hash_of aarch64-unknown-linux-gnu)"; c="$(hash_of aarch64-apple-darwin)"; d="$(hash_of x86_64-apple-darwin)"
+sed -e "s/@TAG@/$tag/g" -e "s/@SHA_X86_64_LINUX@/$a/" -e "s/@SHA_AARCH64_LINUX@/$b/" -e "s/@SHA_AARCH64_MACOS@/$c/" -e "s/@SHA_X86_64_MACOS@/$d/" "$here/install.sh.in"

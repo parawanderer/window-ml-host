@@ -25,7 +25,7 @@ without attesting or publishing.
 | `install.sh` | the installer with those hashes written in ([INSTALL.md](INSTALL.md)) |
 
 Targets: `x86_64-unknown-linux-gnu` (built on Ubuntu 24.04, so glibc 2.39 or newer), `aarch64-unknown-linux-gnu`
-(Ubuntu 24.04 arm), `aarch64-apple-darwin` (macOS 15). Each is the default feature set: `native`, no `hub`. Linux needs
+(Ubuntu 24.04 arm), `aarch64-apple-darwin` (macOS 15), `x86_64-apple-darwin` (Intel Mac, macOS 15 on the Intel runner). Each is the default feature set: `native`, no `hub`. Linux needs
 bubblewrap installed at run time; it is not shipped.
 
 The binaries are not code-signed. Each archive has a build-provenance attestation: `gh attestation verify
