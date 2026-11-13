@@ -34,6 +34,12 @@ grep -q "\"path\": \"$HOME/.local/bin/wmlhost\"" "$f" || fail "manifest does not
 echo "$out" | grep -q 'export PATH=' || fail "no PATH line though the folder is not on PATH"
 "$HOME/.local/bin/wmlhost" --version >/dev/null || fail "the installed binary does not run"
 
+# A folder with a space in it reaches wmlhost whole: the manifest names the whole path.
+rm -f "$f"
+out="$(WMLHOST_BIN_DIR="$w/with space/bin" sh "$w/install.sh" --extension-id $id --browser chromium)" || fail "a bin folder with a space: $out"
+f="$(find "$HOME" -name com.parawanderer.window_ml_host.json)"
+grep -q "\"path\": \"$w/with space/bin/wmlhost\"" "$f" || fail "the manifest does not name the whole path with a space"
+
 echo tampered >> "$w/rel/$name.tar.gz"
 rm -f "$f"
 if out="$(sh "$w/install.sh" --extension-id $id 2>&1)"; then fail "a tampered archive installed"; fi

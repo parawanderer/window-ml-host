@@ -75,10 +75,10 @@ cp "$tmp/x/$name/wmlhost" "$bin.new"
 chmod +x "$bin.new"
 mv -f "$bin.new" "$bin"
 
-args="--extension-id $ext --binary $bin"
-for b in $browsers; do args="$args --browser $b"; done
-# shellcheck disable=SC2086
-"$bin" install $args
+# An argument list, never a string split again: a folder with a space in it reaches wmlhost whole.
+set -- install --extension-id "$ext" --binary "$bin"
+for b in $browsers; do set -- "$@" --browser "$b"; done
+"$bin" "$@"
 
 say ""
 say "Installed window-ml-host $TAG:"
