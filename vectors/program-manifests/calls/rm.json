@@ -15,7 +15,7 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read"
+          "role": "write"
         }
       ],
       "actsOnDir": false,
@@ -45,11 +45,11 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read"
+          "role": "write"
         },
         {
           "arg": 2,
-          "role": "read"
+          "role": "write"
         }
       ],
       "actsOnDir": false,
@@ -79,7 +79,7 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "write"
         }
       ],
       "actsOnDir": false,
@@ -109,7 +109,7 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "write"
         }
       ],
       "actsOnDir": false,
@@ -139,7 +139,7 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "write"
         }
       ],
       "actsOnDir": false,
@@ -169,7 +169,7 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "write"
         }
       ],
       "actsOnDir": false,
@@ -199,7 +199,7 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -230,7 +230,7 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -261,7 +261,7 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -292,7 +292,7 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -323,7 +323,7 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "write"
         }
       ],
       "actsOnDir": false,
@@ -356,11 +356,11 @@
       "pathArgs": [
         {
           "arg": 3,
-          "role": "read"
+          "role": "write"
         },
         {
           "arg": 4,
-          "role": "read"
+          "role": "write"
         }
       ],
       "actsOnDir": false,
@@ -391,7 +391,7 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read"
+          "role": "write"
         }
       ],
       "actsOnDir": false,
@@ -418,7 +418,7 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read"
+          "role": "write"
         }
       ],
       "actsOnDir": false,
@@ -447,7 +447,7 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read"
+          "role": "write"
         }
       ],
       "actsOnDir": false,
@@ -476,7 +476,7 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "write"
         }
       ],
       "actsOnDir": false,
@@ -504,7 +504,7 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "write"
         }
       ],
       "actsOnDir": false,
@@ -532,7 +532,7 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read"
+          "role": "write"
         }
       ],
       "actsOnDir": false,
@@ -561,7 +561,7 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read"
+          "role": "write"
         }
       ],
       "actsOnDir": false,

@@ -240,6 +240,14 @@ pub enum Paths {
     From(OperandsFrom),
 }
 
+/// Which path operands a writing command writes: the value of a `writtenOperands` field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WrittenOperands {
+    /// The last one, the destination (`cp a b dir`); the others are read.
+    Last,
+}
+
 /// A command's grammar when it is not options-then-operands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub enum Syntax {
@@ -349,6 +357,8 @@ pub struct CommandSpec {
     /// Operands are git pathspecs: one starting with `:`, or holding `*`, `?`, `[` or `\\`, makes the call unknown.
     #[serde(default)]
     pub pathspecs: bool,
+    /// Which path operands a writing command writes. Absent, a command whose effects write writes every path operand.
+    pub written_operands: Option<WrittenOperands>,
 }
 
 /// The versions a manifest was written against and how the host reads the version.
@@ -601,6 +611,18 @@ pub fn describe_call(argv: &[String], m: &Manifest, version: Option<&str>, env_s
             }
         }
     }
+    // Which operands are written: those the command's own write terms fall on (its effects, or a flag's with no path of
+    // its own, `sed -i`); `writtenOperands: "last"` narrows them to the destination.
+    let last_only = cmd.written_operands == Some(WrittenOperands::Last);
+    let dest = operand_paths.last().copied();
+    let writes_operands = terms.iter().any(|(t, g)| matches!(g, Targets::Command) && writes_path(t));
+    if writes_operands {
+        for p in &mut d.path_args {
+            if operand_paths.contains(&p.arg) && (!last_only || Some(p.arg) == dest) {
+                p.role = Role::Write;
+            }
+        }
+    }
     if let Some(codes) = &cmd.ok_codes {
         let mut merged: Vec<u8> = Vec::new();
         push_unique(&mut merged, codes.iter().copied());
@@ -622,18 +644,38 @@ pub fn describe_call(argv: &[String], m: &Manifest, version: Option<&str>, env_s
         }
     };
     let repo_wide = cmd.repo_wide;
-    let mut command_targets: Vec<String> = operand_paths.iter().map(|i| argv[*i].clone()).collect();
+    let mut around: Vec<String> = Vec::new();
     if d.acts_on_dir {
-        command_targets.push(d.dir_arg.map_or(".".to_string(), |a| argv[a].clone()));
+        around.push(d.dir_arg.map_or(".".to_string(), |a| argv[a].clone()));
     }
     if repo_wide {
-        command_targets.push(d.dir_arg.map_or(".".to_string(), |a| argv[a].clone()));
-        command_targets.push(".".to_string());
+        around.push(d.dir_arg.map_or(".".to_string(), |a| argv[a].clone()));
+        around.push(".".to_string());
     }
+    let operand_res = |keep: &dyn Fn(usize) -> bool| -> Vec<String> {
+        operand_paths.iter().filter(|i| keep(**i)).map(|i| argv[*i].clone()).collect()
+    };
+    let with_around = |mut v: Vec<String>| -> Vec<String> {
+        v.extend(around.iter().cloned());
+        v
+    };
+    let command_targets = with_around(operand_res(&|_| true));
+    // With `writtenOperands: "last"` a write falls on the destination and a read on the sources; any other term on all.
+    let targets_of = |term: &ProgramEffect| -> Vec<String> {
+        if !last_only {
+            command_targets.clone()
+        } else if writes_path(term) {
+            with_around(operand_res(&|i| Some(i) == dest))
+        } else if *term == ProgramEffect::Read {
+            with_around(operand_res(&|i| Some(i) != dest))
+        } else {
+            command_targets.clone()
+        }
+    };
     let mut keys: Vec<String> = Vec::new();
     for (term, targets) in &terms {
         let paths: Vec<String> = match targets {
-            Targets::Command => command_targets.clone(),
+            Targets::Command => targets_of(term),
             Targets::Arg(i, split) => vec![given(*i, split.as_deref())],
         };
         match term {
@@ -659,6 +701,11 @@ pub fn describe_call(argv: &[String], m: &Manifest, version: Option<&str>, env_s
     keys.dedup();
     d.effects = Effects::Keys(keys);
     d
+}
+
+/// Whether a term writes a path: bytes in place, or its entry.
+fn writes_path(t: &ProgramEffect) -> bool {
+    matches!(t, ProgramEffect::Write | ProgramEffect::WriteNames)
 }
 
 /// Marks the call as not described, with the reason.
@@ -1070,4 +1117,56 @@ fn compare_versions(a: &[f64], b: &[f64]) -> i32 {
         }
     }
     0
+}
+
+// --- which operands a writing command writes ---
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// A one-command manifest over operand paths, with the given effects and extra command fields.
+    fn manifest(effects: serde_json::Value, extra: serde_json::Value) -> Result<Manifest, serde_json::Error> {
+        let mut command = json!({ "effects": effects, "paths": "operands", "flags": {} });
+        for (k, v) in extra.as_object().unwrap() {
+            command[k] = v.clone();
+        }
+        serde_json::from_value(json!({
+            "program": "cp", "version": { "range": "*", "args": [], "pattern": "" }, "command": command
+        }))
+    }
+
+    fn argv(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn roles(d: &CallDescription) -> Vec<(usize, Role)> {
+        d.path_args.iter().map(|p| (p.arg, p.role)).collect()
+    }
+
+    #[test]
+    fn written_operands_last_writes_the_destination_and_reads_the_sources() {
+        let m = manifest(json!(["read", "write"]), json!({ "writtenOperands": "last" })).unwrap();
+        let d = describe_call(&argv(&["cp", "a", "b", "dir"]), &m, None, &[]);
+        assert_eq!(roles(&d), [(1, Role::Read), (2, Role::Read), (3, Role::Write)]);
+        assert_eq!(d.effects.to_json(), json!(["read:fs:a:?:?", "read:fs:b:?:?", "write:fs:dir:?:?"]));
+    }
+
+    #[test]
+    fn a_writing_command_without_the_field_writes_every_operand() {
+        let m = manifest(json!(["read", "write"]), json!({})).unwrap();
+        let d = describe_call(&argv(&["cp", "a", "b"]), &m, None, &[]);
+        assert_eq!(roles(&d), [(1, Role::Write), (2, Role::Write)]);
+        let ro = manifest(json!(["read"]), json!({})).unwrap();
+        let d = describe_call(&argv(&["cp", "a", "b"]), &ro, None, &[]);
+        assert_eq!(roles(&d), [(1, Role::Read), (2, Role::Read)]);
+    }
+
+    #[test]
+    fn a_written_operands_value_other_than_last_fails_to_parse() {
+        for v in [json!("first"), json!("Last"), json!(true), json!(["last"])] {
+            assert!(manifest(json!(["write"]), json!({ "writtenOperands": v.clone() })).is_err(), "{v}");
+        }
+    }
 }

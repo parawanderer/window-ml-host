@@ -1,0 +1,39 @@
+{
+  "program": "cp",
+  "version": {
+    "range": "*",
+    "args": [],
+    "pattern": ""
+  },
+  "okCodes": [
+    0
+  ],
+  "echoes": false,
+  "command": {
+    "effects": [
+      "read",
+      "write",
+      "write-names"
+    ],
+    "paths": "operands",
+    "noPaths": "nothing",
+    "writtenOperands": "last",
+    "terminator": "--",
+    "clusters": true,
+    "optionsFirst": true,
+    "dashIsPath": true,
+    "flags": {
+      "-f": {},
+      "-i": {},
+      "-n": {},
+      "-p": {},
+      "-v": {},
+      "-R": {
+        "recursive": true
+      },
+      "-r": {
+        "recursive": true
+      }
+    }
+  }
+}

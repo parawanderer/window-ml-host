@@ -17,12 +17,12 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read",
+          "role": "write",
           "walk": true
         },
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -55,12 +55,12 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         },
         {
           "arg": 3,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -94,12 +94,12 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         },
         {
           "arg": 3,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -133,12 +133,12 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         },
         {
           "arg": 3,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -172,12 +172,12 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         },
         {
           "arg": 3,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -211,12 +211,12 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         },
         {
           "arg": 3,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -251,17 +251,17 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read",
+          "role": "write",
           "walk": true
         },
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         },
         {
           "arg": 3,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -294,12 +294,12 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read",
+          "role": "write",
           "walk": true
         },
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -331,12 +331,12 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read",
+          "role": "write",
           "walk": true
         },
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -369,12 +369,12 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         },
         {
           "arg": 3,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -405,12 +405,12 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read",
+          "role": "write",
           "walk": true
         },
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -441,12 +441,12 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         },
         {
           "arg": 3,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -477,12 +477,12 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         },
         {
           "arg": 3,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -513,12 +513,12 @@
       "pathArgs": [
         {
           "arg": 2,
-          "role": "read",
+          "role": "write",
           "walk": true
         },
         {
           "arg": 3,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
