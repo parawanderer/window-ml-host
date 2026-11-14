@@ -687,7 +687,7 @@ impl Session {
             Some(_) => return fail("BadRequest", "credential is {provider, manifest}"),
         };
         let paths = self.path_facts(a.get("pathArgs"), &argv, &cwd, &config.roots)?;
-        self.refuse_written_attached(a.get("pathArgs"), &paths, &files)?;
+        self.refuse_written_attached(a.get("pathArgs"), &argv[0], &paths, &files)?;
         let mut cwd_fact = json!({ "path": cwd, "inRoot": true });
         if opt_bool(a, "walkCwd")?.unwrap_or(false) {
             cwd_fact["containsSecret"] = json!(walk::contains_secret(&cwd, walk::WALK_CAP));
@@ -826,7 +826,13 @@ impl Session {
     /// resolves into a held `attached/`, by either name, refuses the call, and so does a written path the program
     /// walks (`walk`) that holds one beneath it. An absent role reads as read. The refusal names the path as the call
     /// wrote it (`/files/…` when it was mapped) and teaches the retry.
-    fn refuse_written_attached(&self, spec: Option<&Value>, paths: &[Value], files: &[Value]) -> Result<(), Fail> {
+    fn refuse_written_attached(
+        &self,
+        spec: Option<&Value>,
+        argv0: &str,
+        paths: &[Value],
+        files: &[Value],
+    ) -> Result<(), Fail> {
         let specs = spec.and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
         let mut written: Vec<(String, PathBuf, bool)> = Vec::new();
         for (e, fact) in specs.iter().zip(paths) {
@@ -864,8 +870,8 @@ impl Session {
                 return fail(
                     "InAttached",
                     format!(
-                        "{given} holds attached/, which a recursive write there could change: name the file instead, as in mv notes.txt {d}/notes.txt rather than mv notes.txt {d}/",
-                        d = given.trim_end_matches('/')
+                        "{given} holds attached/, which a recursive write there could change: name the file instead, {}",
+                        retry_example(argv0, given.trim_end_matches('/'))
                     ),
                 );
             }
@@ -1981,6 +1987,18 @@ fn opt_bool(a: &Map<String, Value>, k: &str) -> Result<Option<bool>, Fail> {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Bool(b)) => Ok(Some(*b)),
         Some(_) => fail("BadRequest", format!("{k} is a boolean")),
+    }
+}
+
+/// The retry an InAttached refusal of a walked write teaches, in the call's own program: `as in cp notes.txt
+/// /files/notes.txt rather than cp notes.txt /files/`. A program whose name cannot stand as one word in the sentence
+/// (empty, or holding whitespace or a control character) is left out, and the example names the paths alone.
+fn retry_example(argv0: &str, dir: &str) -> String {
+    let prog = Path::new(argv0).file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if prog.is_empty() || prog.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        format!("as in {dir}/notes.txt rather than {dir}/")
+    } else {
+        format!("as in {prog} notes.txt {dir}/notes.txt rather than {prog} notes.txt {dir}/")
     }
 }
 

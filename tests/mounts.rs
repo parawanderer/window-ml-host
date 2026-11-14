@@ -1013,6 +1013,25 @@ fn a_recursive_write_on_a_folder_that_holds_attached_is_refused() {
         ),
         "the path as the call wrote it, and the retry"
     );
+    let odd = e.proj.join("bin dir");
+    std::fs::create_dir_all(&odd).unwrap();
+    std::os::unix::fs::symlink("/bin/mv", odd.join("my tool")).unwrap();
+    let prog = odd.join("my tool").to_string_lossy().into_owned();
+    let a = spawn_args(
+        &e,
+        &m,
+        &[&prog, "notes.txt", "/files/"],
+        json!([{ "arg": 1, "role": "write", "walk": true }, { "arg": 2, "role": "write", "walk": true }]),
+        true,
+    );
+    let r = e.h.raw("spawn", a).unwrap_err();
+    assert_eq!(
+        r["message"],
+        json!(
+            "/files/ holds attached/, which a recursive write there could change: name the file instead, as in /files/notes.txt rather than /files/"
+        ),
+        "a program whose name is not one word is left out of the retry: the paths alone"
+    );
     let proj = e.proj.to_string_lossy().into_owned();
     let a = spawn_args(&e, &m, &["/bin/rm", "-r", &proj], json!([{ "arg": 2, "role": "write", "walk": true }]), false);
     assert_eq!(e.code("spawn", a), "InAttached", "by any name, and from further up");
