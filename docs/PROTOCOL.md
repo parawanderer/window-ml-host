@@ -755,7 +755,7 @@ These are the host's own; the worker maps them onto the `ml` wire's codes (`Refu
 | `NotConfigured` | `spawn`, `glob` or `mount` before `configure` |
 | `BadRoot` | a root that is not an absolute existing directory, or is `/` |
 | `ProgramNotFound` | `argv[0]` not found on `PATH`, or not an executable file |
-| `CwdOutsideRoots` | `cwd` (of `spawn`, `glob` or `put`) missing, not a directory, or resolving outside every root |
+| `CwdOutsideRoots` | `cwd` (of `spawn`, `glob` or `put`) missing, not a directory, or resolving outside every root. The message tells them apart (`… does not exist`, `… is not a directory`) only for an absolute, `..`-free path lexically inside a root; any other path gets `… is not a directory inside a root`, so the message is no oracle for paths outside the roots |
 | `EnvRefused` | an `env` name on the denylist (`src/env.rs`), which includes every `GH_*`, `GITHUB_*`, `SSL_CERT_*` and `*_PROXY` (any case) |
 | `CredentialRefused` | `spawn`: a `credential` the host does not honour: an unknown provider, a manifest hash it did not pin or whose manifest names no such credential, another program, or the hub transport |
 | `SecretUnavailable` | an `env` handle the host's store does not hold; `start`/`pipe` of a credentialed call whose provider gave no token |

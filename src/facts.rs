@@ -29,6 +29,21 @@ pub fn in_roots(p: &Path, roots: &[PathBuf]) -> bool {
     roots.iter().any(|r| p.starts_with(r))
 }
 
+/// The message for a `cwd` that did not resolve to a directory inside a root. It says "does not exist" or "is not a
+/// directory" only for an absolute, `..`-free path that lies lexically inside a root; otherwise the answer would be an
+/// oracle for whether arbitrary paths outside the sandbox exist.
+pub fn cwd_refusal(given: &str, roots: &[PathBuf]) -> String {
+    let p = Path::new(given);
+    let lexically_inside = p.is_absolute()
+        && !p.components().any(|c| matches!(c, std::path::Component::ParentDir))
+        && in_roots(&p.components().collect::<PathBuf>(), roots);
+    match std::fs::metadata(p) {
+        Ok(m) if !m.is_dir() && lexically_inside => format!("{given} is not a directory"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && lexically_inside => format!("{given} does not exist"),
+        _ => format!("{given} is not a directory inside a root"),
+    }
+}
+
 /// A path argument or `cwd` after resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resolved {
