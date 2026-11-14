@@ -275,6 +275,34 @@ fn a_cwd_outside_the_roots_is_refused() {
 }
 
 #[test]
+fn a_refused_cwd_says_why_only_where_that_leaks_nothing_outside_the_roots() {
+    let (_d, r) = root();
+    let (_o, outside) = root();
+    std::fs::write(r.join("f"), "x").unwrap();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let msg = |h: &mut Host, cwd: &Path| {
+        let e = h.call("spawn", json!({ "argv": ["true"], "cwd": cwd })).unwrap_err();
+        assert_eq!(e.0, "CwdOutsideRoots", "{}", cwd.display());
+        e.1
+    };
+    assert!(msg(&mut h, &r.join("missing")).contains("does not exist"));
+    assert!(msg(&mut h, &r.join("f")).contains("is not a directory"));
+    assert!(!msg(&mut h, &outside.join("missing")).contains("does not exist"));
+    assert!(!msg(&mut h, &r.join("..").join("nope-sibling")).contains("does not exist"));
+    // A link inside the root to a directory outside it must not make the outside answer.
+    std::os::unix::fs::symlink(&outside, r.join("link")).unwrap();
+    std::fs::write(outside.join("afile"), "x").unwrap();
+    assert!(!msg(&mut h, &r.join("link").join("missing")).contains("does not exist"));
+    std::os::unix::fs::symlink(outside.join("nothing-here"), r.join("dangle")).unwrap();
+    assert!(!msg(&mut h, &r.join("dangle").join("x")).contains("does not exist"));
+    // The generic text itself contains "is not a directory", so compare its tail.
+    assert!(msg(&mut h, &r.join("link").join("afile")).ends_with("is not a directory inside a root"));
+    assert!(!msg(&mut h, &r.join("missing").join("..").join("..").join("x")).contains("does not exist"));
+    h.close();
+}
+
+#[test]
 fn a_symlink_out_of_a_root_is_caught_as_cwd_and_as_a_path() {
     let (_d, r) = root();
     let (_o, outside) = root();

@@ -29,6 +29,29 @@ pub fn in_roots(p: &Path, roots: &[PathBuf]) -> bool {
     roots.iter().any(|r| p.starts_with(r))
 }
 
+/// The message for a `cwd` that did not resolve to a directory inside a root. It says "does not exist" or "is not a
+/// directory" only for an absolute, `..`-free path whose nearest existing ancestor, with symlinks resolved, is a
+/// directory inside a root (a link inside a root can point anywhere, so a lexical check would not do); otherwise the
+/// answer would be an oracle for whether arbitrary paths outside the sandbox exist.
+pub fn cwd_refusal(given: &str, roots: &[PathBuf]) -> String {
+    let p = Path::new(given);
+    let generic = format!("{given} is not a directory inside a root");
+    if !p.is_absolute() || p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        return generic;
+    }
+    if let Ok(c) = p.canonicalize() {
+        return if !c.is_dir() && in_roots(&c, roots) { format!("{given} is not a directory") } else { generic };
+    }
+    // The anchor is the nearest ancestor that exists as an entry (lstat), so a dangling link is the anchor and,
+    // failing to canonicalize, gets the generic text instead of being skipped for a parent inside a root.
+    let anchor =
+        p.ancestors().skip(1).find(|a| std::fs::symlink_metadata(a).is_ok()).and_then(|a| a.canonicalize().ok());
+    match anchor {
+        Some(a) if a.is_dir() && in_roots(&a, roots) => format!("{given} does not exist"),
+        _ => generic,
+    }
+}
+
 /// A path argument or `cwd` after resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resolved {

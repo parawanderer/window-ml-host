@@ -644,7 +644,7 @@ impl Session {
         }
         let cwd = Path::new(cwd_given).canonicalize().ok().filter(|c| c.is_dir() && facts::in_roots(c, &config.roots));
         let Some(cwd) = cwd else {
-            return fail("CwdOutsideRoots", format!("{cwd_given} is not a directory inside a root"));
+            return fail("CwdOutsideRoots", facts::cwd_refusal(cwd_given, &config.roots));
         };
         let env = match a.get("env") {
             None => CallEnv::default(),
@@ -1427,7 +1427,7 @@ impl Session {
         }
         let cwd = Path::new(cwd_given).canonicalize().ok().filter(|c| c.is_dir() && facts::in_roots(c, &config.roots));
         let Some(cwd) = cwd else {
-            return fail("CwdOutsideRoots", format!("{cwd_given} is not a directory inside a root"));
+            return fail("CwdOutsideRoots", facts::cwd_refusal(cwd_given, &config.roots));
         };
         let Some(pattern) = a.get("pattern").and_then(Value::as_str) else {
             return fail("BadRequest", "pattern is a string");
@@ -1481,7 +1481,7 @@ impl Session {
             };
             match Path::new(c).canonicalize().ok().filter(|c| c.is_dir() && facts::in_roots(c, &config.roots)) {
                 Some(c) => c,
-                None => return fail("CwdOutsideRoots", format!("{c} is not a directory inside a root")),
+                None => return fail("CwdOutsideRoots", facts::cwd_refusal(c, &config.roots)),
             }
         };
         if size > put::MAX_PUT {
