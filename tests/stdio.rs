@@ -290,6 +290,12 @@ fn a_refused_cwd_says_why_only_where_that_leaks_nothing_outside_the_roots() {
     assert!(msg(&mut h, &r.join("f")).contains("is not a directory"));
     assert!(!msg(&mut h, &outside.join("missing")).contains("does not exist"));
     assert!(!msg(&mut h, &r.join("..").join("nope-sibling")).contains("does not exist"));
+    // A link inside the root to a directory outside it must not make the outside answer.
+    std::os::unix::fs::symlink(&outside, r.join("link")).unwrap();
+    std::fs::write(outside.join("afile"), "x").unwrap();
+    assert!(!msg(&mut h, &r.join("link").join("missing")).contains("does not exist"));
+    // The generic text itself contains "is not a directory", so compare its tail.
+    assert!(msg(&mut h, &r.join("link").join("afile")).ends_with("is not a directory inside a root"));
     assert!(!msg(&mut h, &r.join("missing").join("..").join("..").join("x")).contains("does not exist"));
     h.close();
 }

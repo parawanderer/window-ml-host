@@ -30,17 +30,22 @@ pub fn in_roots(p: &Path, roots: &[PathBuf]) -> bool {
 }
 
 /// The message for a `cwd` that did not resolve to a directory inside a root. It says "does not exist" or "is not a
-/// directory" only for an absolute, `..`-free path that lies lexically inside a root; otherwise the answer would be an
-/// oracle for whether arbitrary paths outside the sandbox exist.
+/// directory" only for an absolute, `..`-free path whose nearest existing ancestor, with symlinks resolved, is a
+/// directory inside a root (a link inside a root can point anywhere, so a lexical check would not do); otherwise the
+/// answer would be an oracle for whether arbitrary paths outside the sandbox exist.
 pub fn cwd_refusal(given: &str, roots: &[PathBuf]) -> String {
     let p = Path::new(given);
-    let lexically_inside = p.is_absolute()
-        && !p.components().any(|c| matches!(c, std::path::Component::ParentDir))
-        && in_roots(&p.components().collect::<PathBuf>(), roots);
-    match std::fs::metadata(p) {
-        Ok(m) if !m.is_dir() && lexically_inside => format!("{given} is not a directory"),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound && lexically_inside => format!("{given} does not exist"),
-        _ => format!("{given} is not a directory inside a root"),
+    let generic = format!("{given} is not a directory inside a root");
+    if !p.is_absolute() || p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        return generic;
+    }
+    if let Ok(c) = p.canonicalize() {
+        return if !c.is_dir() && in_roots(&c, roots) { format!("{given} is not a directory") } else { generic };
+    }
+    let anchor = p.ancestors().skip(1).find_map(|a| a.canonicalize().ok());
+    match anchor {
+        Some(a) if a.is_dir() && in_roots(&a, roots) => format!("{given} does not exist"),
+        _ => generic,
     }
 }
 
