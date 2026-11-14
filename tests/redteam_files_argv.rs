@@ -177,6 +177,12 @@ fn code_of(e: &Refused) -> &str {
     e["code"].as_str().unwrap()
 }
 
+/// Whether `msg` names `word` as a WORD, trimmed of the punctuation a sentence puts around a command: a retry sentence
+/// names the program it teaches as a word, and a substring test would match it inside a path (`/files/cp`).
+fn says(msg: &str, word: &str) -> bool {
+    msg.split_whitespace().any(|t| t.trim_matches(|c: char| !c.is_alphanumeric() && c != '-') == word)
+}
+
 /// A spawn of `argv` in the project with `pathArgs`, naming the mount `m` as `/files` when `files` is set.
 fn spawn_args(e: &Env, m: &str, argv: &[&str], path_args: Value, files: bool) -> Value {
     let mut a = json!({ "argv": argv, "cwd": e.proj, "pathArgs": path_args });
@@ -332,17 +338,20 @@ fn redteam_a_recursive_write_is_refused_only_where_attached_lies_beneath_the_pat
     );
     let r = e.h.raw("spawn", a).unwrap_err();
     assert_eq!(code_of(&r), "InAttached");
-    assert_eq!(
-        r["message"],
-        json!(
-            "/files/ holds attached/, which a recursive write there could change: name the file instead, as in mv notes.txt /files/notes.txt rather than mv notes.txt /files/"
-        ),
-        "the path as the call wrote it, and the retry"
-    );
+    // The retry the sentence teaches is the CALL's own: built from the path alone it taught `mv notes.txt …` to a
+    // `cp -R` call (janitor-2's finding on host#43), which is not that call's retry at all.
+    let msg = r["message"].as_str().unwrap();
+    assert!(msg.contains("/files"), "the path as the call wrote it: {msg}");
+    assert!(says(msg, "cp"), "the retry names no `cp` for a cp call: {msg}");
+    assert!(!says(msg, "mv"), "a cp call is taught an mv retry: {msg}");
     // The uploads folder itself, recursively.
     let a =
         spawn_args(&e, &m, &["/bin/rm", "-r", "/files"], json!([{ "arg": 2, "role": "write", "walk": true }]), true);
-    assert_eq!(e.h.code("spawn", a), "InAttached", "rm -r of the folder that holds attached/");
+    let r = e.h.raw("spawn", a).unwrap_err();
+    assert_eq!(code_of(&r), "InAttached", "rm -r of the folder that holds attached/");
+    let msg = r["message"].as_str().unwrap();
+    assert!(says(msg, "rm"), "the retry names no `rm` for an rm call: {msg}");
+    assert!(!says(msg, "mv"), "an rm call is taught an mv retry: {msg}");
     // The same folder by its real path, from further up: the mount's root holds attached/ too.
     let proj = e.proj.to_string_lossy().into_owned();
     let a = spawn_args(&e, &m, &["/bin/rm", "-r", &proj], json!([{ "arg": 2, "role": "write", "walk": true }]), false);
