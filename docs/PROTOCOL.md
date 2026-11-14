@@ -46,6 +46,7 @@ the host answers each as it finishes, not in order. A message that is not an obj
   "credentials": ["github"],                                        // the credential providers a `spawn` may name (see "A credentialed call"); [] where the sandbox cannot hold the profile (Linux without Landlock) and over the hub; an older host has no such field
   "put": { "max": 67108864 },                                       // this host answers `put`, `write` and `commit`; `max` is the most bytes one put may declare; `null` over the hub, where the three are refused; an older host has no such field
   "mounts": true,                                                   // this host answers the mount calls (see "Mounts"); false over the hub, where they are refused; an older host has no such field, and the worker never probes by calling
+  "filesArgv": true,                                                // `spawn` takes `files` and maps `/files` to a mount's uploads folder (see "`/files` in an argv"); false over the hub; an older host has no such field and would ignore `files`
   "owners": { "ledger": true, "register": true },                   // ledger false: the table is in memory only; register false over the hub (see "Owners")
   "memory": { "metric": "phys_footprint", "enforcer": "watchdog", "everyMs": 100 },
   "cpu": { "metric": "user+system, with reaped children" } }        // what `cpuMs` counts: measured, never bounded
@@ -105,7 +106,8 @@ args: { "argv": ["git", "diff", "--stat", "HEAD~1"],
         "owner": { "session": "…", "run": "…", "step": 3 },   // optional: who the call is for, opaque, at most 1 KiB of JSON
         "memoryBound": 536870912,             // optional: this call's bound, clamped to [16 MiB, memoryMax]
         "onOwnerLoss": "orphan", "orphanTimeoutMs": 60000,    // optional: this call's owner-loss policy
-        "credential": { "provider": "github", "manifest": "<sha256 hex>" } }   // optional: see "A credentialed call"
+        "credential": { "provider": "github", "manifest": "<sha256 hex>" },   // optional: see "A credentialed call"
+        "files": { "mount": "m3", "session": "…" } }   // optional: `/files` names this mount's uploads folder; see "`/files` in an argv"
 ```
 
 The answer is the RESOLVED FACTS, everything a policy is given about the call (`SHELL.md`, "What it is given"):
@@ -114,6 +116,7 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
 { "id": "c3",                                   // names this pending call for start / discard
   "argv": ["git", "diff", "--stat", "HEAD~1"],  // after tilde expansion
   "tilde": [],                                  // always present; one entry per `~` argument, see below
+  "files": [],                                  // always present; one entry per `/files` argument mapped, see "`/files` in an argv"
   "program": { "path": "/usr/bin/git", "inRoot": false,     // argv[0] after PATH lookup, realpath'd
                "fingerprint": "16777234:1152921500312187:134512:1760000000123456789" },
   "cwd": { "path": "/Users/me/src/proj", "inRoot": true },  // + "containsSecret" with walkCwd
@@ -154,6 +157,9 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
   a root is `inRoot: false`. When the last component is itself a symlink (a trailing `/` included), the fact adds `link`, the
   link's own path (its parent's realpath plus its name), and `inRoot` and `secret` hold for the link too: `rm top`
   removes the link `top`, wherever its target is (window-ml #990's review, 2026-10-22).
+- **`role`** on a `pathArgs` entry is `"read"` or `"write"`: whether the program writes the path (window-ml's manifest
+  operand roles, `writtenOperands`). A written path that resolves into a held `attached/` refuses the call
+  (`InAttached`, below). Absent reads as read; anything else is `BadRequest`.
 - **`walk: true`** on a `pathArgs` entry (a recursive reader: `rg`, `find`, `ls -R`) adds `containsSecret`: `true` if
   anything beneath the path looks like a secret, `false` if nothing does, `null` past 20 000 entries or an unreadable
   directory. The walk never follows a symlink (a link is judged by its name) and skips `.git` directories.
@@ -176,7 +182,30 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
   (`CwdOutsideRoots`); an `env` name on the denylist (`EnvRefused`); a secret handle the host's store does not hold
   (`SecretUnavailable`, always this round: the store is empty); `argv[0]` not found (`ProgramNotFound`); `mode:
   "container"` (`Unsupported`, until a runner exists); a `credential` the host does not honour (`CredentialRefused`)
-  or cannot hold (`SandboxFailed`), below.
+  or cannot hold (`SandboxFailed`), below; a path with `role: "write"` in a held `attached/` (`InAttached`), and a
+  `files` mapping the host cannot make (below).
+
+#### `/files` in an argv
+
+`files: { mount, session }` names the mount whose `uploads` folder is `/files` for this call (window-ml's
+FILE_ATTACHMENTS.md H9). The mount is checked as every mount request is: another session's id or an unknown one is
+`UnknownMount`, a folder replaced since `mount` is `MountReplaced` (the uploads folder too, by device and inode), and a
+mount with no `uploads` is `BadRequest`. Then, before anything else reads them (after `~`), each `pathArgs` entry (the
+whole argument, or its part after `split`) and the `cwd` that are exactly `/files` or start with `/files/` become the
+folder's realpath plus the rest. The rest must pass the mount-relative path rule, so `/files/../x`, `/files//x` and
+`/files/./x` are `BadRequest`, never resolved; a trailing `/` is kept. An argument not in `pathArgs` is never mapped and never refused here, so
+a pattern or a message naming `/files` reaches the program as written. That is a stated trust, like the session stamp:
+the host holds no description of the call, so it cannot tell a pattern from a path the manifest did not place, and the
+worker refuses the latter before `spawn`. One that slips past reaches the program as the literal `/files/…`, which
+names nothing on this disk unless the host has a `/files` of its own. Each mapping is listed in `files`:
+`{ "index": 2, "from": "/files/data.csv", "to": "/Users/me/proj/window-ml-files/data.csv" }`, `index` an argv position
+or `"cwd"`; `argv`, `paths[].given` and the facts' paths carry the mapped string. Without `files`, nothing is mapped:
+a host with a `/files` directory of its own keeps it. `hello.filesArgv` says the host takes `files`.
+
+Whether or not `files` is given, a `pathArgs` entry with `role: "write"` whose resolved path (or its `link`) is a held
+`attached/` or lies beneath one, by its path or by the device and inode of an existing ancestor, refuses the call with
+`InAttached`. A copy OUT of `attached/` runs; a copy into it, a move out of it (`mv`'s source is written: it is
+removed) and an `rm` in it do not. The mount call `remove` asks there instead, since the person approves it. A written path the program also walks (`walk: true`: `rm -r`, `cp -R`, every `mv` operand) that HOLDS a held `attached/` beneath it is `InAttached` too, with a message that names the path as the call wrote it and the retry, which names paths only so it fits every program (`name the file instead, as in /files/notes.txt rather than /files/`), since the program can change `attached/` without naming it (`rm -r /files`, `cp -R x/attached /files/`, `mv notes.txt /files/`); a path beside `attached/` (`/files/notes.txt`) is not.
 
 #### A credentialed call
 
@@ -778,12 +807,12 @@ These are the host's own; the worker maps them onto the `ml` wire's codes (`Refu
 | `NotADirectory` | a mount call: a file where a directory is needed on the path |
 | `NotFound` | `list`: a directory on the path does not exist |
 | `MountRefused` | `mount`: not an existing directory, or at, under or above something no mount may reach (reserved cell paths, home or above, the browser's and the host's state, another mount of the session), or outside every root; a bad `uploads` |
-| `UnknownMount` | a mount call naming a mount this session does not hold (another session's included), or a `commit` whose mount is gone |
+| `UnknownMount` | a mount call naming a mount this session does not hold (another session's included), a `commit` whose mount is gone, or a `spawn` whose `files` names one |
 | `MountReplaced` | a mount call whose mount path no longer names the folder held (H3) |
 | `ChangedSinceJudged` | `fetch`/`store`/`commit`/`remove`/`rename`: the file is not what the `basis` judged (absent, different, or no basis where one is needed); a `store`'s target appeared or changed before its commit |
 | `EROFS` | `store`/`remove`/`rename` on a read-only mount |
 | `EFBIG` | `fetch` of a file, or `store` of a `size`, over `cap`; the error also carries `size` and `cap` (bytes) beside `code` and `message` |
-| `InAttached` | `store`/`rename` into or out of a directory the mount's `uploads` names `attached/` (`remove` is allowed there) |
+| `InAttached` | `store`/`rename` into or out of a directory the mount's `uploads` names `attached/` (`remove` is allowed there); a `spawn` whose path with `role: "write"` lies in one |
 | `HardLinked` | `store` replacing a file that has another name |
 | `EXDEV` | `rename` across filesystems; never made a copy and a delete |
 

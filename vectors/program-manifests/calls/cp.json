@@ -1,0 +1,704 @@
+{
+  "program": "cp",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "cp",
+        "a",
+        "b"
+      ],
+      "note": "a copy: the source read, the destination written",
+      "described": true,
+      "effects": [
+        "read:fs:a:?:?",
+        "write-names:fs:b:?:?",
+        "write:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        },
+        {
+          "arg": 2,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cp",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "a",
+        "b",
+        "dir"
+      ],
+      "note": "several sources into a directory: only the last operand is written",
+      "described": true,
+      "effects": [
+        "read:fs:a:?:?",
+        "read:fs:b:?:?",
+        "write-names:fs:dir:?:?",
+        "write:fs:dir:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        },
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cp",
+        "a",
+        "b",
+        "dir"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "/files/attached/3fa91c2/data.csv",
+        "/files/data.csv"
+      ],
+      "note": "out of attached/ into the writable part of /files: attached/ is only read",
+      "described": true,
+      "effects": [
+        "read:fs:/files/attached/3fa91c2/data.csv:?:?",
+        "write-names:fs:/files/data.csv:?:?",
+        "write:fs:/files/data.csv:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        },
+        {
+          "arg": 2,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cp",
+        "/files/attached/3fa91c2/data.csv",
+        "/files/data.csv"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-f",
+        "a",
+        "b"
+      ],
+      "note": "-f",
+      "described": true,
+      "effects": [
+        "read:fs:a:?:?",
+        "write-names:fs:b:?:?",
+        "write:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cp",
+        "-f",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-i",
+        "a",
+        "b"
+      ],
+      "note": "-i",
+      "described": true,
+      "effects": [
+        "read:fs:a:?:?",
+        "write-names:fs:b:?:?",
+        "write:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cp",
+        "-i",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-n",
+        "a",
+        "b"
+      ],
+      "note": "-n",
+      "described": true,
+      "effects": [
+        "read:fs:a:?:?",
+        "write-names:fs:b:?:?",
+        "write:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cp",
+        "-n",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-p",
+        "a",
+        "b"
+      ],
+      "note": "-p",
+      "described": true,
+      "effects": [
+        "read:fs:a:?:?",
+        "write-names:fs:b:?:?",
+        "write:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cp",
+        "-p",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-v",
+        "a",
+        "b"
+      ],
+      "note": "-v",
+      "described": true,
+      "effects": [
+        "read:fs:a:?:?",
+        "write-names:fs:b:?:?",
+        "write:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cp",
+        "-v",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-R",
+        "src",
+        "dst"
+      ],
+      "note": "-R walks the source (and names the destination)",
+      "described": true,
+      "effects": [
+        "read:fs:src:?:?",
+        "write-names:fs:dst:?:?",
+        "write:fs:dst:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 3,
+          "role": "write",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "cp",
+        "-R",
+        "src",
+        "dst"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-r",
+        "src",
+        "dst"
+      ],
+      "note": "-r",
+      "described": true,
+      "effects": [
+        "read:fs:src:?:?",
+        "write-names:fs:dst:?:?",
+        "write:fs:dst:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 3,
+          "role": "write",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "cp",
+        "-r",
+        "src",
+        "dst"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-rf",
+        "src",
+        "dst"
+      ],
+      "note": "a cluster",
+      "described": true,
+      "effects": [
+        "read:fs:src:?:?",
+        "write-names:fs:dst:?:?",
+        "write:fs:dst:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read",
+          "walk": true
+        },
+        {
+          "arg": 3,
+          "role": "write",
+          "walk": true
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": true,
+      "hardened": [
+        "cp",
+        "-rf",
+        "src",
+        "dst"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "--",
+        "-a",
+        "b"
+      ],
+      "note": "after --, -a is a file",
+      "described": true,
+      "effects": [
+        "read:fs:-a:?:?",
+        "write-names:fs:b:?:?",
+        "write:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cp",
+        "--",
+        "-a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-",
+        "b"
+      ],
+      "note": "a lone - is a file name",
+      "described": true,
+      "effects": [
+        "read:fs:-:?:?",
+        "write-names:fs:b:?:?",
+        "write:fs:b:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        },
+        {
+          "arg": 2,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cp",
+        "-",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "a"
+      ],
+      "note": "one operand: it is the destination, and cp fails",
+      "described": true,
+      "effects": [
+        "write-names:fs:a:?:?",
+        "write:fs:a:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cp",
+        "a"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "a",
+        "b",
+        "-r"
+      ],
+      "note": "an option after an operand: GNU reads it, BSD does not",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        },
+        {
+          "arg": 2,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cp",
+        "a",
+        "b",
+        "-r"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-t",
+        "dir",
+        "a"
+      ],
+      "note": "-t (GNU only) is not described",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cp",
+        "-t",
+        "dir",
+        "a"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-a",
+        "src",
+        "dst"
+      ],
+      "note": "-a differs between GNU and BSD: not described",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cp",
+        "-a",
+        "src",
+        "dst"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "--recursive",
+        "a",
+        "b"
+      ],
+      "note": "a GNU long option: not described",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cp",
+        "--recursive",
+        "a",
+        "b"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-L",
+        "a",
+        "b"
+      ],
+      "note": "symlink handling: not described",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "cp",
+        "-L",
+        "a",
+        "b"
+      ]
+    }
+  ]
+}

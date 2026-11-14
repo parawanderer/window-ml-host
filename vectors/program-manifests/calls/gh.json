@@ -3315,7 +3315,7 @@
       "pathArgs": [
         {
           "arg": 4,
-          "role": "read"
+          "role": "write"
         }
       ],
       "actsOnDir": false,

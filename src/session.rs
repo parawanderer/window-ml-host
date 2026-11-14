@@ -472,6 +472,8 @@ impl Session {
             "put": if matches!(self.host.transport, Transport::Hub { .. }) { Value::Null } else { json!({ "max": put::MAX_PUT }) },
             // The mount calls (src/mounts.rs), refused over the hub like `put`.
             "mounts": matches!(self.host.transport, Transport::Native),
+            // `spawn.files` maps `/files` to a mount's uploads folder (FILE_ATTACHMENTS.md H9): a mount is native-only.
+            "filesArgv": matches!(self.host.transport, Transport::Native),
             "owners": { "ledger": self.ledger.is_some(),
                         "register": !matches!(self.host.transport, Transport::Hub { .. }) },
             "cpu": { "metric": procs::CPU_METRIC },
@@ -626,6 +628,9 @@ impl Session {
         if let Some(c) = cwd_arg.as_mut() {
             tilde.extend(tilde::apply(c, json!("cwd"), home));
         }
+        // `/files` (window-ml FILE_ATTACHMENTS.md H9) becomes the uploads folder of the mount `files` names, in the
+        // arguments the worker marks as paths and in the cwd, here for the same reason `~` is.
+        let files = self.map_files(a, &mut argv, &mut cwd_arg)?;
         match a.get("mode").and_then(Value::as_str).unwrap_or("host") {
             "host" => {}
             "container" => return fail("Unsupported", "container mode has no runner in this version"),
@@ -682,6 +687,7 @@ impl Session {
             Some(_) => return fail("BadRequest", "credential is {provider, manifest}"),
         };
         let paths = self.path_facts(a.get("pathArgs"), &argv, &cwd, &config.roots)?;
+        self.refuse_written_attached(a.get("pathArgs"), &paths, &files)?;
         let mut cwd_fact = json!({ "path": cwd, "inRoot": true });
         if opt_bool(a, "walkCwd")?.unwrap_or(false) {
             cwd_fact["containsSecret"] = json!(walk::contains_secret(&cwd, walk::WALK_CAP));
@@ -725,6 +731,7 @@ impl Session {
             "id": id,
             "argv": argv,
             "tilde": tilde,
+            "files": files,
             "program": { "path": program, "inRoot": facts::in_roots(&program, &config.roots),
                          "fingerprint": facts::fingerprint(&program) },
             "cwd": cwd_fact,
@@ -768,6 +775,102 @@ impl Session {
             },
         );
         Ok(facts)
+    }
+
+    /// H9: maps each `pathArgs` entry (the whole argument, or its part after `split`) and the cwd that are `/files` or
+    /// start with `/files/` to the uploads folder of the mount `files` names, checked as every mount request is (H3).
+    /// Returns the mappings as the facts list them. Without `files`, nothing is mapped: a host with a `/files` of its
+    /// own keeps it.
+    fn map_files(
+        &self,
+        a: &Map<String, Value>,
+        argv: &mut [String],
+        cwd: &mut Option<String>,
+    ) -> Result<Vec<Value>, Fail> {
+        let Some(f) = a.get("files") else { return Ok(vec![]) };
+        let Value::Object(f) = f else { return fail("BadRequest", "files is {mount, session}") };
+        let m = self.mount_of(f)?;
+        let Some(dir) = m.uploads_dir()? else {
+            return fail("BadRequest", format!("mount {:?} has no uploads folder for /files to name", m.id));
+        };
+        let mut out = Vec::new();
+        for e in a.get("pathArgs").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]) {
+            // A bad index or split is path_facts' to refuse.
+            let Some(i) =
+                e.get("arg").and_then(Value::as_u64).map(|i| i as usize).filter(|i| (1..argv.len()).contains(i))
+            else {
+                continue;
+            };
+            let (head, given) = match e.get("split").and_then(Value::as_str) {
+                Some(sep) if !sep.is_empty() => match argv[i].split_once(sep) {
+                    Some((h, v)) => (format!("{h}{sep}"), v.to_string()),
+                    None => continue,
+                },
+                _ => (String::new(), argv[i].clone()),
+            };
+            if let Some(to) = files_to(&given, &dir)? {
+                argv[i] = format!("{head}{to}");
+                out.push(json!({ "index": i, "from": given, "to": to }));
+            }
+        }
+        if let Some(c) = cwd.as_mut()
+            && let Some(to) = files_to(c, &dir)?
+        {
+            out.push(json!({ "index": "cwd", "from": c.clone(), "to": to }));
+            *c = to;
+        }
+        Ok(out)
+    }
+
+    /// H9 (H6 for a process): a path the program WRITES (`role: "write"`, from the manifest's operand roles) that
+    /// resolves into a held `attached/`, by either name, refuses the call, and so does a written path the program
+    /// walks (`walk`) that holds one beneath it. An absent role reads as read. The refusal names the path as the call
+    /// wrote it (`/files/…` when it was mapped) and teaches the retry.
+    fn refuse_written_attached(&self, spec: Option<&Value>, paths: &[Value], files: &[Value]) -> Result<(), Fail> {
+        let specs = spec.and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+        let mut written: Vec<(String, PathBuf, bool)> = Vec::new();
+        for (e, fact) in specs.iter().zip(paths) {
+            match e.get("role") {
+                None => {}
+                Some(Value::String(r)) if r == "read" => {}
+                Some(Value::String(r)) if r == "write" => {
+                    let mapped = files.iter().find(|m| m["index"] == fact["arg"]).and_then(|m| m["from"].as_str());
+                    let given = mapped.or(fact["given"].as_str()).unwrap_or_default().to_string();
+                    let walked = e.get("walk") == Some(&Value::Bool(true));
+                    // The link's own place too: a names write acts on the link.
+                    for k in ["path", "link"] {
+                        if let Some(p) = fact.get(k).and_then(Value::as_str) {
+                            written.push((given.clone(), PathBuf::from(p), walked));
+                        }
+                    }
+                }
+                Some(_) => return fail("BadRequest", "pathArgs[].role is \"read\" or \"write\""),
+            }
+        }
+        if written.is_empty() {
+            return Ok(());
+        }
+        let mounts: Vec<Arc<Mount>> = self.state.lock().unwrap().mounts.values().cloned().collect();
+        for (given, p, walked) in &written {
+            if mounts.iter().any(|m| m.holds_in_attached(p)) {
+                return fail(
+                    "InAttached",
+                    format!(
+                        "{given} is in attached/, which holds the uploads as they were given: copy out of it, never into it"
+                    ),
+                );
+            }
+            if *walked && mounts.iter().any(|m| m.attached_beneath(p)) {
+                return fail(
+                    "InAttached",
+                    format!(
+                        "{given} holds attached/, which a recursive write there could change: name the file instead, as in {d}/notes.txt rather than {d}/",
+                        d = given.trim_end_matches('/')
+                    ),
+                );
+            }
+        }
+        Ok(())
     }
 
     fn path_facts(
@@ -1824,6 +1927,23 @@ fn string_array(v: Option<&Value>) -> Option<Vec<String>> {
 }
 
 /// The chat session a mount call speaks for: the worker's stamp, never the cell's (FILE_ATTACHMENTS.md, H3).
+/// `/files` or a path under it, as the uploads folder `dir` names it: `None` for any other argument. The rest must pass
+/// the mount-relative path rule (H2), so `/files/../x` is refused, never resolved; a trailing `/` is kept.
+fn files_to(given: &str, dir: &Path) -> Result<Option<String>, Fail> {
+    let rest = match given.strip_prefix("/files") {
+        Some("") => "",
+        Some(r) if r.starts_with('/') => &r[1..],
+        _ => return Ok(None),
+    };
+    let inner = rest.strip_suffix('/').unwrap_or(rest);
+    mounts::rel_parts(inner, true).map_err(|Fail(_, m)| Fail("BadRequest", format!("{given}: {m}")))?;
+    let mut to = if inner.is_empty() { dir.to_path_buf() } else { dir.join(inner) }.to_string_lossy().into_owned();
+    if rest.ends_with('/') {
+        to.push('/');
+    }
+    Ok(Some(to))
+}
+
 fn session_of(a: &Map<String, Value>) -> Result<&str, Fail> {
     match a.get("session").and_then(Value::as_str) {
         Some(s) if !s.is_empty() && s.len() <= mounts::MAX_SESSION => Ok(s),
@@ -1955,6 +2075,41 @@ mod tests {
         assert!(hello["value"]["put"].is_null(), "{hello}");
         let hello = one_call(Transport::Native, json!({ "seq": 2, "call": "hello" })).await;
         assert_eq!(hello["value"]["put"]["max"], put::MAX_PUT, "{hello}");
+    }
+
+    // --- `/files` in a spawn: the flag that tells the worker it maps, and the one transport it is false for ---
+
+    /// `hello.filesArgv` says the host maps `/files` (window-ml FILE_ATTACHMENTS.md H9, H15). The worker sends
+    /// `spawn.files` only when it reads true, so a connection told false must be one that could never honor it: over the
+    /// hub nothing can be mounted, and `mount` is refused there before its arguments are read.
+    #[tokio::test]
+    async fn files_argv_is_offered_exactly_where_a_mount_can_be_held_and_mount_is_refused_over_the_hub() {
+        let hub = Transport::Hub {
+            roots: None,
+            callers: 1,
+            revocations_since: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            events: false,
+        };
+        let hello = one_call(hub.clone(), json!({ "seq": 1, "call": "hello" })).await;
+        assert_eq!(
+            (hello["value"]["filesArgv"].clone(), hello["value"]["mounts"].clone()),
+            (json!(false), json!(false)),
+            "a hub session is told the host maps /files and holds mounts: {hello}"
+        );
+        // No arguments at all: natively that is BadRequest, so a Refused proves the refusal came first.
+        let v = one_call(hub, json!({ "seq": 1, "call": "mount", "args": {} })).await;
+        assert_eq!(
+            (v["error"]["code"].as_str(), v["error"]["reason"].as_str()),
+            (Some("Refused"), Some("scope")),
+            "a hub caller could mount a folder: {v}"
+        );
+        // And the transport that does hold mounts is told so, which is the flag the worker reads.
+        let hello = one_call(Transport::Native, json!({ "seq": 1, "call": "hello" })).await;
+        assert_eq!(
+            (hello["value"]["filesArgv"].clone(), hello["value"]["mounts"].clone()),
+            (json!(true), json!(true)),
+            "{hello}"
+        );
     }
 
     #[test]

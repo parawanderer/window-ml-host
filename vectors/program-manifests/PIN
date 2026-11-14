@@ -1,2 +1,2 @@
-window-ml 99c96e8d (feat/gh-network-hosts): src/shell/manifests/*.json -> manifests/, tests/fixtures/program-calls/*.json -> calls/; gh.json names the github credential, its ports and its hosts
-sha256 67a6e11461609f3d8a02313659a3829ffc7acbbe5f8c7bec9696bb596c33f769 (tests/manifest_vectors.rs VECTOR_PIN; window-ml holds the same pin)
+window-ml f063ee6e (feat/files-argv): src/shell/manifests/*.json -> manifests/, tests/fixtures/program-calls/*.json -> calls/; cp.json added, writtenOperands on cp, every path operand of a writing command has role write
+sha256 60807baf3ec79d7b8bfd2aa3963440f12896c10fc7470df46208eb25eed084d3 (tests/manifest_vectors.rs VECTOR_PIN; window-ml holds the same pin)

@@ -626,7 +626,7 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
@@ -660,7 +660,7 @@
       "pathArgs": [
         {
           "arg": 1,
-          "role": "read",
+          "role": "write",
           "walk": true
         }
       ],
