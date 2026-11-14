@@ -994,9 +994,16 @@ fn files_names_only_this_sessions_uploads_mount_and_one_still_held() {
 #[test]
 fn a_recursive_write_on_a_folder_that_holds_attached_is_refused() {
     let (mut e, m) = uploads_env();
+    let retry = "/files holds attached/, which a recursive write there could change: name the file instead, as in /files/notes.txt rather than /files/";
     let a =
         spawn_args(&e, &m, &["/bin/rm", "-r", "/files"], json!([{ "arg": 2, "role": "write", "walk": true }]), true);
-    assert_eq!(e.code("spawn", a), "InAttached", "rm -r of the uploads folder removes attached/ with it");
+    let r = e.h.raw("spawn", a).unwrap_err();
+    assert_eq!(code_of(&r), "InAttached", "rm -r of the uploads folder removes attached/ with it");
+    assert_eq!(
+        r["message"],
+        json!(retry),
+        "the retry names paths only: a program's own shape would teach rm to delete the cwd's notes.txt"
+    );
     let a = spawn_args(
         &e,
         &m,
@@ -1009,28 +1016,9 @@ fn a_recursive_write_on_a_folder_that_holds_attached_is_refused() {
     assert_eq!(
         r["message"],
         json!(
-            "/files/ holds attached/, which a recursive write there could change: name the file instead, as in mv notes.txt /files/notes.txt rather than mv notes.txt /files/"
-        ),
-        "the path as the call wrote it, and the retry"
-    );
-    let odd = e.proj.join("bin dir");
-    std::fs::create_dir_all(&odd).unwrap();
-    std::os::unix::fs::symlink("/bin/mv", odd.join("my tool")).unwrap();
-    let prog = odd.join("my tool").to_string_lossy().into_owned();
-    let a = spawn_args(
-        &e,
-        &m,
-        &[&prog, "notes.txt", "/files/"],
-        json!([{ "arg": 1, "role": "write", "walk": true }, { "arg": 2, "role": "write", "walk": true }]),
-        true,
-    );
-    let r = e.h.raw("spawn", a).unwrap_err();
-    assert_eq!(
-        r["message"],
-        json!(
             "/files/ holds attached/, which a recursive write there could change: name the file instead, as in /files/notes.txt rather than /files/"
         ),
-        "a program whose name is not one word is left out of the retry: the paths alone"
+        "the path as the call wrote it, and the same program-neutral retry"
     );
     let proj = e.proj.to_string_lossy().into_owned();
     let a = spawn_args(&e, &m, &["/bin/rm", "-r", &proj], json!([{ "arg": 2, "role": "write", "walk": true }]), false);
