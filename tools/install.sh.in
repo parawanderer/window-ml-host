@@ -1,0 +1,90 @@
+#!/bin/sh
+# install.sh — installs window-ml-host @TAG@ for this user and registers it with the browser.
+#
+# This file is rendered from tools/install.sh.in by tools/render-install.sh in the release workflow, with the sha256 of
+# each archive of THIS release written in, and attached to the release. The release is immutable, so these bytes and
+# those hashes are fixed together. Run the copy from the release (docs/INSTALL.md), not the template.
+#
+# Usage: sh install.sh --extension-id <32 letters a-p> [--browser chrome|chrome-beta|chromium|brave|edge|all]...
+#
+# It downloads one archive from the release named below, checks its sha256 against the hash written into this script
+# and stops on a mismatch, puts `wmlhost` at ONE path (~/.local/bin/wmlhost, or $WMLHOST_BIN_DIR), and runs `wmlhost
+# install` with that path, so the browser and a terminal start the same binary. It writes nothing outside that file and
+# the browser's NativeMessagingHosts folder, and needs no root.
+set -eu
+
+TAG="@TAG@"
+case "$TAG" in @*) echo "install.sh: this is the template; use install.sh from a release (docs/INSTALL.md)" >&2; exit 1 ;; esac
+REPO="parawanderer/window-ml-host"
+# WMLHOST_BASE_URL replaces the download location for the tests; the sha256 below still has to match.
+BASE="${WMLHOST_BASE_URL:-https://github.com/$REPO/releases/download/$TAG}"
+
+say() { printf '%s\n' "$*"; }
+die() { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
+
+ext=""
+browsers=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --extension-id) [ $# -ge 2 ] || die "--extension-id needs a value"; ext="$2"; shift 2 ;;
+        --extension-id=*) ext="${1#*=}"; shift ;;
+        --browser) [ $# -ge 2 ] || die "--browser needs a value"; browsers="$browsers $2"; shift 2 ;;
+        --browser=*) browsers="$browsers ${1#*=}"; shift ;;
+        *) die "unknown argument: $1" ;;
+    esac
+done
+[ -n "$ext" ] || die "--extension-id is required: copy it from the line in window.ml's Settings, Programs (ml.sh)"
+case "$ext" in
+    *[!a-p]*) die "the extension id is 32 letters a-p, got: $ext" ;;
+esac
+[ "${#ext}" -eq 32 ] || die "the extension id is 32 letters a-p, got: $ext"
+for b in $browsers; do
+    case "$b" in chrome|chrome-beta|chromium|brave|edge|all) ;; *) die "unknown browser: $b" ;; esac
+done
+
+case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64) target="x86_64-unknown-linux-gnu"; want="@SHA_X86_64_LINUX@" ;;
+    Linux-aarch64|Linux-arm64) target="aarch64-unknown-linux-gnu"; want="@SHA_AARCH64_LINUX@" ;;
+    Darwin-arm64) target="aarch64-apple-darwin"; want="@SHA_AARCH64_MACOS@" ;;
+    Darwin-x86_64) target="x86_64-apple-darwin"; want="@SHA_X86_64_MACOS@" ;;
+    *) die "no window-ml-host build for $(uname -s) $(uname -m) (builds: x86_64 and aarch64 Linux, macOS on Apple silicon and Intel)" ;;
+esac
+
+if command -v sha256sum >/dev/null 2>&1; then sha() { sha256sum "$1" | cut -d' ' -f1; }
+elif command -v shasum >/dev/null 2>&1; then sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
+else die "needs sha256sum or shasum to verify the download"; fi
+
+name="wmlhost-$TAG-$target"
+bindir="${WMLHOST_BIN_DIR:-$HOME/.local/bin}"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+
+say "Downloading $name.tar.gz from $BASE"
+curl -fsSL -o "$tmp/$name.tar.gz" "$BASE/$name.tar.gz" || die "download failed"
+got="$(sha "$tmp/$name.tar.gz")"
+[ "$got" = "$want" ] || die "sha256 mismatch for $name.tar.gz: expected $want, got $got. Nothing was installed."
+say "sha256 verified: $got"
+
+# Unpack in the temp folder, then put the binary in place with one rename, so a failed step leaves no half install and an
+# upgrade replaces a running binary atomically.
+mkdir -p "$bindir" "$tmp/x"
+tar -xzf "$tmp/$name.tar.gz" -C "$tmp/x"
+[ -f "$tmp/x/$name/wmlhost" ] || die "the archive does not hold $name/wmlhost"
+bin="$bindir/wmlhost"
+cp "$tmp/x/$name/wmlhost" "$bin.new"
+chmod +x "$bin.new"
+mv -f "$bin.new" "$bin"
+
+# An argument list, never a string split again: a folder with a space in it reaches wmlhost whole.
+set -- install --extension-id "$ext" --binary "$bin"
+for b in $browsers; do set -- "$@" --browser "$b"; done
+"$bin" "$@"
+
+say ""
+say "Installed window-ml-host $TAG:"
+say "  program:  $bin (the browser starts this file; so can a terminal)"
+say "  allowed:  chrome-extension://$ext/ (the manifest names that one extension)"
+case ":$PATH:" in *":$bindir:"*) ;; *) say "  to run it from a terminal, add to your shell profile:  export PATH=\"$bindir:\$PATH\"" ;; esac
+say "Reload the extension (or restart the browser), then press 'Check again' in Settings, Programs (ml.sh)."
+say "To undo: $bin uninstall${browsers:+ $(for b in $browsers; do printf -- '--browser %s ' "$b"; done)}"
+say "         rm \"$bin\""
