@@ -15,6 +15,10 @@ repository holds:
 - [`docs/RELEASE.md`](docs/RELEASE.md): cutting a release, what it publishes, and the pin window-ml holds against it.
 - `clients/node/`: a dependency-free Node client and a smoke check.
 
+## Install
+
+From a release, one line: [`docs/INSTALL.md`](docs/INSTALL.md). window.ml's Settings, Programs (ml.sh), shows it with your extension id filled in.
+
 ## Build, test, install
 
 ```bash
