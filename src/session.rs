@@ -2077,6 +2077,41 @@ mod tests {
         assert_eq!(hello["value"]["put"]["max"], put::MAX_PUT, "{hello}");
     }
 
+    // --- `/files` in a spawn: the flag that tells the worker it maps, and the one transport it is false for ---
+
+    /// `hello.filesArgv` says the host maps `/files` (window-ml FILE_ATTACHMENTS.md H9, H15). The worker sends
+    /// `spawn.files` only when it reads true, so a connection told false must be one that could never honor it: over the
+    /// hub nothing can be mounted, and `mount` is refused there before its arguments are read.
+    #[tokio::test]
+    async fn files_argv_is_offered_exactly_where_a_mount_can_be_held_and_mount_is_refused_over_the_hub() {
+        let hub = Transport::Hub {
+            roots: None,
+            callers: 1,
+            revocations_since: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            events: false,
+        };
+        let hello = one_call(hub.clone(), json!({ "seq": 1, "call": "hello" })).await;
+        assert_eq!(
+            (hello["value"]["filesArgv"].clone(), hello["value"]["mounts"].clone()),
+            (json!(false), json!(false)),
+            "a hub session is told the host maps /files and holds mounts: {hello}"
+        );
+        // No arguments at all: natively that is BadRequest, so a Refused proves the refusal came first.
+        let v = one_call(hub, json!({ "seq": 1, "call": "mount", "args": {} })).await;
+        assert_eq!(
+            (v["error"]["code"].as_str(), v["error"]["reason"].as_str()),
+            (Some("Refused"), Some("scope")),
+            "a hub caller could mount a folder: {v}"
+        );
+        // And the transport that does hold mounts is told so, which is the flag the worker reads.
+        let hello = one_call(Transport::Native, json!({ "seq": 1, "call": "hello" })).await;
+        assert_eq!(
+            (hello["value"]["filesArgv"].clone(), hello["value"]["mounts"].clone()),
+            (json!(true), json!(true)),
+            "{hello}"
+        );
+    }
+
     #[test]
     fn a_put_past_its_ttl_is_swept_and_its_temp_file_goes_with_it() {
         let dir = tempfile::tempdir().unwrap();
