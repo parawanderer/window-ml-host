@@ -42,7 +42,10 @@ pub fn cwd_refusal(given: &str, roots: &[PathBuf]) -> String {
     if let Ok(c) = p.canonicalize() {
         return if !c.is_dir() && in_roots(&c, roots) { format!("{given} is not a directory") } else { generic };
     }
-    let anchor = p.ancestors().skip(1).find_map(|a| a.canonicalize().ok());
+    // The anchor is the nearest ancestor that exists as an entry (lstat), so a dangling link is the anchor and,
+    // failing to canonicalize, gets the generic text instead of being skipped for a parent inside a root.
+    let anchor =
+        p.ancestors().skip(1).find(|a| std::fs::symlink_metadata(a).is_ok()).and_then(|a| a.canonicalize().ok());
     match anchor {
         Some(a) if a.is_dir() && in_roots(&a, roots) => format!("{given} does not exist"),
         _ => generic,
