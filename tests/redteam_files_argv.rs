@@ -9,7 +9,8 @@
 //!      folder into `attached/` writes nowhere, and a symlink inside `attached/` pointing out is refused as a NAME (the
 //!      link sits in attached/) while a write THROUGH it lands outside and runs.
 //!   C. a recursive write (`walk`) is refused only where `attached/` lies beneath the path: the same `/files/` is
-//!      InAttached with `walk` and runs without it.
+//!      InAttached with `walk` and runs without it, and the retry it teaches is the CALL's: no program but the one it
+//!      names (a program-neutral sentence is fine), and no operand a one-path call never wrote.
 //!   D. the retry the refusal teaches (`mv notes.txt /files/notes.txt`) passes the same check, and a write that names a
 //!      file in the uploads folder is not refused with `attached/`: the rule is `attached/`, not the uploads folder.
 //!   E. `spawn.files` names a MOUNT, never a folder: `/files` is the mount's own uploads rel whatever else the call
@@ -177,10 +178,40 @@ fn code_of(e: &Refused) -> &str {
     e["code"].as_str().unwrap()
 }
 
-/// Whether `msg` names `word` as a WORD, trimmed of the punctuation a sentence puts around a command: a retry sentence
-/// names the program it teaches as a word, and a substring test would match it inside a path (`/files/cp`).
-fn says(msg: &str, word: &str) -> bool {
-    msg.split_whitespace().any(|t| t.trim_matches(|c: char| !c.is_alphanumeric() && c != '-') == word)
+/// `msg`'s words, each stripped of the punctuation a sentence puts after it (a comma, a colon, a quote, a trailing
+/// slash), so an operand is compared as the sentence spells it.
+fn words(msg: &str) -> impl Iterator<Item = &str> {
+    msg.split_whitespace().map(|w| w.trim_end_matches(|c: char| c.is_ascii_punctuation()))
+}
+
+/// The file-shuffling programs a retry sentence has been worded with: what "a program that is not the call's own" is
+/// decided over, so the check is an enumeration and not a guess at one word.
+const PROGRAMS: [&str; 6] = ["mv", "cp", "rm", "ln", "rsync", "chmod"];
+
+/// The call's own program as a sentence spells it: `argv[0]`'s file name.
+fn own_program(argv0: &str) -> &str {
+    Path::new(argv0).file_name().and_then(|n| n.to_str()).unwrap_or("")
+}
+
+/// A retry must not teach a program other than the one the call names. A sentence that names no program at all (the
+/// program-neutral form, `as in /files/notes.txt rather than /files/`) passes: it leaves the reader's own program in
+/// place instead of substituting another.
+fn assert_no_other_program(msg: &str, argv0: &str) {
+    let own = own_program(argv0);
+    let other: Vec<&str> = words(msg).filter(|w| PROGRAMS.contains(w) && *w != own).collect();
+    assert!(other.is_empty(), "the retry teaches {other:?}, and the call is {own}: {msg}");
+}
+
+/// A call with ONE path operand must not be taught another. Every operand the sentence spells is a word the call wrote,
+/// a flag it wrote, or a path at or below the folder it wrote: `rm -r /files` taught `rm notes.txt /files/notes.txt`
+/// deletes the cwd's `notes.txt` for a model that follows it.
+fn assert_no_invented_operand(msg: &str, argv: &[&str], roots: &[&str]) {
+    let own = own_program(argv[0]);
+    let invented: Vec<&str> = words(msg)
+        .filter(|w| *w != own && (w.starts_with('-') || w.contains('/') || w.contains('.')))
+        .filter(|w| !argv.contains(w) && !roots.iter().any(|r| w.starts_with(r)))
+        .collect();
+    assert!(invented.is_empty(), "the retry teaches {invented:?}, which {argv:?} never wrote: {msg}");
 }
 
 /// A spawn of `argv` in the project with `pathArgs`, naming the mount `m` as `/files` when `files` is set.
@@ -342,16 +373,22 @@ fn redteam_a_recursive_write_is_refused_only_where_attached_lies_beneath_the_pat
     // `cp -R` call (janitor-2's finding on host#43), which is not that call's retry at all.
     let msg = r["message"].as_str().unwrap();
     assert!(msg.contains("/files"), "the path as the call wrote it: {msg}");
-    assert!(says(msg, "cp"), "the retry names no `cp` for a cp call: {msg}");
-    assert!(!says(msg, "mv"), "a cp call is taught an mv retry: {msg}");
-    // The uploads folder itself, recursively.
-    let a =
-        spawn_args(&e, &m, &["/bin/rm", "-r", "/files"], json!([{ "arg": 2, "role": "write", "walk": true }]), true);
-    let r = e.h.raw("spawn", a).unwrap_err();
-    assert_eq!(code_of(&r), "InAttached", "rm -r of the folder that holds attached/");
-    let msg = r["message"].as_str().unwrap();
-    assert!(says(msg, "rm"), "the retry names no `rm` for an rm call: {msg}");
-    assert!(!says(msg, "mv"), "an rm call is taught an mv retry: {msg}");
+    assert_no_other_program(msg, "/bin/cp");
+    // The uploads folder itself, recursively: a call whose walk has ONE path operand. Its retry must be its own too, and
+    // must not name an operand it never wrote — the per-program example substituted the program into a two-path form, so
+    // `rm -r /files` was taught `rm notes.txt /files/notes.txt`, which deletes the cwd's `notes.txt` if followed.
+    for (argv, arg) in [
+        (vec!["/bin/rm", "-r", "/files"], 2u64),
+        (vec!["/bin/chmod", "-R", "755", "/files"], 3),
+        (vec!["/bin/rmdir", "/files"], 1),
+    ] {
+        let a = spawn_args(&e, &m, &argv, json!([{ "arg": arg, "role": "write", "walk": true }]), true);
+        let r = e.h.raw("spawn", a).unwrap_err();
+        assert_eq!(code_of(&r), "InAttached", "{} of the folder that holds attached/", argv[0]);
+        let msg = r["message"].as_str().unwrap();
+        assert_no_other_program(msg, argv[0]);
+        assert_no_invented_operand(msg, &argv, &["/files"]);
+    }
     // The same folder by its real path, from further up: the mount's root holds attached/ too.
     let proj = e.proj.to_string_lossy().into_owned();
     let a = spawn_args(&e, &m, &["/bin/rm", "-r", &proj], json!([{ "arg": 2, "role": "write", "walk": true }]), false);
@@ -386,8 +423,10 @@ fn redteam_the_retry_the_refusal_teaches_passes_and_the_rule_is_attached_not_the
     let r = e.h.raw("spawn", a).unwrap_err();
     assert_eq!(code_of(&r), "InAttached");
     let msg = r["message"].as_str().unwrap().to_string();
-    assert!(msg.contains("as in mv notes.txt /files/notes.txt"), "{msg}");
-    // The retry, as the sentence spells it: the last operand is one name in the folder, not the folder.
+    // The sentence's own wording is the lane's; what it must not do is teach a program other than the call's (an mv
+    // call may see `mv`, or none at all, and never `cp`/`rm`). The retry the reader forms is run below.
+    assert_no_other_program(&msg, "/bin/mv");
+    // The retry the reader forms from it: the last operand is one name in the folder, not the folder.
     let a = spawn_args(
         &e,
         &m,
