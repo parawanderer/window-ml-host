@@ -242,7 +242,9 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
     `file-write*` on the dotenv names (not the templates, which stay writable) at any depth and on each root-top
     hardlink. On Linux a root-top held file is a bind mount of `/dev/null`: a rename or unlink fails with EBUSY and a
     write with EROFS. A deeper dotenv file on Linux is readable anyway (the gap above). Naming a file re-allows its
-    READ only, never a write.
+    READ only, never a write. On macOS a sandboxed call can rename the directory that holds a deeper dotenv file, but
+    not read the file at its new path: the read deny matches the file's own name at any depth, and a parent's rename
+    leaves that name unchanged.
   - A link or rename made OUTSIDE the sandbox between the host's scan of the roots and the spawn is judged by
     nothing: the scan is a snapshot of names and inodes at spawn time (a documented gap).
   - Naming a secret path in `pathArgs` unmasks it for the WHOLE call, every process in it, not only the program that
