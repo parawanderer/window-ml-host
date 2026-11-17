@@ -70,11 +70,36 @@ fn have_git() -> bool {
     Command::new("git").arg("--version").output().is_ok()
 }
 
+/// The `-c` flags every fixture git command carries. The last two are the row's own defence: git 2.56 spawns a DETACHED
+/// `git maintenance run --auto --quiet --detach` after every commit (measured here: `GIT_TRACE=1 git commit` prints the
+/// run_command), and when a task decides to work it takes and removes `objects/maintenance.lock` — a path that appears
+/// in a row's before-picture of `.git` and is gone by its after, with the snapshot writing nothing. It is this fixture's
+/// own background process, so the fixture turns it off at the source; `gc.auto=0` is the path a git without
+/// `maintenance.auto` takes instead.
+const GIT_FIXTURE: [&str; 10] = [
+    "-c",
+    "user.name=t",
+    "-c",
+    "user.email=t@t",
+    "-c",
+    "commit.gpgsign=false",
+    "-c",
+    "maintenance.auto=false",
+    "-c",
+    "gc.auto=0",
+];
+
+/// The flags above, then the row's own command.
+fn git_fixture_args(args: &[&str]) -> Vec<String> {
+    let mut v: Vec<String> = GIT_FIXTURE.iter().map(|s| s.to_string()).collect();
+    v.extend(args.iter().map(|s| s.to_string()));
+    v
+}
+
 /// A git command in `dir` that must succeed.
 fn run(dir: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
-        .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
-        .args(args)
+        .args(git_fixture_args(args))
         .current_dir(dir)
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
@@ -87,8 +112,7 @@ fn run(dir: &Path, args: &[&str]) -> String {
 /// A git command in `dir` whose exit status the row is about.
 fn try_run(dir: &Path, args: &[&str]) -> i32 {
     Command::new("git")
-        .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
-        .args(args)
+        .args(git_fixture_args(args))
         .current_dir(dir)
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
