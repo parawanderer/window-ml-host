@@ -9,8 +9,8 @@
 //! person's index, HEAD, stash list and object store are unchanged; the two `rev-parse --git-path` queries that find the
 //! repository's object directory and index run before the scratch exists and name neither.
 //! The private directory goes when the `Scratch` is dropped, which is when the diff has been made. The person's index
-//! is opened without following a link and copied only when it is a regular file of at most 256 MiB (a link is refused;
-//! a larger one, or a missing one, leaves the tree to come from HEAD). A split index (git's `rev-parse
+//! is opened without following a link and copied only when it is a regular file of at most 256 MiB (a link, a larger
+//! one or a missing one leaves the tree to come from HEAD, and a link's target is never opened). A split index (git's `rev-parse
 //! --shared-index-path` names a shared half) is not copied either, since its shared half would be read from, and could
 //! be rewritten in, the repository's git directory: the tree is built from HEAD instead, so the stat cache is lost but
 //! nothing is written. The scratch index is never written split (`core.splitIndex=false`).
@@ -141,7 +141,7 @@ fn split_index(git: &Git, repo: &RepoConfig) -> bool {
 
 /// The person's index, opened for reading without following a link and without blocking on a FIFO: `None` when there
 /// is none (a `clone --no-checkout`) or it is a link, which is never followed; `Err` when it is anything else but a
-/// regular file (a FIFO, a device, a directory).
+/// regular file (a FIFO, a device, a directory) or cannot be opened at all (a socket, an unreadable file).
 fn open_index(path: &Path) -> Result<Option<std::fs::File>, String> {
     use std::os::unix::fs::OpenOptionsExt;
     let flags = (rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32;
@@ -150,7 +150,7 @@ fn open_index(path: &Path) -> Result<Option<std::fs::File>, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         // `O_NOFOLLOW` on a link fails with ELOOP, on macOS and Linux alike.
         Err(e) if e.raw_os_error() == Some(rustix::io::Errno::LOOP.raw_os_error()) => return Ok(None),
-        Err(e) => return Err(format!("the repository's index could not be opened without following a link: {e}")),
+        Err(e) => return Err(format!("the repository's index could not be opened: {e}")),
     };
     match f.metadata() {
         Ok(m) if m.is_file() => Ok(Some(f)),
