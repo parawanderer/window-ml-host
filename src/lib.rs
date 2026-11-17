@@ -24,6 +24,7 @@ pub mod register;
 pub mod runner;
 pub mod sandbox;
 pub mod session;
+pub mod snapshot;
 pub mod store;
 pub mod tilde;
 pub mod tripwire;
