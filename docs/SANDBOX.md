@@ -256,9 +256,15 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
     is what holds the value on both: on macOS the link's own name is refused (EPERM) but the target read under its own
     name is not, measured with `ln -s config.txt .env`, and on Linux a mask lands on the file a bind resolves to.
     A dangling link holds nothing, and neither does one to a directory, a device, or a file under `/proc` or `/dev`,
-    which inside the sandbox are the call's own. Naming the link opens its target with it.
+    which inside the sandbox are the call's own. Naming the link opens its target with it. A listed link is held
+    THROUGH its target: on Linux the link itself is not masked (the masks are what `symlink_metadata` calls a file or a
+    directory), and a read through its held name lands on the masked target; on macOS the link cannot be read at all,
+    since the name rule refuses it. So a path in `hiddenSecrets` is held, but not every listed path is itself a mask.
   - A link or rename made OUTSIDE the sandbox between the host's scan of the roots and the spawn is judged by
-    nothing: the scan is a snapshot of names and inodes at spawn time (a documented gap).
+    nothing: the scan is a snapshot of names and inodes at spawn time (a documented gap). What that window opens differs
+    by platform. On macOS a held-name link stays unreadable whenever it was made, by name, so the window is a target's
+    FRESH name: a link retargeted after the scan, read through the new target's own path. On Linux nothing made after
+    the scan is masked: a held-name link made or retargeted then reads its target, and so does the target by its path.
   - Naming a secret path in `pathArgs` unmasks it for the WHOLE call, every process in it, not only the program that
     was given the argument: the approval of the call that names it is the control.
 - **`sysctl-read` is allowed in full** on macOS (`sandbox-runtime` lists names). It discloses machine facts such as the
