@@ -36,12 +36,26 @@ impl Git {
     /// Runs one query in the repository: `(exit code, stdout)`, `None` when git is missing, failed to start, or ran past
     /// the timeout (killed). `stdin` is written whole and closed.
     fn query(&self, repo: &RepoConfig, args: &[&str], stdin: Option<&mut dyn Read>) -> Option<(i32, Vec<u8>)> {
+        self.query_env(repo, &[], None, args, stdin)
+    }
+
+    /// [`Git::query`] with `extra` set over the belt and run in `cwd` (default: the work tree): the snapshot's scratch
+    /// index and private object directory (src/snapshot.rs).
+    pub(crate) fn query_env(
+        &self,
+        repo: &RepoConfig,
+        extra: &[(String, String)],
+        cwd: Option<&Path>,
+        args: &[&str],
+        stdin: Option<&mut dyn Read>,
+    ) -> Option<(i32, Vec<u8>)> {
         let program = self.program.as_ref()?;
         let git_dir = repo.git_dir.as_ref()?;
         let mut c = Command::new(program);
         c.env_clear()
             .envs(belt(git_dir, &repo.root))
-            .current_dir(&repo.root)
+            .envs(extra.iter().cloned())
+            .current_dir(cwd.unwrap_or(&repo.root))
             .args(args)
             .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
             .stdout(Stdio::piped())
