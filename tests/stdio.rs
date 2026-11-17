@@ -1116,6 +1116,42 @@ fn a_template_a_held_name_links_to_is_held_for_reading_and_writing() {
     h.close();
 }
 
+/// A file outside every root cannot be hardlinked into one, so a later write through the in-root name never lands on the
+/// outside inode: macOS refuses the link by its profile, Linux by the mount each root is (EXDEV). The write after the
+/// refused link makes a new, unrelated file.
+#[test]
+fn a_file_outside_every_root_cannot_be_hardlinked_into_one() {
+    use std::os::unix::fs::MetadataExt;
+    let (_d, r) = root();
+    let (_o, o) = root();
+    std::fs::write(o.join("victim"), "ORIGINAL\n").unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    for write in [None, Some("roots")] {
+        let mut cfg = json!({ "roots": [r] });
+        if let Some(w) = write {
+            cfg["write"] = json!(w);
+        }
+        h.ok("configure", cfg);
+        let _ = std::fs::remove_file(r.join("x"));
+        let script = format!("ln {} x; echo LN=$?; echo PWNED >> x", o.join("victim").display());
+        let (_f, d) = h.run(json!({ "argv": ["sh", "-c", script], "cwd": r }));
+        let out = text(&h.read_all(&d["stdout"]));
+        let err = text(&h.read_all(&d["stderr"]));
+        assert!(out.contains("LN=") && !out.contains("LN=0"), "the link was made ({write:?}): {out} {err}");
+        let want = if cfg!(target_os = "macos") { "Operation not permitted" } else { "Invalid cross-device link" };
+        assert!(err.contains(want), "refused by another mechanism than measured ({write:?}): {err}");
+        assert_eq!(std::fs::read(o.join("victim")).unwrap(), b"ORIGINAL\n", "{write:?}");
+        assert_eq!(std::fs::metadata(o.join("victim")).unwrap().nlink(), 1, "{write:?}");
+        if write.is_none() {
+            assert_eq!(std::fs::read(r.join("x")).unwrap(), b"PWNED\n", "the write made a new file");
+        }
+    }
+    h.close();
+}
+
 /// The documented gap: a hardlink at a root's top whose other name is a DEEPER dotenv file is not held, since the host
 /// matches a top-level link only against the dotenv files it finds at a root's top. It reads the secret on both
 /// platforms. This row pins the gap; it fails when the gap closes, and then the docs change with it.

@@ -248,6 +248,11 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
     root's top to a DEEPER dotenv file (`ln app/.env notes.txt`), since only the dotenv files at a root's top are
     matched by inode. The call cannot make such a link itself (`link` naming a denied file is refused on macOS), so the
     gap is a link that already existed.
+  - A call cannot hardlink a file from OUTSIDE every root into one either, so a write through an in-root name can never
+    land on an outside inode. macOS refuses the `link` (EPERM); on Linux each root is its own bind mount over the
+    read-only `/`, so the link crosses mounts and fails with EXDEV before Landlock is asked. A write to that name after
+    the refused link makes a new file. The same layout means no outside file shares a mount with a root inside the
+    sandbox, so Landlock's REFER check cannot be shown to refuse it on its own.
   - A held file cannot be renamed, moved, removed or written by a sandboxed call, since a rename needs no read and
     `mv .env notes.txt` would hand the next call the value under a name nothing holds. On macOS the profile denies
     `file-write*` at any depth on every name the read side holds by name, `.env`, `.env.*`, `.netrc`,
@@ -263,10 +268,12 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
     is what holds the value on both: on macOS the link's own name is refused (EPERM) but the target read under its own
     name is not, measured with `ln -s config.txt .env`, and on Linux a mask lands on the file a bind resolves to.
     A dangling link holds nothing, and neither does one to a directory, a device, or a file under `/proc` or `/dev`,
-    which inside the sandbox are the call's own. Naming the link opens its target with it. A listed link is held
-    THROUGH its target: on Linux the link itself is not masked (the masks are what `symlink_metadata` calls a file or a
-    directory), and a read through its held name lands on the masked target; on macOS the link cannot be read at all,
-    since the name rule refuses it. So a path in `hiddenSecrets` is held, but not every listed path is itself a mask.
+    which inside the sandbox are the call's own. Naming the link opens its target with it, and naming the target opens
+    the link that resolves to it, since a read through the link returns the bytes the person named. A listed link is
+    held THROUGH its target: on Linux the link itself is not masked (the masks are what `symlink_metadata` calls a file
+    or a directory), and a read through its held name lands on the masked target; on macOS the link cannot be read at
+    all, since the name rule refuses it. So a path in `hiddenSecrets` is held, but not every listed path is itself a
+    mask.
   - A link or rename made OUTSIDE the sandbox between the host's scan of the roots and the spawn is judged by
     nothing: the scan is a snapshot of names and inodes at spawn time (a documented gap). What that window opens differs
     by platform. On macOS a held-name link stays unreadable whenever it was made, by name, so the window is a target's
