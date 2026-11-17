@@ -237,6 +237,14 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
     in `hiddenSecrets` like the file itself, on both platforms (a template that is such a link included). Deeper than a
     root's top a hardlink is readable: a documented gap. The call cannot make such a link itself (`link` naming a
     denied file is refused on macOS), so the gap is a link that already existed.
+  - A held file cannot be renamed, moved, removed or written by a sandboxed call, since a rename needs no read and
+    `mv .env notes.txt` would hand the next call the value under a name nothing holds. On macOS the profile denies
+    `file-write*` on the dotenv names (not the templates, which stay writable) at any depth and on each root-top
+    hardlink. On Linux a root-top held file is a bind mount of `/dev/null`: a rename or unlink fails with EBUSY and a
+    write with EROFS. A deeper dotenv file on Linux is readable anyway (the gap above). Naming a file re-allows its
+    READ only, never a write.
+  - A link or rename made OUTSIDE the sandbox between the host's scan of the roots and the spawn is judged by
+    nothing: the scan is a snapshot of names and inodes at spawn time (a documented gap).
   - Naming a secret path in `pathArgs` unmasks it for the WHOLE call, every process in it, not only the program that
     was given the argument: the approval of the call that names it is the control.
 - **`sysctl-read` is allowed in full** on macOS (`sandbox-runtime` lists names). It discloses machine facts such as the

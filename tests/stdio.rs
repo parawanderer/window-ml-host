@@ -960,6 +960,62 @@ fn a_dotenv_template_is_readable_and_a_root_top_hardlink_to_a_dotenv_file_is_not
     h.close();
 }
 
+/// A hardlink in one root to a dotenv file at another root's top is held by inode across roots: listed when not named,
+/// and flagged secret (so the call asks) and readable when named.
+#[test]
+fn a_cross_root_hardlink_to_a_dotenv_file_is_held_and_flagged_secret_when_named() {
+    let (_d, a) = root();
+    let (_e, b) = root();
+    std::fs::write(a.join(".env"), "DOTENV-SECRET\n").unwrap();
+    if std::fs::hard_link(a.join(".env"), b.join("cross.txt")).is_err() {
+        return; // two temp dirs on different filesystems: no hardlink between them to test
+    }
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [a, b] }));
+    let (f, d) =
+        h.run(json!({ "argv": ["sh", "-c", "cat ../*/cross.txt; cat \"$0\"", b.join("cross.txt")], "cwd": a }));
+    let mut held = vec![a.join(".env"), b.join("cross.txt")];
+    held.sort();
+    assert_eq!(f["hiddenSecrets"], json!(held));
+    assert!(!text(&h.read_all(&d["stdout"])).contains("DOTENV-SECRET"));
+    let (f, d) = h.run(json!({ "argv": ["cat", b.join("cross.txt")], "cwd": a, "pathArgs": [{ "arg": 1 }] }));
+    assert_eq!(f["paths"][0]["secret"], true, "the cross-root link is secret by inode");
+    assert_eq!(f["hiddenSecrets"], json!([a.join(".env")]));
+    assert_eq!(text(&h.read_all(&d["stdout"])), "DOTENV-SECRET\n");
+    h.close();
+}
+
+/// A held dotenv file cannot be renamed, removed or written, nor a root-top hardlink to one: a rename needs no read,
+/// and a renamed `.env` would be read by the next call under a name nothing holds. A template stays writable.
+#[test]
+fn a_held_dotenv_file_cannot_be_renamed_removed_or_written() {
+    let (_d, r) = root();
+    std::fs::write(r.join(".env"), "DOTENV-SECRET\n").unwrap();
+    std::fs::write(r.join(".env.example"), "TEMPLATE\n").unwrap();
+    std::fs::hard_link(r.join(".env"), r.join("notes.txt")).unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    for cmd in
+        ["mv .env moved.txt", "mv notes.txt moved.txt", "rm .env", "rm notes.txt", "echo X >> .env", "echo X > .env"]
+    {
+        let (_f, d) = h.run(json!({ "argv": ["sh", "-c", cmd], "cwd": r }));
+        assert_ne!(d["code"], 0, "{cmd} succeeded: {d}");
+        assert!(!r.join("moved.txt").exists(), "{cmd}");
+        assert_eq!(std::fs::read(r.join(".env")).unwrap(), b"DOTENV-SECRET\n", "{cmd}");
+        assert_eq!(std::fs::read(r.join("notes.txt")).unwrap(), b"DOTENV-SECRET\n", "{cmd}");
+    }
+    let (_f, d) = h.run(json!({ "argv": ["sh", "-c", "echo NEW > .env.example"], "cwd": r }));
+    assert_eq!(d["code"], 0, "a template is writable: {d}");
+    assert_eq!(std::fs::read(r.join(".env.example")).unwrap(), b"NEW\n");
+    h.close();
+}
+
 /// macOS denies a dotenv file at any depth; Linux masks only a root's top (docs/SANDBOX.md, the documented gap).
 #[cfg(target_os = "macos")]
 #[test]

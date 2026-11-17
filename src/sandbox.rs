@@ -729,6 +729,22 @@ pub fn seatbelt_profile(plan: &Plan) -> String {
     p.push(format!("(allow file-write* {})", write.join(" ")));
     let deny_write: Vec<String> = deny_write_regexes().iter().map(|r| re(r)).collect();
     p.push(format!("(deny file-write* {})", deny_write.join(" ")));
+    // A dotenv file (not a template) and a root-top hardlink to one are never written, renamed or removed: a rename
+    // needs no read, so `mv .env notes.txt` in one call would let the next read the value under a name nothing holds.
+    let names: Vec<String> = DENY_READ_FILES
+        .iter()
+        .filter(|f| is_dotenv_name(f))
+        .map(|f| re(&format!("/{}$", ci(f))))
+        .chain(DENY_READ_PREFIXES.iter().map(|f| re(&format!("/{}[^/]*$", ci(f)))))
+        .collect();
+    let templates: Vec<String> = DOTENV_TEMPLATES.iter().map(|f| re(&format!("/{}$", ci(f)))).collect();
+    let mut held_write = vec![format!(
+        "(require-all (require-any {}) (require-not (require-any {})))",
+        names.join(" "),
+        templates.join(" ")
+    )];
+    held_write.extend(root_top_secrets(&plan.roots, &[]).iter().map(|h| format!("(literal {})", lit(h))));
+    p.push(format!("(deny file-write* {})", held_write.join(" ")));
     // Renaming `.git` itself is an unlink of that path; with this, a hook cannot be planted by moving the directory.
     p.push(format!("(deny file-write-unlink {})", re(&format!("/{}$", ci(".git")))));
     // Name-immutable top level under `write: "roots"`: the root inode is edit-only (WriteFile/Truncate),
