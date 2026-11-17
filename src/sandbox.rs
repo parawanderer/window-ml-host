@@ -597,7 +597,7 @@ const DENY_READ_PREFIXES: &[&str] = &[".env."];
 
 /// The dotenv names that stay readable: committed templates a model reads usefully, which hold no secret by convention
 /// (a real one in them is not protected, docs/SANDBOX.md). Exact names, case-insensitive.
-const DOTENV_TEMPLATES: &[&str] = &[".env.example", ".env.sample", ".env.template"];
+pub const DOTENV_TEMPLATES: &[&str] = &[".env.example", ".env.sample", ".env.template"];
 
 /// Whether a file name (lowercased) is one the sandbox holds unreadable by name: `.env` or `.env.*`, not a template.
 fn is_dotenv_name(name: &str) -> bool {

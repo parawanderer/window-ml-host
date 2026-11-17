@@ -886,6 +886,9 @@ impl Session {
         let Some(spec) = spec else { return Ok(vec![]) };
         let Some(list) = spec.as_array() else { return fail("BadRequest", "pathArgs is an array") };
         let mut out = Vec::new();
+        // The files the sandbox holds at each root's top, a hardlink to a dotenv file among them: a name cannot show
+        // that a template (or `notes.txt`) is one, so a path among these is secret whatever it is called.
+        let held = if list.is_empty() { vec![] } else { sandbox::root_top_secrets(roots, &[]) };
         for e in list {
             let i = e.get("arg").and_then(Value::as_u64).map(|i| i as usize);
             let Some(i) = i.filter(|i| (1..argv.len()).contains(i)) else {
@@ -908,7 +911,10 @@ impl Session {
                 Some(Err(_)) => false,
             };
             let link_secret = matches!(&link, Some(Ok(l)) if facts::looks_secret(l));
-            let secret = facts::looks_secret(&r.path) || facts::looks_secret(Path::new(given)) || link_secret;
+            let secret = facts::looks_secret(&r.path)
+                || facts::looks_secret(Path::new(given))
+                || link_secret
+                || held.contains(&r.path);
             let mut fact = json!({
                 "arg": i, "given": given, "path": r.path,
                 "inRoot": r.clean && facts::in_roots(&r.path, roots) && link_in_root,

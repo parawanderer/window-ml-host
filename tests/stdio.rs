@@ -945,6 +945,18 @@ fn a_dotenv_template_is_readable_and_a_root_top_hardlink_to_a_dotenv_file_is_not
     let out = text(&h.read_all(&d["stdout"]));
     assert!(out.contains("TEMPLATE"), "a template is readable: {out}");
     assert!(!out.contains("DOTENV-SECRET") && !out.contains("LOCAL-SECRET"), "{out}");
+    // Named: a template is not secret; a hardlink is, by inode, and naming it is the way through as for the file.
+    let (f, _d) = h.run(json!({ "argv": ["cat", ".env.example"], "cwd": r, "pathArgs": [{ "arg": 1 }] }));
+    assert_eq!(f["paths"][0]["secret"], false);
+    let (f, d) = h.run(json!({ "argv": ["cat", "notes.txt"], "cwd": r, "pathArgs": [{ "arg": 1 }] }));
+    assert_eq!(f["paths"][0]["secret"], true, "a hardlink to .env is secret whatever it is called");
+    assert_eq!(f["hiddenSecrets"], json!([r.join(".env"), r.join(".env.local")]));
+    assert_eq!(text(&h.read_all(&d["stdout"])), "DOTENV-SECRET\n");
+    // A template that IS the .env inode stays secret.
+    std::fs::remove_file(r.join(".env.example")).unwrap();
+    std::fs::hard_link(r.join(".env"), r.join(".env.example")).unwrap();
+    let (f, _d) = h.run(json!({ "argv": ["cat", ".env.example"], "cwd": r, "pathArgs": [{ "arg": 1 }] }));
+    assert_eq!(f["paths"][0]["secret"], true, "a template that is a hardlink to .env is secret");
     h.close();
 }
 
