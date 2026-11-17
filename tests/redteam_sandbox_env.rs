@@ -1070,7 +1070,7 @@ fn every_path_the_facts_list_is_one_the_sandbox_holds_on_both_platforms() {
         let md = std::fs::symlink_metadata(p).expect("a listed path exists");
         let need = if md.file_type().is_symlink() { std::fs::canonicalize(p).unwrap() } else { p.clone() };
         assert!(
-            masked.iter().any(|m| Path::new(m) == &need),
+            masked.iter().any(|m| Path::new(m) == need),
             "listed but nothing holds what a read of it lands on: {} (target {})",
             p.display(),
             need.display()
