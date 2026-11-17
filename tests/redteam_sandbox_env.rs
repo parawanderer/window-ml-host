@@ -43,6 +43,12 @@
 //!      still not its rename or its removal. The write deny covers every name the read side holds (`.env`, `.env.*` and
 //!      the credential files, whose rename launders them the same way), not the templates, and not `.envrc` or `x.env`.
 //!      Renaming the PARENT of a deep `.env` is allowed and moves nothing: the next call still refuses `app2/.env`.
+//!   K. a root-top SYMLINK with a HELD name (the repair at 549faf3): the value is unreadable through the link name,
+//!      through the target's own path, through a second hardlink and a second link to the target, and through a chain
+//!      (the END of the chain is what is held); a link made or retargeted AFTER the scan is refused at its own name and
+//!      the target's fresh name is the window, with the next call's scan holding the link and the target; a dotenv-named
+//!      link to a DIRECTORY or a device holds nothing, and what the directory holds is judged by its own name; and every
+//!      path the facts list is one the sandbox really holds, on both platforms.
 //!
 //! THE ONE THAT MATTERS MOST: D. A hardlink is the inode under another name, and no name rule sees it; the build now
 //! judges each root's TOP by (dev, ino), so the shape is closed there and stays open below it, by name and by inode alike.
@@ -72,6 +78,16 @@
 //!      `(require-any names)` → J red at "the control failed: … mv: rename .env.template to tmpl-renamed.txt: Operation
 //!      not permitted", the text row at its template assertion: the exclusion is what keeps a template writable.
 //!
+//! MUTATION PER ROW, MEASURED AT 549faf3 (section K, the same way: one applied alone, this file run, reverted):
+//!   K1/K2/K3/K5  the link branch's `links.push(e.path()); named.push((t, tm.dev(), tm.ino()));` removed (a symlink is
+//!      not listed — the rule before the repair) → K1 red at ".env is not held", K2 at "the chain's link is listed", K3
+//!      at ".env is not held by the next call's scan", K5 at the same list.
+//!   K4  `if tm.is_file() && !own && …` → `if !own && …` → K4 red at "a link to a directory holds .env.conf", and K5 at
+//!      the Linux half: a directory target is listed, and `--ro-bind /dev/null` is not what a directory gets.
+//!   (No single-line mutation lists a path WITHOUT holding it: `bwrap_args` and `seatbelt_profile` both read the one
+//!    `root_top_secrets`, so an extra entry reaches the masks and the deny line together. Adding `notes.txt` to the
+//!    output reds section E, A and J on the unexpected mask, and K5 stays green because both halves moved together —
+//!    which is the property K5 exists to state, not a gap in it.)
 //! WHAT THIS FILE CANNOT ROW (named so the next reader does not look for it):
 //!   - The case variant on a case-insensitive volume: `.ENV` and `.env` are one inode there, so a real read cannot tell
 //!     the rule from the filesystem. B pins the pattern's case class instead; a case-SENSITIVE volume is not available
@@ -93,6 +109,16 @@
 //!     root-top hardlink, by bind mount), and the lane's tests/stdio.rs row asserts the refusal on Linux CI.
 //!   - A rename made OUTSIDE the sandbox between the scan and the spawn: no rule can see it, which is the same window G
 //!     pins from the read side and docs/SANDBOX.md documents. J closes the move the CALL can make, not the person's own.
+//!   - K3's window is not closable at the path level, for G's reason: the profile is built from ONE scan. What the row
+//!     asserts is both halves of where it lands: a held-name link made or retargeted after the scan still cannot be read
+//!     (resolving it is a metadata read of a `.env*` name, which the name rule denies), while its target's fresh name can
+//!     (that is G's window), and the next call's scan holds the link and the target it resolves to.
+//!   - A held-name link whose target is a dotenv FILE inside a directory: the directory is not held (K4), so the file is
+//!     reached through a name nothing holds; on macOS the name rule still refuses `dir/.env` at any depth, on Linux it is
+//!     the documented deep-file gap. K4 states both, as a row for the directory and a mask-list assertion for the file.
+//!   - On Linux a listed LINK is not masked itself: `bwrap_args` masks what `symlink_metadata` calls a file or a
+//!     directory, and a link is neither. The read through the name lands on the masked TARGET, so the value is closed;
+//!     K1, K2 and K5 assert it that way rather than asserting a mask that is not built.
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
@@ -825,5 +851,237 @@ fn the_write_deny_holds_every_name_the_read_side_holds_and_not_the_templates() {
             !line.contains(&re(&format!("/{}$", ci(n)))),
             "{n} is not held for reading, so it is not held for writing: {line}"
         );
+    }
+}
+
+// --- K: a root-top SYMLINK with a HELD name: the link, its target, and every way to reach it ---
+
+/// The shape the repair at 549faf3 is about, in one root: `config.txt` is an ordinary file, `.env` is a SYMLINK with a
+/// held name to it, `copy.txt` is a hardlink to it, `alias.txt` is a symlink to it under a name nothing holds, a two-hop
+/// chain ends at `end.txt`, `.env.conf` is a link to a directory, and `.env.null` points at the sandbox's own /dev/null.
+struct KTree {
+    _d: tempfile::TempDir,
+    root: PathBuf,
+}
+
+impl KTree {
+    fn new() -> KTree {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().canonicalize().unwrap().join("w");
+        std::fs::create_dir_all(root.join("conf")).unwrap();
+        std::fs::write(root.join("config.txt"), "TARGET\n").unwrap();
+        std::fs::write(root.join("end.txt"), "CHAINEND\n").unwrap();
+        std::fs::write(root.join("notes.txt"), "NOTHING\n").unwrap();
+        std::fs::write(root.join("conf/.env"), "INNERDOTENV\n").unwrap();
+        std::fs::write(root.join("conf/plain.txt"), "INNERPLAIN\n").unwrap();
+        symlink(Path::new("config.txt"), root.join(".env")).unwrap();
+        std::fs::hard_link(root.join("config.txt"), root.join("copy.txt")).unwrap();
+        symlink(Path::new("config.txt"), root.join("alias.txt")).unwrap();
+        symlink(Path::new("end.txt"), root.join("hop")).unwrap();
+        symlink(Path::new("hop"), root.join(".env.chain")).unwrap();
+        symlink(Path::new("conf"), root.join(".env.conf")).unwrap();
+        symlink(Path::new("/dev/null"), root.join(".env.null")).unwrap();
+        KTree { _d: d, root }
+    }
+    fn at(&self, rel: &str) -> PathBuf {
+        self.root.join(rel)
+    }
+    /// What the facts list for this root, as the sheet would show it.
+    fn held(&self) -> Vec<PathBuf> {
+        root_top_secrets(std::slice::from_ref(&self.root), &[])
+    }
+    fn masked_by(&self, p: &Plan) -> Vec<String> {
+        let a: Vec<String> = bwrap_args(p, &self.root).iter().map(|s| s.to_string_lossy().into_owned()).collect();
+        let mut m: Vec<String> =
+            a.windows(3).filter(|w| w[0] == "--ro-bind" && w[1] == "/dev/null").map(|w| w[2].clone()).collect();
+        m.sort();
+        m
+    }
+    #[cfg(target_os = "macos")]
+    fn read_under(&self, profile: &str, path: &Path) -> (bool, String) {
+        let out = Command::new("/usr/bin/sandbox-exec").args(["-p", profile, "/bin/cat"]).arg(path).output().unwrap();
+        (
+            out.status.success(),
+            format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)),
+        )
+    }
+}
+
+/// A link with a held name is not the file: holding only the NAME would leave `config.txt` open under its own name and
+/// `copy.txt` open by inode. The repair holds the target too, which closes all four ways at one judged path — the link
+/// name, the target's path, a second hardlink (same inode, matched at a root's top) and a second link (its own name is
+/// nothing, and it resolves to a judged path).
+#[test]
+fn a_held_name_link_holds_its_target_and_every_root_top_name_to_it() {
+    let t = KTree::new();
+    assert_eq!(std::fs::read(t.at(".env")).unwrap(), b"TARGET\n", "premise: the link reads the file");
+    let held = t.held();
+    for n in [".env", "config.txt", "copy.txt"] {
+        assert!(held.contains(&t.at(n)), "{n} is not held: {held:?}");
+    }
+    assert!(!held.contains(&t.at("alias.txt")), "a link whose own name nothing holds is not listed; its target is");
+    // Linux: the masks are the TARGET and the hardlink. A link's own path is not one — `bwrap_args` masks what
+    // `symlink_metadata` calls a file or a directory, and a link is neither — but a read through the name lands on the
+    // masked target, so the value comes back as /dev/null's all the same.
+    let masked = t.masked_by(&plan(vec![t.root.clone()]));
+    for n in ["config.txt", "copy.txt"] {
+        assert!(masked.contains(&t.at(n).display().to_string()), "{n} is held but not masked: {masked:?}");
+    }
+    for n in [".env", "alias.txt"] {
+        assert!(!masked.contains(&t.at(n).display().to_string()), "a link's own path is not a mask: {n} in {masked:?}");
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let profile = seatbelt_profile(&plan(vec![t.root.clone()]));
+        for n in [".env", "config.txt", "copy.txt", "alias.txt"] {
+            let (ok, out) = t.read_under(&profile, &t.at(n));
+            assert!(!ok, "the value is readable through {n}: {out}");
+            assert!(!out.contains("TARGET"), "the value reached the call through {n}: {out}");
+        }
+    }
+    // Naming the target is the way through, and it opens the link that resolves to it — nothing else.
+    let named = root_top_secrets(std::slice::from_ref(&t.root), &[t.at("config.txt")]);
+    assert!(
+        !named.contains(&t.at("config.txt")) && !named.contains(&t.at(".env")),
+        "naming the target opens it and the link to it: {named:?}"
+    );
+    assert!(named.contains(&t.at("end.txt")), "naming one target must not open another: {named:?}");
+}
+
+/// A chain has one thing worth holding: its end. `canonicalize` follows it, so the middle hop needs no name of its own,
+/// and a read through any name in the chain lands on the end, whose path is judged.
+#[test]
+fn a_link_chain_is_resolved_to_its_end_and_the_end_is_what_is_held() {
+    let t = KTree::new();
+    assert_eq!(std::fs::read(t.at(".env.chain")).unwrap(), b"CHAINEND\n", "premise: the chain reads the end");
+    let held = t.held();
+    assert!(held.contains(&t.at(".env.chain")), "the chain's link is listed: {held:?}");
+    assert!(held.contains(&t.at("end.txt")), "the END of the chain is held, not the hop: {held:?}");
+    assert!(!held.contains(&t.at("hop")), "a link in the middle of a chain needs no name of its own: {held:?}");
+    let masked = t.masked_by(&plan(vec![t.root.clone()]));
+    assert!(
+        masked.contains(&t.at("end.txt").display().to_string()),
+        "the chain's end is held but not masked: {masked:?}"
+    );
+    assert!(
+        !masked.contains(&t.at(".env.chain").display().to_string()),
+        "a link's own path is not a mask; the end it resolves to is: {masked:?}"
+    );
+    #[cfg(target_os = "macos")]
+    {
+        let profile = seatbelt_profile(&plan(vec![t.root.clone()]));
+        for n in [".env.chain", "hop", "end.txt"] {
+            let (ok, out) = t.read_under(&profile, &t.at(n));
+            assert!(!ok, "the chain's end is readable through {n}: {out}");
+            assert!(!out.contains("CHAINEND"), "the value reached the call through {n}: {out}");
+        }
+    }
+}
+
+/// The scan and the profile are one moment, and the rule is a PATH — but a held-NAME link is judged TWICE over: resolving
+/// it is a metadata read of a `.env*` name, which the name rule denies, so neither a link made after the scan nor a
+/// retargeted one opens the file it lands on. What the window does give is the TARGET's own name: `fresh.txt` was never
+/// judged, so it reads directly (G's window, reached through a link). The next call's scan resolves both links and holds
+/// the target.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_held_name_link_made_or_retargeted_after_the_scan_is_refused_at_its_name_and_the_next_call_holds_the_target() {
+    let t = KTree::new();
+    let profile = seatbelt_profile(&plan(vec![t.root.clone()]));
+    let (ok, out) = t.read_under(&profile, &t.at("config.txt"));
+    assert!(!ok, "premise: the scan holds the link's target: {out}");
+    // A held-name link made AFTER the scan, to a file the scan never saw: no rule names `fresh.txt`, and the link is
+    // refused anyway — reading it means reading the name `.env.late`.
+    std::fs::write(t.at("fresh.txt"), "FRESH\n").unwrap();
+    symlink(Path::new("fresh.txt"), t.at(".env.late")).unwrap();
+    let (ok, out) = t.read_under(&profile, &t.at(".env.late"));
+    assert!(!ok, "a held-name link made after the scan was readable, so the window is open here: {out}");
+    assert!(!out.contains("FRESH"), "the value reached the call through the new link: {out}");
+    // The target's own name is the window, and it is G's: nothing judged `fresh.txt`, and a link points at it now.
+    let (ok, out) = t.read_under(&profile, &t.at("fresh.txt"));
+    assert!(ok, "the unjudged target is refused, so something judges a fresh name now: {out}");
+    assert_eq!(out.trim(), "FRESH");
+    // Retargeted after the scan: still refused at the name, and the path the scan judged stays denied whatever it names.
+    std::fs::remove_file(t.at(".env")).unwrap();
+    symlink(Path::new("fresh.txt"), t.at(".env")).unwrap();
+    let (ok, out) = t.read_under(&profile, &t.at(".env"));
+    assert!(!ok, "a retargeted link was followed, so the profile judges the target now: {out}");
+    let (ok, _) = t.read_under(&profile, &t.at("config.txt"));
+    assert!(!ok, "a judged path stopped being denied when the link moved off it");
+    // What the NEXT call sees: its scan resolves both links, and holds each target it lands on.
+    let next = root_top_secrets(std::slice::from_ref(&t.root), &[]);
+    for n in [".env", ".env.late", "fresh.txt"] {
+        assert!(next.contains(&t.at(n)), "{n} is not held by the next call's scan: {next:?}");
+    }
+}
+
+/// Only a REGULAR file target is held: a directory is not a secret, and /dev/null (like /proc) is the call's OWN device
+/// tree in the sandbox, so masking the host's path would buy nothing and could fail the spawn. On macOS the link is still
+/// refused at its own name (`.env.conf` is a dotenv name), so nothing inside the directory is reachable THROUGH it, and
+/// what it holds is judged by its own name: `conf/.env` is refused at any depth, `conf/plain.txt` is nobody's secret. On
+/// Linux neither a link nor a directory is masked, so an ordinary file inside is reachable by name once the link is
+/// followed — the deep-file gap's shape, and the reason the plan lists nothing for either.
+#[test]
+fn a_held_name_link_to_a_directory_or_a_device_holds_nothing() {
+    let t = KTree::new();
+    let held = t.held();
+    for n in [".env.conf", "conf"] {
+        assert!(!held.contains(&t.at(n)), "a link to a directory holds {n}: {held:?}");
+    }
+    assert!(!held.contains(&t.at(".env.null")), "a link to /dev/null is the call's own file: {held:?}");
+    let masked = t.masked_by(&plan(vec![t.root.clone()]));
+    for n in [".env.conf", "conf", "conf/.env", ".env.null"] {
+        assert!(!masked.contains(&t.at(n).display().to_string()), "{n} is masked: {masked:?}");
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let profile = seatbelt_profile(&plan(vec![t.root.clone()]));
+        // The link is refused at its own name, so nothing is read THROUGH it, whatever it targets.
+        for n in [".env.conf/plain.txt", ".env.conf/.env", ".env.null"] {
+            let (ok, out) = t.read_under(&profile, &t.at(n));
+            assert!(!ok, "a held-name link to a non-file was readable through {n}: {out}");
+        }
+        // Reached directly, what the directory holds is judged by ITS OWN name, which is the rule that covers it.
+        let (ok, out) = t.read_under(&profile, &t.at("conf/.env"));
+        assert!(!ok, "a dotenv file at depth is readable: {out}");
+        assert!(!out.contains("INNERDOTENV"), "the value reached the call: {out}");
+        let (ok, out) = t.read_under(&profile, &t.at("conf/plain.txt"));
+        assert!(ok, "an ordinary file at depth is readable, and nothing claims it: {out}");
+        assert_eq!(out.trim(), "INNERPLAIN");
+    }
+}
+
+/// The property the whole section rests on, enumerated rather than sampled: every path the facts list is one the sandbox
+/// does not let the call read — masked on Linux, refused by the real profile on macOS. A repair that listed a name it
+/// did not deny (or denied one it did not list) would red here, whichever direction the mistake ran.
+#[test]
+fn every_path_the_facts_list_is_one_the_sandbox_holds_on_both_platforms() {
+    let t = KTree::new();
+    let listed = t.held();
+    for n in [".env", "config.txt", "copy.txt", ".env.chain", "end.txt"] {
+        assert!(
+            listed.contains(&t.at(n)),
+            "{n} is missing from the list, so the loop below is not over the shapes: {listed:?}"
+        );
+    }
+    let masked = t.masked_by(&plan(vec![t.root.clone()]));
+    for p in &listed {
+        // A held LINK is not masked itself: what a read through it lands on is, and that is the whole of the Linux rule.
+        let md = std::fs::symlink_metadata(p).expect("a listed path exists");
+        let need = if md.file_type().is_symlink() { std::fs::canonicalize(p).unwrap() } else { p.clone() };
+        assert!(
+            masked.iter().any(|m| Path::new(m) == &need),
+            "listed but nothing holds what a read of it lands on: {} (target {})",
+            p.display(),
+            need.display()
+        );
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let profile = seatbelt_profile(&plan(vec![t.root.clone()]));
+        for p in &listed {
+            let (ok, out) = t.read_under(&profile, p);
+            assert!(!ok, "listed as held but readable: {} ({out})", p.display());
+        }
     }
 }
