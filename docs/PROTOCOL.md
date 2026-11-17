@@ -141,7 +141,10 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
   for this call, minus the ones it names, so a program that reads one without naming it (a dotenv loader) and fails
   with EPERM can be explained: naming the file in a marked path argument re-allows it (and asks, since it is flagged
   `secret`), and `host-plain` does not deny it. macOS denies the same names at any depth; only the root's top is listed.
-  `[]` for an unsandboxed call (docs/SANDBOX.md).
+  The templates `.env.example`, `.env.sample` and `.env.template` are not hidden; a regular file at a root's top that
+  is a hardlink to a hidden dotenv file is, and is listed. On Linux a hidden file reads as EMPTY, with no error, so this
+  list is the only way the caller learns why. A path named in `pathArgs` is readable by every process of the call, not
+  only the program given it: the approval is the control. `[]` for an unsandboxed call (docs/SANDBOX.md).
 - **`tilde`** lists each argument that began with `~`, in argv order and then `cwd`: `{ "index": 1, "from": "~/notes.txt",
   "to": "/Users/me/notes.txt" }`. `index` is `number | "cwd" | "path"`: the argv position, the string `"cwd"` for the `cwd` argument, or, in `put`'s facts, `"path"` for its `path`.
   The host rewrites argv and `cwd` before it resolves anything, so `argv`, `paths[].given`, the facts' paths and the

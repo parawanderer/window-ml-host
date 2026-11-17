@@ -36,7 +36,7 @@ malformed is `BadRequest`, never a silent fallback. `done` always reports the sc
 | Network, a credentialed call (`credential` on `spawn`, `src/credential.rs`) | outbound TCP to its own proxy alone (`(remote ip "localhost:<port>")`, `src/proxy.rs`), which admits only `CONNECT <granted host>:443`; no DNS resolver socket; `com.apple.trustd.agent`; exec always program-only; the provider's token in the env, its config dir a throwaway under `$TMPDIR` | needs Landlock (`SandboxFailed` without it). The call keeps `--unshare-net`, so it has no network at all; the proxy listens on a unix socket in the call's own directory, bound into the sandbox (the session's socket directory is masked, so no other call's socket is visible). `exec-under` first starts `wmlhost forward`, which carries `127.0.0.1:18443` inside the namespace to that socket, then applies the call's ruleset; exec always program-only; the same token, config dir and proxy env |
 | Processes (`exec: "any"`, the floor) | start any program, all inheriting the profile | the same, in a fresh PID namespace |
 | Processes (`exec: "program-only"`) | only the resolved set, by `literal`; `sh -c 'ls'` cannot exec `ls` | the same, by Landlock EXECUTE grants |
-| Credential stores (`.ssh`, `.gnupg`, `.aws`, `.azure`, `.kube`, `.docker`, `.password-store`, `~/Library/Keychains`, `.config/gh`, `.config/gcloud`, `.netrc`, `.git-credentials`, `.pgpass`, `.env`, `.env.*`) | unreadable at ANY depth, matched by regex, case-insensitively | masked under `$HOME` only (an empty tmpfs or `/dev/null` bound over each that exists), and `.env` / `.env.*` also at the TOP of each root; a deeper one is readable (the gap below) |
+| Credential stores (`.ssh`, `.gnupg`, `.aws`, `.azure`, `.kube`, `.docker`, `.password-store`, `~/Library/Keychains`, `.config/gh`, `.config/gcloud`, `.netrc`, `.git-credentials`, `.pgpass`, `.env`, `.env.*`) | unreadable at ANY depth, matched by regex, case-insensitively | masked under `$HOME` only (an empty tmpfs or `/dev/null` bound over each that exists), and `.env` / `.env.*` also at the TOP of each root, with a hardlink there to one; a deeper one is readable (the gap below); the `.env.example`, `.env.sample` and `.env.template` templates are readable on both |
 | …unless the call NAMES one | a marked path argument flagged `secret` is re-allowed by a `literal` rule: the person approved this exact path | the same, by not masking it |
 | Files that run code later (`.git/hooks/`, `.git/config`, `.gitmodules`, `.vscode/`, `.idea/`, `.claude/`, `.gitconfig`, `.mcp.json`, `.envrc`, shell rc files) | unwritable at any depth (regex), and `.git` cannot be renamed away | absent envelope: re-bound read-only where they exist at the TOP of each root when the call starts (the gap stays); `write: "roots"`: never writable, the name-immutable top level covers the ones that do not exist yet |
 | The session's held output | neither readable nor writable | masked (empty tmpfs) |
@@ -226,7 +226,19 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
   and at each root's top on Linux, where Landlock cannot deny one file inside a granted tree, so `root/app/.env` stays
   readable there (a documented gap, no walk at spawn). A dotenv loader under the sandbox then fails with EPERM; the
   call's facts list what was hidden (`hiddenSecrets`, PROTOCOL.md), and naming the file or running `host-plain` is the
-  way through.
+  way through. On Linux a masked file reads as EMPTY, not as an error (`/dev/null` is bound over it), so a loader sees
+  no variables and no failure; `hiddenSecrets` is how the caller learns why. The rest of the rule (2026-11-17, the
+  coordinator's rulings on host#46):
+  - The templates `.env.example`, `.env.sample` and `.env.template` (exact names, case-insensitive) are neither denied
+    nor masked: they are committed, and a model reads them usefully. A real secret written into one is not protected.
+    Every other `.env.*` stays denied.
+  - The deny is by NAME, and a hardlink is another name: `ln .env notes.txt` is the same inode. At each root's top the
+    host checks inodes, so a regular file there that is a hardlink to a hidden dotenv file is denied, masked and listed
+    in `hiddenSecrets` like the file itself, on both platforms (a template that is such a link included). Deeper than a
+    root's top a hardlink is readable: a documented gap. The call cannot make such a link itself (`link` naming a
+    denied file is refused on macOS), so the gap is a link that already existed.
+  - Naming a secret path in `pathArgs` unmasks it for the WHOLE call, every process in it, not only the program that
+    was given the argument: the approval of the call that names it is the control.
 - **`sysctl-read` is allowed in full** on macOS (`sandbox-runtime` lists names). It discloses machine facts such as the
   hostname, not files.
 - **On macOS, a host started inside the host's sandbox reports `sandboxed: false`, `placement: "host-plain"`.** Its

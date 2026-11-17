@@ -595,24 +595,45 @@ const DENY_READ_FILES: &[&str] = &[".netrc", ".git-credentials", ".pgpass", ".en
 /// Prefixes of file names that are never readable: `.env.local`, `.env.production`, … (`.envrc` is not one).
 const DENY_READ_PREFIXES: &[&str] = &[".env."];
 
-/// The files at the TOP of each root that the sandbox holds unreadable by name (`.env`, `.env.*`), minus the ones the
-/// call names: what a call's facts report as `hiddenSecrets`, and what Linux masks. macOS denies the same names at any
-/// depth; Linux masks only these, since Landlock cannot deny one file inside a granted tree (docs/SANDBOX.md). A
-/// symlink is not listed or masked.
+/// The dotenv names that stay readable: committed templates a model reads usefully, which hold no secret by convention
+/// (a real one in them is not protected, docs/SANDBOX.md). Exact names, case-insensitive.
+const DOTENV_TEMPLATES: &[&str] = &[".env.example", ".env.sample", ".env.template"];
+
+/// Whether a file name (lowercased) is one the sandbox holds unreadable by name: `.env` or `.env.*`, not a template.
+fn is_dotenv_name(name: &str) -> bool {
+    (DENY_READ_FILES.contains(&name) || DENY_READ_PREFIXES.iter().any(|p| name.starts_with(p)))
+        && !DOTENV_TEMPLATES.contains(&name)
+}
+
+/// The files at the TOP of each root that the sandbox holds unreadable (`.env`, `.env.*` but the templates, and a
+/// hardlink at a root's top to one of them, which is the same inode under another name), minus the ones the call
+/// names: what a call's facts report as `hiddenSecrets`, and what Linux masks. macOS denies the same names at any
+/// depth, and these paths besides; Linux masks only these, since Landlock cannot deny one file inside a granted tree
+/// (docs/SANDBOX.md). A symlink is not listed or masked. A hardlink deeper than a root's top is not seen (the gap).
 pub fn root_top_secrets(roots: &[PathBuf], allow_read: &[PathBuf]) -> Vec<PathBuf> {
-    let mut out = vec![];
+    use std::os::unix::fs::MetadataExt;
+    let (mut named, mut linked) = (vec![], vec![]);
     for r in roots {
         let Ok(rd) = std::fs::read_dir(r) else { continue };
         for e in rd.flatten() {
-            let name = e.file_name().to_string_lossy().to_lowercase();
-            let by_name =
-                DENY_READ_FILES.contains(&name.as_str()) || DENY_READ_PREFIXES.iter().any(|p| name.starts_with(p));
-            if by_name && e.file_type().is_ok_and(|t| t.is_file()) && !allow_read.contains(&e.path()) {
-                out.push(e.path());
+            // `DirEntry::metadata` does not follow a symlink, so a link is not a file here.
+            let Ok(md) = e.metadata() else { continue };
+            if !md.is_file() || allow_read.contains(&e.path()) {
+                continue;
+            }
+            let entry = (e.path(), md.dev(), md.ino());
+            if is_dotenv_name(&e.file_name().to_string_lossy().to_lowercase()) {
+                named.push(entry);
+            } else if md.nlink() > 1 {
+                linked.push(entry);
             }
         }
     }
+    let same = |a: &(PathBuf, u64, u64)| named.iter().any(|b| a.1 == b.1 && a.2 == b.2);
+    let mut out: Vec<PathBuf> = linked.iter().filter(|l| same(l)).map(|l| l.0.clone()).collect();
+    out.extend(named.into_iter().map(|n| n.0));
     out.sort();
+    out.dedup();
     out
 }
 
@@ -677,11 +698,20 @@ pub fn seatbelt_profile(plan: &Plan) -> String {
     }
     p.push("; reads: everywhere, except credential stores, unless the call names one".into());
     p.push("(allow file-read*)".into());
-    let mut deny_read: Vec<String> = DENY_READ_DIRS.iter().map(|d| re(&format!("/{}(/|$)", ci(d)))).collect();
+    let dirs: Vec<String> = DENY_READ_DIRS.iter().map(|d| re(&format!("/{}(/|$)", ci(d)))).collect();
+    let mut held: Vec<String> = plan.hidden.iter().map(|h| format!("(subpath {})", lit(h))).collect();
+    // A root's top hardlink to a dotenv file, by inode: no name rule sees it.
+    held.extend(root_top_secrets(&plan.roots, &plan.allow_read).iter().map(|h| format!("(literal {})", lit(h))));
+    let mut deny_read = dirs.clone();
     deny_read.extend(DENY_READ_FILES.iter().map(|f| re(&format!("/{}$", ci(f)))));
     deny_read.extend(DENY_READ_PREFIXES.iter().map(|f| re(&format!("/{}[^/]*$", ci(f)))));
-    deny_read.extend(plan.hidden.iter().map(|h| format!("(subpath {})", lit(h))));
+    deny_read.extend(held.iter().cloned());
     p.push(format!("(deny file-read* {})", deny_read.join(" ")));
+    // The dotenv templates reopened, then what a template's name must not reopen denied again: a credential directory,
+    // the hidden paths, and a hardlink (a template can be one).
+    let templates: Vec<String> = DOTENV_TEMPLATES.iter().map(|f| re(&format!("/{}$", ci(f)))).collect();
+    p.push(format!("(allow file-read* {})", templates.join(" ")));
+    p.push(format!("(deny file-read* {})", [dirs, held].concat().join(" ")));
     if !plan.allow_read.is_empty() {
         let allow: Vec<String> = plan.allow_read.iter().map(|a| format!("(literal {})", lit(a))).collect();
         p.push(format!("(allow file-read* {})", allow.join(" ")));
@@ -987,6 +1017,67 @@ mod tests {
         let got = root_top_secrets(&roots, &[]);
         assert_eq!(got, vec![r.join(".ENV.local"), r.join(".env"), r.join(".env.production")]);
         assert_eq!(root_top_secrets(&roots, &[r.join(".env")]), vec![r.join(".ENV.local"), r.join(".env.production")]);
+    }
+
+    #[test]
+    fn the_dotenv_templates_are_not_root_top_secrets_in_any_case() {
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path();
+        for f in [".env.example", ".ENV.Sample", ".env.template", ".env.examples", ".env.example.local"] {
+            std::fs::write(r.join(f), "").unwrap();
+        }
+        let got = root_top_secrets(&[r.to_path_buf()], &[]);
+        assert_eq!(got, vec![r.join(".env.example.local"), r.join(".env.examples")], "exact names only");
+    }
+
+    #[test]
+    fn a_root_top_hardlink_to_a_hidden_dotenv_file_is_a_root_top_secret() {
+        let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (ra, rb) = (a.path(), b.path());
+        std::fs::create_dir(ra.join("sub")).unwrap();
+        std::fs::write(ra.join(".env"), "S").unwrap();
+        std::fs::write(ra.join("plain.txt"), "P").unwrap();
+        std::fs::write(ra.join("other"), "O").unwrap();
+        std::fs::hard_link(ra.join("other"), ra.join("other-link")).unwrap();
+        for l in ["notes.txt", ".env.example", "sub/deep.txt"] {
+            std::fs::hard_link(ra.join(".env"), ra.join(l)).unwrap();
+        }
+        std::fs::hard_link(ra.join(".env"), rb.join("cross.txt")).unwrap();
+        let roots = vec![ra.to_path_buf(), rb.to_path_buf()];
+        let mut want = vec![ra.join(".env"), ra.join(".env.example"), ra.join("notes.txt"), rb.join("cross.txt")];
+        want.sort();
+        assert_eq!(root_top_secrets(&roots, &[]), want, "a template that IS the .env inode is hidden; sub/ is the gap");
+        assert_eq!(
+            root_top_secrets(&roots, &[ra.join(".env")]),
+            Vec::<PathBuf>::new(),
+            "naming the .env opens its links"
+        );
+        let mut want = vec![ra.join(".env"), ra.join(".env.example"), rb.join("cross.txt")];
+        want.sort();
+        assert_eq!(root_top_secrets(&roots, &[ra.join("notes.txt")]), want, "naming a link opens only the link");
+    }
+
+    #[test]
+    fn the_macos_profile_reopens_the_templates_and_then_denies_dirs_hidden_and_links_again() {
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path();
+        std::fs::write(r.join(".env"), "S").unwrap();
+        std::fs::hard_link(r.join(".env"), r.join("notes.txt")).unwrap();
+        let mut pl = plan();
+        pl.roots = vec![r.to_path_buf()];
+        let p = seatbelt_profile(&pl);
+        let at = |needle: &str| p.find(needle).unwrap_or_else(|| panic!("{needle} in {p}"));
+        let template = at(&format!("(allow file-read* {}", re(&format!("/{}$", ci(".env.example")))));
+        let first = at("(deny file-read*");
+        let again = p[template..].find("(deny file-read*").map(|i| i + template).expect("a deny after the templates");
+        assert!(first < template);
+        let line = p[again..].lines().next().unwrap();
+        assert!(line.contains(&format!("(literal {})", lit(&r.join("notes.txt")))), "{line}");
+        assert!(line.contains(&re(&format!("/{}(/|$)", ci(".ssh")))), "{line}");
+        assert!(
+            !line.contains(&re(&format!("/{}[^/]*$", ci(".env.")))),
+            "the prefixes stay before the templates: {line}"
+        );
     }
 
     #[test]

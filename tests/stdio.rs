@@ -926,6 +926,28 @@ fn a_dotenv_file_is_unreadable_unless_named_and_the_facts_say_so() {
     h.close();
 }
 
+/// A dotenv template (`.env.example`, `.env.sample`, `.env.template`) is readable and not listed; a hardlink at a
+/// root's top to a hidden dotenv file is the same inode under another name, and is held and listed like the file.
+#[test]
+fn a_dotenv_template_is_readable_and_a_root_top_hardlink_to_a_dotenv_file_is_not() {
+    let (_d, r) = root();
+    std::fs::write(r.join(".env"), "DOTENV-SECRET\n").unwrap();
+    std::fs::write(r.join(".env.example"), "TEMPLATE\n").unwrap();
+    std::fs::write(r.join(".env.local"), "LOCAL-SECRET\n").unwrap();
+    std::fs::hard_link(r.join(".env"), r.join("notes.txt")).unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let (f, d) = h.run(json!({ "argv": ["sh", "-c", "cat .env.example; cat notes.txt; cat .env.local"], "cwd": r }));
+    assert_eq!(f["hiddenSecrets"], json!([r.join(".env"), r.join(".env.local"), r.join("notes.txt")]));
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(out.contains("TEMPLATE"), "a template is readable: {out}");
+    assert!(!out.contains("DOTENV-SECRET") && !out.contains("LOCAL-SECRET"), "{out}");
+    h.close();
+}
+
 /// macOS denies a dotenv file at any depth; Linux masks only a root's top (docs/SANDBOX.md, the documented gap).
 #[cfg(target_os = "macos")]
 #[test]
