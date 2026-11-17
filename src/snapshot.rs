@@ -83,10 +83,12 @@ impl Scratch {
             ("GIT_CONFIG_VALUE_3".into(), "false".into()),
         ];
         // The person's index is opened without following a link and must be a regular file, before git reads it:
-        // a symlink to a FIFO would block the copy (and git), one to /dev/zero would fill the scratch.
+        // a symlink to a FIFO would block the copy (and git), one to /dev/zero would fill the scratch. A link is
+        // treated as no index at all: its target is never opened, and the tree comes from HEAD.
         let person = open_index(&index)?;
         let copied = match person {
-            Some(f) if !split_index(git, repo) => copy_index(f, &s.dir.join("index")).map_err(made)?,
+            Some(f) if !split_index(git, repo) => copy_index(f, &s.dir.join("index"))
+                .map_err(|e| format!("the repository's index could not be copied into the scratch: {e}"))?,
             _ => false,
         };
         if !copied {
@@ -138,13 +140,16 @@ fn split_index(git: &Git, repo: &RepoConfig) -> bool {
 }
 
 /// The person's index, opened for reading without following a link and without blocking on a FIFO: `None` when there
-/// is none (a `clone --no-checkout`), `Err` when it is a link or anything but a regular file.
+/// is none (a `clone --no-checkout`) or it is a link, which is never followed; `Err` when it is anything else but a
+/// regular file (a FIFO, a device, a directory).
 fn open_index(path: &Path) -> Result<Option<std::fs::File>, String> {
     use std::os::unix::fs::OpenOptionsExt;
     let flags = (rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32;
     let f = match std::fs::OpenOptions::new().read(true).custom_flags(flags).open(path) {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        // `O_NOFOLLOW` on a link fails with ELOOP, on macOS and Linux alike.
+        Err(e) if e.raw_os_error() == Some(rustix::io::Errno::LOOP.raw_os_error()) => return Ok(None),
         Err(e) => return Err(format!("the repository's index could not be opened without following a link: {e}")),
     };
     match f.metadata() {
@@ -366,14 +371,16 @@ mod tests {
     }
 
     #[test]
-    fn an_index_that_is_a_link_is_refused_without_being_followed() {
+    fn an_index_that_is_a_link_takes_heads_tree_without_reading_the_target() {
         if !have_git() {
             return;
         }
-        // A link to a regular file and a dangling one: refused by the no-follow open, before any copy or git read,
-        // so a link to a FIFO or to /dev/zero is refused the same way and cannot block or fill anything.
+        // A link to a real index holding a staged change, and a dangling one: each is treated as no index, the base
+        // is HEAD's tree (so the staged change in the target was not read), and nothing under .git changes.
         for target in ["real-index", "nowhere"] {
-            let (t, root, _marks) = repo();
+            let (t, root, marks) = repo();
+            std::fs::write(root.join("a.txt"), "staged\n").unwrap();
+            run(&root, &["add", "a.txt"]);
             let index = root.join(".git/index");
             if target == "real-index" {
                 std::fs::rename(&index, root.join(".git/real-index")).unwrap();
@@ -381,11 +388,38 @@ mod tests {
                 std::fs::remove_file(&index).unwrap();
             }
             std::os::unix::fs::symlink(root.join(".git").join(target), &index).unwrap();
+            clear(&marks);
+            let before = dot_git(&root);
+            let (g, r) = (git_on_path(), inspect(&root));
+            let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+            assert!(s.from_head, "{target}");
+            assert_eq!(s.tree(&g, &r).unwrap(), run(&root, &["rev-parse", "HEAD^{tree}"]), "{target}");
+            drop(s);
+            assert_eq!(dot_git(&root), before, "{target}");
+            assert_eq!(std::fs::read_dir(&marks).unwrap().count(), 0, "{target}");
+            assert!(std::fs::symlink_metadata(&index).unwrap().file_type().is_symlink(), "{target}: the link stays");
+        }
+    }
+
+    #[test]
+    fn an_index_that_is_a_fifo_or_a_directory_is_refused() {
+        if !have_git() {
+            return;
+        }
+        for shape in ["fifo", "dir"] {
+            let (t, root, _marks) = repo();
+            let index = root.join(".git/index");
+            std::fs::remove_file(&index).unwrap();
+            if shape == "fifo" {
+                assert!(Command::new("mkfifo").arg(&index).status().unwrap().success());
+            } else {
+                std::fs::create_dir(&index).unwrap();
+            }
             let (g, r) = (git_on_path(), inspect(&root));
             let base = scratch_base(&t);
             let e = Scratch::new(&g, &r, &base).err().unwrap();
-            assert!(e.contains("without following a link"), "{target}: {e}");
-            assert_eq!(std::fs::read_dir(&base).unwrap().count(), 0, "{target}: no scratch is left");
+            assert!(e.contains("not a regular file") || e.contains("could not be opened"), "{shape}: {e}");
+            assert_eq!(std::fs::read_dir(&base).unwrap().count(), 0, "{shape}: no scratch is left");
         }
     }
 
