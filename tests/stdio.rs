@@ -1087,6 +1087,35 @@ fn a_root_top_symlink_named_as_a_dotenv_file_is_held_with_its_target() {
     h.close();
 }
 
+/// A template that a root-top held-name link resolves to is the live env file: held for reading and for writing on both
+/// platforms, through the link and by its own name. A template nothing points at stays readable and writable.
+#[test]
+fn a_template_a_held_name_links_to_is_held_for_reading_and_writing() {
+    let (_d, r) = root();
+    std::fs::write(r.join(".env.example"), "LIVE-SECRET\n").unwrap();
+    std::fs::write(r.join(".env.sample"), "TEMPLATE\n").unwrap();
+    std::os::unix::fs::symlink(".env.example", r.join(".env")).unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let (f, d) = h.run(json!({ "argv": ["sh", "-c", "cat .env.example; cat .env; cat .env.sample"], "cwd": r }));
+    assert_eq!(f["hiddenSecrets"], json!([r.join(".env"), r.join(".env.example")]));
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(!out.contains("LIVE-SECRET"), "{out}");
+    assert!(out.contains("TEMPLATE"), "an unlinked template is readable: {out}");
+    for cmd in ["echo X >> .env.example", "echo X > .env.example", "echo X >> .env"] {
+        let (_f, d) = h.run(json!({ "argv": ["sh", "-c", cmd], "cwd": r }));
+        assert_ne!(d["code"], 0, "{cmd} succeeded: {d}");
+        assert_eq!(std::fs::read(r.join(".env.example")).unwrap(), b"LIVE-SECRET\n", "{cmd}");
+    }
+    let (_f, d) = h.run(json!({ "argv": ["sh", "-c", "echo NEW > .env.sample"], "cwd": r }));
+    assert_eq!(d["code"], 0, "an unlinked template is writable: {d}");
+    assert_eq!(std::fs::read(r.join(".env.sample")).unwrap(), b"NEW\n");
+    h.close();
+}
+
 /// The documented gap: a hardlink at a root's top whose other name is a DEEPER dotenv file is not held, since the host
 /// matches a top-level link only against the dotenv files it finds at a root's top. It reads the secret on both
 /// platforms. This row pins the gap; it fails when the gap closes, and then the docs change with it.

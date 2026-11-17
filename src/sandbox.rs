@@ -1113,6 +1113,13 @@ mod tests {
             !root_top_secrets(roots, &[r.join(".env")]).contains(&r.join("config.txt")),
             "naming the link opens its target"
         );
+        // A template a held-name link resolves to is the live env file, held with the link; one nothing points at is not.
+        let t = tempfile::tempdir().unwrap();
+        let tr = t.path().canonicalize().unwrap();
+        std::fs::write(tr.join(".env.example"), "LIVE").unwrap();
+        std::fs::write(tr.join(".env.sample"), "TEMPLATE").unwrap();
+        std::os::unix::fs::symlink(".env.example", tr.join(".env")).unwrap();
+        assert_eq!(root_top_secrets(std::slice::from_ref(&tr), &[]), vec![tr.join(".env"), tr.join(".env.example")]);
     }
 
     #[test]

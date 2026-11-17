@@ -232,9 +232,15 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
   (2026-11-17, the coordinator's rulings on host#46):
   - The templates `.env.example`, `.env.sample` and `.env.template` (exact names, case-insensitive) are neither denied
     nor masked: they are committed, and a model reads them usefully. A real secret written into one is not protected.
-    Every other `.env.*` stays denied. On macOS a call cannot create or overwrite a dotenv name either (the write deny
-    below), so the bootstrap `cp .env.example .env` is refused in a sandboxed call, and `host-plain` is the way through.
-    On Linux the copy makes a new name, which the next call holds; overwriting a held one fails on both.
+    Every other `.env.*` stays denied. A template is readable and writable unless a held name resolves to it: one that
+    shares an inode with a held-name file (below), or is the target of a root-top held-name symlink
+    (`ln -s .env.example .env`), is held, listed and write-denied like any other target. Skipping it would list `.env`
+    as held while a read through it lands on an unmasked file on Linux, and on macOS the same bytes would read through
+    `.env.example`. And a person who links `.env` to a template has made the template their live env file, so the
+    convention that a template holds no secret no longer holds for it. On macOS a call cannot create or overwrite a
+    dotenv name either (the write deny below), so the bootstrap `cp .env.example .env` is refused in a sandboxed call,
+    and `host-plain` is the way through. On Linux the copy makes a new name, which the next call holds; overwriting a
+    held one fails on both.
   - The deny is by NAME, and a hardlink is another name: `ln .env notes.txt` is the same inode. At each root's top the
     host checks inodes, so a regular file there that shares its inode with a dotenv-named file AT a root's top is
     denied, masked and listed in `hiddenSecrets` like the file itself, on both platforms (a template that is such a link
@@ -245,7 +251,8 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
   - A held file cannot be renamed, moved, removed or written by a sandboxed call, since a rename needs no read and
     `mv .env notes.txt` would hand the next call the value under a name nothing holds. On macOS the profile denies
     `file-write*` at any depth on every name the read side holds by name, `.env`, `.env.*`, `.netrc`,
-    `.git-credentials` and `.pgpass` (not the templates, which stay writable), and on each root-top hardlink to one.
+    `.git-credentials` and `.pgpass` (not the templates, which stay writable unless a held name resolves to one, as
+    above), and on each root-top hardlink to one.
     On Linux a root-top held file is a bind mount of `/dev/null`: a rename or unlink fails with EBUSY and a write with
     EROFS. A deeper dotenv file on Linux is readable anyway (the gap above). Naming a file re-allows its READ only,
     never a write. On macOS a sandboxed call can rename the directory that holds a deeper dotenv file, but not read the
@@ -267,6 +274,11 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
     the scan is masked: a held-name link made or retargeted then reads its target, and so does the target by its path.
   - Naming a secret path in `pathArgs` unmasks it for the WHOLE call, every process in it, not only the program that
     was given the argument: the approval of the call that names it is the control.
+- **A held-name link to a non-regular target is refused but listed nowhere.** A dangling `.env`, or one to a
+  directory, a device or a file under `/proc` or `/dev`, is refused by the macOS name rule, and `hiddenSecrets` does
+  not name it, so a loader's EPERM there is not explained by the list.
+- **One file can be listed under two spellings.** A target outside every root is listed in its canonical spelling
+  (`/private/var/...` on macOS), one inside a root in the root's own (`/var/...`).
 - **`sysctl-read` is allowed in full** on macOS (`sandbox-runtime` lists names). It discloses machine facts such as the
   hostname, not files.
 - **On macOS, a host started inside the host's sandbox reports `sandboxed: false`, `placement: "host-plain"`.** Its
