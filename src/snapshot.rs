@@ -24,7 +24,8 @@ use crate::gitfacts::Git;
 pub struct Scratch {
     dir: PathBuf,
     env: Vec<(String, String)>,
-    /// Whether the index came from HEAD because the person's was a split index (or could not be copied).
+    /// Whether the index came from HEAD because the person's was a split index, missing (a `clone --no-checkout`), or
+    /// could not be copied.
     pub from_head: bool,
 }
 
@@ -72,7 +73,7 @@ impl Scratch {
             ("GIT_CONFIG_KEY_2".into(), "core.hooksPath".into()),
             ("GIT_CONFIG_VALUE_2".into(), "/dev/null".into()),
         ];
-        if split_index(git_dir) || (index.exists() && std::fs::copy(&index, s.dir.join("index")).is_err()) {
+        if split_index(git_dir) || std::fs::copy(&index, s.dir.join("index")).is_err() {
             s.from_head = true;
             // No HEAD (a repository with no commit) leaves the index empty, which is what that repository has.
             let _ = s.git(git, repo, &["read-tree", "HEAD"]);
@@ -304,6 +305,25 @@ mod tests {
         let e = Scratch::new(&g, &r, &base).err().unwrap();
         assert!(e.contains("newline"), "{e}");
         assert_eq!(std::fs::read_dir(&base).unwrap().count(), 0, "no scratch directory is left in {}", base.display());
+    }
+
+    #[test]
+    fn a_commit_with_no_index_takes_heads_tree_not_the_empty_one() {
+        if !have_git() {
+            return;
+        }
+        // `git clone --no-checkout` leaves a commit and no `.git/index`: the base is HEAD's tree, and from_head says so.
+        let (t, root, marks) = repo();
+        std::fs::remove_file(root.join(".git/index")).unwrap();
+        clear(&marks);
+        let before = dot_git(&root);
+        let (g, r) = (git_on_path(), inspect(&root));
+        let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+        assert!(s.from_head);
+        assert_eq!(s.tree(&g, &r).unwrap(), run(&root, &["rev-parse", "HEAD^{tree}"]));
+        drop(s);
+        assert_eq!(dot_git(&root), before);
+        assert_eq!(std::fs::read_dir(&marks).unwrap().count(), 0);
     }
 
     // --- the split index falls back to HEAD ---
