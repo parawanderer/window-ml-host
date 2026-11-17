@@ -1,5 +1,5 @@
 //! redteam_snapshot_h10.rs — taking a snapshot, from the HOST's side (window-ml FILE_ATTACHMENTS.md H10, as built at
-//! a1b4a73). The property: taking a snapshot writes nothing into the person's repository and runs none of the
+//! a6e4971f). The property: taking a snapshot writes nothing into the person's repository and runs none of the
 //! repository's own code.
 //!
 //! The lane's own rows (src/snapshot.rs tests) walk the happy path and the split index. These state what a repository
@@ -26,9 +26,13 @@
 //!      repository's store in its own `objects/info/alternates` at this head), and the alternate store is byte-identical
 //!      afterwards.
 //!   I. an index mid-merge (conflict stages) makes the call SAY it cannot build a tree, and writes nothing trying.
+//!   J. the index's SHAPE and SIZE, which the copy must decide from the file itself: a FIFO does not block the host, a
+//!      socket, a directory, a link to `/dev/zero` and a link to a real index are all refused (the last named as a link,
+//!      never followed), an index too large to copy is not copied and leaves nothing large in the host's directory, and
+//!      the person's own index keeps its bytes, mtime and inode.
 //!
-//! MUTATION PER ROW, MEASURED AT a1b4a73 (notes, not committed changes — one applied alone, this file run, the
-//! source reverted with `git checkout -- src/`; it was clean 9/1 before and after):
+//! MUTATION PER ROW, MEASURED AT a6e4971f (notes, not committed changes — one applied alone, this file run, the
+//! source reverted with `git checkout -- src/`; it was 10/10 green before and after):
 //!   A  src/snapshot.rs `Scratch::new`: the `GIT_CONFIG_COUNT`/`KEY_2`/`VALUE_2` trio (`core.hooksPath=/dev/null`)
 //!      removed → A red: `rev-parse --git-path hooks` answers the directory the repository names. Measured separately
 //!      in a shell at the same env, because the mark alone cannot show it: with the trio gone, `git write-tree` really
@@ -44,14 +48,28 @@
 //!      back is the repository's command.
 //!   D  src/snapshot.rs `Scratch::new`: the `GIT_WORK_TREE` pair removed → D red: `rev-parse --show-toplevel` answers
 //!      the repository, the belt's `GIT_WORK_TREE` taking over again.
-//!   F  src/snapshot.rs `split_index`: `unwrap_or(true)` → `unwrap_or(true) && false` → F1 GREEN: the index is copied
-//!      and the staged file is in the tree, so the directory listing is exactly what loses it.
+//!   F  src/snapshot.rs `split_index`: the git query replaced by the old directory listing (any `sharedindex.*` means
+//!      split) → F red: the leftover shared half sends the tree to HEAD and the staged `late.txt` is gone. With
+//!      `rev-parse --shared-index-path` in place the row is green.
+//!   J1 src/snapshot.rs `open_index`: `OFlags::NONBLOCK` dropped → J1 red, by timeout: opening a FIFO for reading
+//!      without it waits for a writer, and no writer comes.
+//!   J2 src/snapshot.rs `open_index`: `OFlags::NOFOLLOW` dropped → J2 red on the link-to-a-regular-index case: the
+//!      link is followed, the file behind it is accepted, and the reason no longer says a link was refused.
+//!   J3 src/snapshot.rs `INDEX_MAX` → 64 (a cap below a real index) → J4 red at "the copy is the person's index": the
+//!      bound's comparison is load-bearing, and a real index has to be under it. The bound's VALUE cannot be measured
+//!      from above (see CANNOT ROW): a 256 MiB index cannot be made VALID, and an invalid one is refused by the split
+//!      query before the cap is consulted, so raising `INDEX_MAX` moves nothing.
+//!   J4 pins a one-way copy (read, never written back); no one-line change to src/ reds it, which is the point.
 //!
 //! WHAT THIS FILE CANNOT ROW (named so the next reader does not look for it):
-//!   - The index COPY has no bound and no timeout: a `.git/index` that is a symlink to a FIFO blocks the host inside
-//!     `std::fs::copy` (which follows the link and opens it), and one to `/dev/zero` fills the host's directory. No
-//!     row can assert that without hanging this test binary; it is named here instead of pinned. `.git/index` that is a
-//!     DIRECTORY is covered by the lane's copy-error fallback, not here.
+//!   - `INDEX_MAX`'s VALUE: 256 MiB of VALID index entries cannot be built in a test's time, and a sparse file that
+//!     size is not a valid index (git refuses it at the split query, before the cap). J3 rows the consequence for an
+//!     index that cannot be used — nothing large reaches the host's directory, the tree comes from HEAD — and the cap's
+//!     comparison is measured by mutation from below. The scratch's own path is private, so J3 walks the `base` it
+//!     was handed.
+//!   - The copy's mtime (`copy_index`'s `set_modified`) is set so the racily-clean set matches the person's, but the
+//!     scratch's index path is private and the scratch's work tree is EMPTY, so git cannot re-read a file that is not
+//!     there and the decision cannot change the tree. No outcome row can see it; it stays a mechanism, not a pin.
 //!   - `Scratch::new` takes `base` from its caller (H11), so "the scratch is never created inside the repository"
 //!     cannot be a row of the module: it is the caller's argument. The module's own tests pass a temp dir.
 //!   - A git whose `core.hooksPath = /dev/null` resolves (A asserts exactly that answer) and yet runs a hook anyway
@@ -566,5 +584,174 @@ fn an_index_with_conflict_stages_makes_the_call_say_it_cannot_build_a_tree() {
     assert!(tree.is_err(), "a tree it cannot build is reported, never a tree of the wrong thing: {tree:?}");
     drop(s);
     assert_eq!(dot_git(&root), before);
+    assert_no_marks(&marks);
+}
+
+// --- J: the index's shape and size ---
+
+/// What is under `base`, with the size of every regular file: the walk J3 needs, since the scratch's own path is
+/// private to the module.
+fn base_files(base: &Path) -> Vec<(PathBuf, u64)> {
+    let mut out = vec![];
+    let mut stack = vec![base.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            match e.file_type() {
+                Ok(t) if t.is_dir() => stack.push(p),
+                Ok(t) if t.is_file() => out.push((p.clone(), e.metadata().map(|m| m.len()).unwrap_or(0))),
+                _ => {}
+            }
+        }
+    }
+    out
+}
+
+/// `Scratch::new` with a bound on wall time, so a row can fail instead of hanging the suite: `None` means it had not
+/// answered after `secs`, which is the FIFO's failure mode.
+fn scratch_within(g: Git, r: RepoConfig, base: PathBuf, secs: u64) -> Option<Result<Scratch, String>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(Scratch::new(&g, &r, &base));
+    });
+    rx.recv_timeout(std::time::Duration::from_secs(secs)).ok()
+}
+
+/// A refused index leaves no scratch behind and runs nothing: the tail of every J row that expects a refusal.
+fn refused_cleanly(t: &tempfile::TempDir, marks: &Path, e: &str) {
+    assert_eq!(base_files(&scratch_base(t)), vec![], "a refusal leaves no scratch behind: {e}");
+    assert_no_marks(marks);
+}
+
+#[test]
+fn an_index_that_is_a_fifo_is_refused_instead_of_blocking_the_host() {
+    if !have_git() {
+        return;
+    }
+    let (t, root, marks) = repo();
+    let index = root.join(".git/index");
+    std::fs::remove_file(&index).unwrap();
+    assert!(Command::new("mkfifo").arg(&index).status().unwrap().success(), "premise: a FIFO at .git/index");
+    let (g, r) = (git_on_path(), inspect(&root));
+    let got = scratch_within(g, r, scratch_base(&t), 10);
+    let Some(got) = got else { panic!("the host blocked on a FIFO index and never answered") };
+    let e = got.err().expect("a FIFO index is refused, not copied");
+    assert!(e.contains("not a regular file"), "the refusal names the shape: {e}");
+    assert!(index.exists(), "the FIFO is still the person's .git/index");
+    refused_cleanly(&t, &marks, &e);
+}
+
+#[test]
+fn the_shapes_the_index_copy_refuses_and_what_it_calls_them() {
+    if !have_git() {
+        return;
+    }
+    // Every shape a `.git/index` can be that is not a readable regular file, and the reason each is refused. A link to
+    // a REAL index is the one that would be copied if the open followed it. A socket is refused by the OPEN (macOS
+    // answers "Operation not supported on socket"), so its reason is the open's wording rather than the shape's — either
+    // is a refusal, and both are reported to the person.
+    for (shape, want) in [
+        ("link-to-index", &["without following a link"][..]),
+        ("link-to-dev-zero", &["without following a link"][..]),
+        ("dangling", &["without following a link"][..]),
+        ("socket", &["not a regular file", "could not be opened"][..]),
+        ("directory", &["not a regular file"][..]),
+    ] {
+        let (t, root, marks) = repo();
+        let index = root.join(".git/index");
+        let real = root.join(".git/real-index");
+        std::fs::rename(&index, &real).unwrap();
+        let target = match shape {
+            "link-to-index" => {
+                symlink(&real, &index).unwrap();
+                Some(real.clone())
+            }
+            "link-to-dev-zero" => {
+                symlink("/dev/zero", &index).unwrap();
+                None
+            }
+            "dangling" => {
+                symlink(root.join(".git/nowhere"), &index).unwrap();
+                None
+            }
+            "socket" => {
+                let _l = std::os::unix::net::UnixListener::bind(&index).unwrap();
+                None
+            }
+            "directory" => {
+                std::fs::create_dir(&index).unwrap();
+                None
+            }
+            _ => unreachable!(),
+        };
+        let real_before = target.as_ref().map(|p| (std::fs::read(p).unwrap(), std::fs::metadata(p).unwrap().len()));
+        let (g, r) = (git_on_path(), inspect(&root));
+        let e = Scratch::new(&g, &r, &scratch_base(&t)).err().unwrap_or_else(|| panic!("{shape}: refused"));
+        assert!(
+            want.iter().any(|w| e.contains(w)),
+            "{shape}: the refusal names the shape, want one of {want:?} in {e}"
+        );
+        if let (Some(p), Some(before)) = (&target, real_before) {
+            assert_eq!(std::fs::read(p).unwrap(), before.0, "{shape}: the file the link names is untouched");
+        }
+        refused_cleanly(&t, &marks, &e);
+    }
+}
+
+#[test]
+fn an_index_too_large_to_copy_is_not_copied_and_leaves_nothing_large_behind() {
+    if !have_git() {
+        return;
+    }
+    let (t, root, marks) = repo();
+    let index = root.join(".git/index");
+    // Sparse, so this costs no disk: a file over the module's 256 MiB cap. Its content is not a valid index, which is
+    // the other way a copy of it would be useless — the row is the SIZE: not one byte of it reaches the host's dir.
+    let f = std::fs::OpenOptions::new().write(true).truncate(true).open(&index).unwrap();
+    f.set_len((256 << 20) + 4096).unwrap();
+    drop(f);
+    clear(&marks);
+    let len_before = std::fs::metadata(&index).unwrap().len();
+    let (g, r) = (git_on_path(), inspect(&root));
+    let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+    let large: Vec<_> = base_files(&scratch_base(&t)).into_iter().filter(|(_, n)| *n > 8 << 20).collect();
+    assert!(large.is_empty(), "the host's directory holds a copy of the person's index: {large:?}");
+    assert!(s.from_head, "a base it could not copy comes from HEAD, and says so");
+    // HEAD's tree is readable, so the snapshot ends honestly rather than failing over a pathological index.
+    assert_eq!(s.tree(&g, &r).unwrap(), head_tree(&root));
+    drop(s);
+    assert_eq!(std::fs::metadata(&index).unwrap().len(), len_before, "the person's index is not written");
+    assert_eq!(base_files(&scratch_base(&t)), vec![], "the scratch goes when the Scratch drops");
+    assert_no_marks(&marks);
+}
+
+#[test]
+fn the_persons_index_keeps_its_bytes_mtime_and_inode() {
+    if !have_git() {
+        return;
+    }
+    let (t, root, marks) = repo();
+    std::fs::write(root.join("late.txt"), "late\n").unwrap();
+    run(&root, &["add", "late.txt"]);
+    let index = root.join(".git/index");
+    // An OLD mtime: if the copy wrote anything back, or the open left it rewritten, the timestamp would move.
+    let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000);
+    std::fs::File::options().write(true).open(&index).unwrap().set_modified(old).unwrap();
+    use std::os::unix::fs::MetadataExt;
+    let before = std::fs::metadata(&index).unwrap();
+    clear(&marks);
+    let git_before = dot_git(&root);
+    let (g, r) = (git_on_path(), inspect(&root));
+    let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+    assert!(entries(&s, &g, &r, &s.tree(&g, &r).unwrap()).contains("late.txt"), "the copy is the person's index");
+    drop(s);
+    let after = std::fs::metadata(&index).unwrap();
+    assert_eq!(
+        (after.ino(), after.len(), after.modified().unwrap()),
+        (before.ino(), before.len(), old),
+        "the same file, the same bytes, the same mtime"
+    );
+    assert_eq!(dot_git(&root), git_before, "and nothing else under .git moved either");
     assert_no_marks(&marks);
 }
