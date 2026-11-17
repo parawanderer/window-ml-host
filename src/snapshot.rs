@@ -188,7 +188,9 @@ mod tests {
 
     fn run(dir: &Path, args: &[&str]) -> String {
         let out = Command::new("git")
+            // No detached auto-maintenance: it would write `objects/maintenance.lock` into .git while a row compares it.
             .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
+            .args(["-c", "maintenance.auto=false", "-c", "gc.auto=0"])
             .args(args)
             .current_dir(dir)
             .env("GIT_CONFIG_NOSYSTEM", "1")
