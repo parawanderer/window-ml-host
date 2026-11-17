@@ -1,6 +1,7 @@
 //! redteam_sandbox_env.rs — `.env` and `.env.*` under the host's sandbox (window-ml's SECRET_HANDLES incident of
-//! 2026-10-21; host#46, as built at 7c5a0e9b). The property: a call that does NOT name a dotenv file cannot read it, and
-//! the facts say which files it cannot read.
+//! 2026-10-21; host#46, as built at 7c5a0e9b, plus the write deny of 621d2a9). The property: a call that does NOT name a
+//! dotenv file cannot read it, and the facts say which files it cannot read — and a name the sandbox holds cannot be
+//! MOVED out from under that rule either, because the next call's read is judged by the new name.
 //!
 //! The lane's own rows (tests/stdio.rs and the unit tests in src/sandbox.rs) walk `.env`, `.env.local`, a nested one, the
 //! templates and a root-top hardlink on the facts. These are the shapes those do not, and mostly as a REAL read:
@@ -34,13 +35,23 @@
 //!      that is the same gap as D's deep link).
 //!   H. what the call's facts FLAG as secret (the public `looks_secret`, which the approval sheet shows): the templates
 //!      are not, every other `.env.*` is, and a credential directory wins over a template's name.
+//!   J. the MOVE across calls (the write deny, 621d2a9): a held name cannot become a name nothing holds — by rename, by
+//!      copy, by link, or by a write onto the held name from an allowed one — while an ordinary file and a template
+//!      still rename under the same write scope, which is the control that makes a refusal mean the dotenv rule. On
+//!      macOS this is a real `mv`/`cp`/`ln`/`git add` under the profile; the attempt is then followed by the NEXT call's
+//!      own scan, which must read nothing at the names the attempts would have made. Naming `.env` reopens its read and
+//!      still not its rename or its removal. The write deny covers every name the read side holds (`.env`, `.env.*` and
+//!      the credential files, whose rename launders them the same way), not the templates, and not `.envrc` or `x.env`.
+//!      Renaming the PARENT of a deep `.env` is allowed and moves nothing: the next call still refuses `app2/.env`.
 //!
 //! THE ONE THAT MATTERS MOST: D. A hardlink is the inode under another name, and no name rule sees it; the build now
 //! judges each root's TOP by (dev, ino), so the shape is closed there and stays open below it, by name and by inode alike.
-//! D2 is the row that says the residue is small: no one inside the sandbox can build the name.
+//! D2 is the row that says the residue is small: no one inside the sandbox can build the name. J is the second one: with
+//! no write rule, a rename in one call hands the value to the next call under a name nothing holds, and the read deny is
+//! never consulted.
 //!
-//! MUTATION PER ROW, MEASURED AT 7c5a0e9b (notes, not committed changes — one applied alone, this file run, the source
-//! reverted with `git checkout -- src/`):
+//! MUTATION PER ROW, MEASURED AT 7c5a0e9b (section J at 7b59af9; notes, not committed changes — one applied alone, this
+//! file run, the source reverted with `git checkout -- src/`):
 //!   A   src/sandbox.rs: `&& !DOTENV_TEMPLATES.contains(&name)` dropped from `is_dotenv_name` → A red:
 //!      `.env.example was denied, and a template stays readable`.
 //!   A   `const DOTENV_TEMPLATES: &[&str] = &[];` → A red at the same line.
@@ -51,6 +62,15 @@
 //!   F  `.filter(|l| same(l))` → `.filter(|_| true)` → F red at "an ordinary hardlink is not claimed".
 //!   D2 holds under all of the above: it asserts a refusal, so removing the deny makes it fail at its premise (the key is
 //!      readable) rather than at the link.
+//!   J-a the `p.push(format!("(deny file-write* {}", held_write.join(" ")))` line removed (the whole write deny) → J red
+//!      at `mv .env.local moved-local.txt succeeded`: the laundering rename works and nothing else looks at the new name.
+//!      J2 red at `naming .env let the call mv .env moved.txt`; the text row red at "the dotenv write deny". Measured at
+//!      7b59af9: `mv .env` is refused even without the line (its inode also bears two read-denied hardlink literals), so
+//!      the row leads with a plain dotenv name; the DEST direction (`mv notes-new.txt .env`) also reds there, and is a
+//!      later shape on purpose.
+//!   J-b `held_write`'s `(require-all (require-any names) (require-not (require-any templates)))` reduced to
+//!      `(require-any names)` → J red at "the control failed: … mv: rename .env.template to tmpl-renamed.txt: Operation
+//!      not permitted", the text row at its template assertion: the exclusion is what keeps a template writable.
 //!
 //! WHAT THIS FILE CANNOT ROW (named so the next reader does not look for it):
 //!   - The case variant on a case-insensitive volume: `.ENV` and `.env` are one inode there, so a real read cannot tell
@@ -68,13 +88,20 @@
 //!     (the mask list) and F (the facts say nothing about it), and documented in docs/SANDBOX.md.
 //!   - Naming a file as `secret` unmasks it for the WHOLE call, whatever the program then does with it: `pathArgs` is
 //!     the consent surface, and the sheet shows what was named. Not a gap in the sandbox, a property of the approval.
+//!   - The LINUX half of J as a real command: there is no Linux host in this session, so a rename or unlink inside the
+//!     namespace cannot be run here. E asserts the mask list the rename would hit (each root's top names and each
+//!     root-top hardlink, by bind mount), and the lane's tests/stdio.rs row asserts the refusal on Linux CI.
+//!   - A rename made OUTSIDE the sandbox between the scan and the spawn: no rule can see it, which is the same window G
+//!     pins from the read side and docs/SANDBOX.md documents. J closes the move the CALL can make, not the person's own.
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::process::Command;
 
 use window_ml_host::facts::looks_secret;
-use window_ml_host::sandbox::{ExecScope, Plan, WriteScope, bwrap_args, root_top_secrets, seatbelt_profile};
+use window_ml_host::sandbox::{
+    DOTENV_TEMPLATES, ExecScope, Plan, WriteScope, bwrap_args, root_top_secrets, seatbelt_profile,
+};
 
 // The profile's own spelling helpers, as `src/sandbox.rs` builds them (private there, mirrored here so the text
 // assertions name exactly what the build writes): a case class per letter, a quoted literal, an SBPL `(regex …)`.
@@ -561,5 +588,242 @@ fn a_template_is_not_flagged_secret_but_everything_a_secret_directory_holds_is()
     }
     for p in ["/r/.env", "/r/.env.local", "/r/.env.examples", "/r/.env.example.local", "/home/u/.ssh/.env.example"] {
         assert!(looks_secret(Path::new(p)), "{p} is not a template");
+    }
+}
+
+// --- J: the move across calls (host#46's write deny, 621d2a9) ---
+
+/// `sandbox-exec` with `profile`, running `script` in `cwd`: whether it exited 0, and what it said. macOS only; the
+/// Linux side of the same property is the bind mask (E), which makes a rename of a masked name EBUSY rather than a
+/// denial, and is asserted there as a list because this session has no Linux host.
+#[cfg(target_os = "macos")]
+fn run_under(profile: &str, cwd: &Path, script: &str) -> (bool, String) {
+    let out = Command::new("/usr/bin/sandbox-exec")
+        .args(["-p", profile, "/bin/sh", "-c", script])
+        .current_dir(cwd)
+        .output()
+        .unwrap();
+    (out.status.success(), format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)))
+}
+
+/// The profile the NEXT call would build, from the tree the first call left: the scan is per call, so a name the first
+/// call created is judged by the next call's rules and not by the profile it ran under.
+#[cfg(target_os = "macos")]
+fn next_call(t: &Tree) -> String {
+    seatbelt_profile(&plan(vec![t.root.clone()]))
+}
+
+#[cfg(target_os = "macos")]
+fn have_git() -> bool {
+    Command::new("git").arg("--version").output().map(|o| o.status.success()).unwrap_or(false)
+}
+
+/// A rename needs no read: `mv .env.local moved-local.txt` in one call would leave the value under a name nothing holds,
+/// and the next call — a fresh scan of the tree this one left — would read it. The write deny (621d2a9) is the fix; this
+/// row asserts the CONTROL that makes it load-bearing (an ordinary file and a template both rename fine under the same
+/// write scope, so a refusal below is the dotenv rule and not "the profile cannot rename"), the shapes, and then what
+/// the next call can actually read at the names the attempts would have made. The source-direction shapes use a plain
+/// dotenv name on purpose: measured at 7b59af9 with the deny line removed, `mv .env` is STILL refused while
+/// `mv .env.local` succeeds, because `.env` in this fixture is the inode of two read-denied hardlink literals and the
+/// refusal comes from those, not from the write rule — so a row that led with `mv .env` would red for the wrong reason.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_held_dotenv_cannot_be_moved_or_copied_and_the_next_call_reads_nothing_at_the_new_name() {
+    let t = Tree::new();
+    let profile = next_call(&t);
+    for (label, cmd, from, to) in [
+        ("an ordinary file", "mv notes.txt notes-new.txt", "notes.txt", "notes-new.txt"),
+        ("a template", "mv .env.template tmpl-renamed.txt", ".env.template", "tmpl-renamed.txt"),
+    ] {
+        let (ok, out) = run_under(&profile, &t.root, cmd);
+        assert!(ok, "the control failed: {label} must still rename under this write scope: {out}");
+        assert!(t.at(to).exists() && !t.at(from).exists(), "the control's premise: {cmd}");
+    }
+    for cmd in [
+        // The threat first: a held name moved to a name nothing holds, at the top and at depth.
+        "mv .env.local moved-local.txt",
+        "mv .env.example.local ex-local.txt",
+        "mv app/.env app/env-renamed.txt",
+        "mv .env moved.txt",
+        // Then the same value reached another way: a copy, a link, and a name that resolves to `.env`.
+        "cp .env copied.txt",
+        "ln .env linked.txt",
+        "ln -s .env sym.txt",
+        // Then the WRITE onto a held name from a name that is allowed, and the laundering into a readable template.
+        "mv notes-new.txt .env",
+        "mv .env .env.local",
+        "cp .env .env.example",
+    ] {
+        let (ok, out) = run_under(&profile, &t.root, cmd);
+        // A symlink names `.env` without opening it, so `ln -s` may succeed; what must not is the read of the name it
+        // made, asserted with the next call's profile below.
+        assert!(!ok || cmd.starts_with("ln -s"), "{cmd} succeeded: {out}");
+        assert_eq!(std::fs::read(t.at(".env")).unwrap(), b"DOTENV\n", "{cmd}: the held file is untouched");
+        assert_eq!(std::fs::read(t.at(".env.local")).unwrap(), b"LOCAL\n", "{cmd}: the sibling is untouched");
+        assert_eq!(std::fs::read(t.at(".env.example")).unwrap(), b"EXAMPLE\n", "{cmd}: the template is untouched");
+        assert!(!t.at("moved.txt").exists(), "{cmd}");
+        assert!(!t.at("copied.txt").exists(), "{cmd}");
+        assert!(!t.at("linked.txt").exists(), "{cmd}");
+        assert!(!t.at("env-renamed.txt").exists(), "{cmd}");
+        assert!(!t.at("moved-local.txt").exists(), "{cmd}");
+        assert!(!t.at("ex-local.txt").exists(), "{cmd}");
+    }
+    // The next call: a fresh scan of the tree this one left. No name an attempt could have made holds a readable value,
+    // `.env` is still refused, and a symlink the call managed to make resolves to `.env` and is refused by the rule's
+    // PATH, not by the link's name.
+    let after = next_call(&t);
+    for rel in ["moved.txt", "copied.txt", "linked.txt", "moved-local.txt", "ex-local.txt", "app/env-renamed.txt"] {
+        let (ok, out) = t.read_under(&after, &t.at(rel));
+        assert!(!ok, "{rel} exists and the next call reads it: {out}");
+    }
+    if t.at("sym.txt").exists() {
+        let (ok, out) = t.read_under(&after, &t.at("sym.txt"));
+        assert!(!ok, "a symlink to .env made by the call is readable by the next one: {out}");
+    }
+    let (ok, out) = t.read_under(&after, &t.at(".env"));
+    assert!(!ok, ".env was readable by the next call: {out}");
+    // Renaming the PARENT of a deep `.env` moves the whole name, not a file: the deny is a resolved PATH, so the next
+    // call refuses `app2/.env` too. The DEEP hardlink stays readable, which is D's gap and not this row's business, and
+    // is asserted so that the parent's rename is not credited with closing it.
+    let (ok, out) = run_under(&profile, &t.root, "mv app app2");
+    assert!(ok, "the premise: a directory's own name is not a dotenv name: {out}");
+    let moved = next_call(&t);
+    for rel in ["app2/.env", "app2/.env.production", "app2/.env.example.local"] {
+        let (ok, out) = t.read_under(&moved, &t.at(rel));
+        assert!(!ok, "renaming the parent of {rel} made it readable: {out}");
+    }
+    let (ok, out) = t.read_under(&moved, &t.at("app2/.env.example"));
+    assert!(ok, "a template stays readable after its directory is renamed: {out}");
+    let (ok, out) = t.read_under(&moved, &t.at(DEEP_LINK.replace("app/", "app2/").as_str()));
+    assert!(
+        ok,
+        "the deep hardlink is D's pinned gap, and moving its parent must not be credited with closing it: {out}"
+    );
+}
+
+/// Naming a file reopens its READ and nothing else: the approval is of the bytes, not of the name's freedom. So a call
+/// that named `.env` can `cat` it and still cannot RENAME, REMOVE or overwrite it — the move that would leave the value
+/// under a name nothing holds. A COPY or a hardlink the call makes of it is NOT asserted as a refusal: an approved read
+/// is the bytes already in the call's hands, and a model can put those bytes into a file by other means, so refusing the
+/// copy would buy nothing the approval had not given away. What must hold is that the held NAME cannot be moved.
+#[cfg(target_os = "macos")]
+#[test]
+fn naming_a_dotenv_file_reopens_its_read_and_not_its_rename() {
+    let t = Tree::new();
+    let mut p = plan(vec![t.root.clone()]);
+    p.allow_read.push(t.at(".env"));
+    let profile = seatbelt_profile(&p);
+    let (ok, out) = t.read_under(&profile, &t.at(".env"));
+    assert!(ok, "premise: a named dotenv file is readable: {out}");
+    for cmd in ["mv .env moved.txt", "rm .env", "mv .env .env.local", "mv notes.txt .env"] {
+        let (ok, out) = run_under(&profile, &t.root, cmd);
+        assert!(!ok, "naming .env let the call {cmd}: {out}");
+        assert_eq!(std::fs::read(t.at(".env")).unwrap(), b"DOTENV\n", "{cmd}");
+        assert!(!t.at("moved.txt").exists(), "{cmd}");
+    }
+    // The next call carries no approval: the name is held again, and no name the attempts would have made is readable.
+    let after = next_call(&t);
+    for rel in [".env", "moved.txt"] {
+        let (ok, out) = t.read_under(&after, &t.at(rel));
+        assert!(!ok, "{rel} is readable by the next call: {out}");
+    }
+}
+
+/// `git add` reads the file, so a held dotenv file cannot enter the index, and nothing in `.git/objects` holds its
+/// bytes afterwards: the next call cannot `git show` what was never added. A template does add, so the refusal is the
+/// file and not a broken repository.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_held_dotenv_cannot_be_git_added_and_no_blob_holds_it() {
+    let t = Tree::new();
+    if !have_git() {
+        return;
+    }
+    let git = |args: &[&str]| {
+        Command::new("git")
+            .current_dir(&t.root)
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .env("GIT_AUTHOR_NAME", "e3")
+            .env("GIT_AUTHOR_EMAIL", "e3@example.invalid")
+            .env("GIT_COMMITTER_NAME", "e3")
+            .env("GIT_COMMITTER_EMAIL", "e3@example.invalid")
+            .output()
+            .unwrap()
+    };
+    assert!(git(&["init", "-q", "-b", "main"]).status.success(), "premise: a repository");
+    assert!(git(&["add", ".env.template", "notes.txt"]).status.success(), "premise: an ordinary add");
+    let committed = git(&["commit", "-qm", "base"]).status.success();
+    assert!(committed, "premise: a commit");
+    let profile = next_call(&t);
+    for cmd in ["git add .env", "git add .env.local", "git hash-object .env", "git add app/.env"] {
+        let (ok, out) = run_under(&profile, &t.root, cmd);
+        assert!(!ok, "{cmd} succeeded on a held file: {out}");
+    }
+    // `add -A` may fail or may walk past the file; what matters is that no blob holds the value either way.
+    let _ = run_under(&profile, &t.root, "git add -A");
+    let mut leaked = vec![];
+    let mut stack = vec![t.at(".git/objects")];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if std::fs::read(&p).map(|b| b.windows(6).any(|w| w == b"DOTENV")).unwrap_or(false) {
+                leaked.push(p);
+            }
+        }
+    }
+    assert!(leaked.is_empty(), "the object store holds the value: {leaked:?}");
+    assert_eq!(std::fs::read(t.at(".env")).unwrap(), b"DOTENV\n");
+    // The next call cannot show what was never added, and the repository still works for a template.
+    let after = next_call(&t);
+    let (ok, out) = run_under(&after, &t.root, "git show :.env");
+    assert!(!ok && !out.contains("DOTENV"), "the next call showed a held file from the index: {out}");
+    let (ok, out) = run_under(&after, &t.root, "git show :.env.template");
+    assert!(ok, "a template's blob is not there or the repository is broken: {out}");
+}
+
+// --- J2: the write deny, as the text the profile really carries ---
+
+/// macOS's half of the move is one line, and its properties are what make it safe rather than merely present: it comes
+/// AFTER the write allow (an earlier deny would be overridden), it holds every non-template name the sandbox refuses to
+/// READ anywhere — `.env`, every `.env.*`, and the credential files `.netrc`, `.git-credentials` and `.pgpass`, which
+/// launder through a rename exactly as `.env` does — it excludes the templates by `require-not` (or a template would stop
+/// being writable), it holds each root-top hardlink by literal (no name rule sees the inode), and it adds no name the
+/// read side leaves alone (`.envrc`, `x.env`). Linux's half is the bind mask asserted in E; its rename refusal and a
+/// template's writability are the lane's rows in tests/stdio.rs.
+#[test]
+fn the_write_deny_holds_every_name_the_read_side_holds_and_not_the_templates() {
+    let t = Tree::new();
+    let p = seatbelt_profile(&plan(vec![t.root.clone()]));
+    let line = p
+        .lines()
+        .find(|l| l.starts_with("(deny file-write*") && l.contains("require-all"))
+        .expect("the dotenv write deny");
+    let allow = p.find("(allow file-write* ").expect("the write allow");
+    assert!(allow < p.find(line).unwrap(), "a write deny before the allow would be overridden by it: {line}");
+    for n in [".env", ".netrc", ".git-credentials", ".pgpass"] {
+        assert!(
+            line.contains(&re(&format!("/{}$", ci(n)))),
+            "{n} is a name the read side holds, so a rename must not launder it: {line}"
+        );
+    }
+    assert!(line.contains(&re(&format!("/{}[^/]*$", ci(".env.")))), "the prefixed names, within one component: {line}");
+    assert!(line.contains("(require-not (require-any "), "the templates are excluded, not the whole line: {line}");
+    for f in DOTENV_TEMPLATES {
+        assert!(line.contains(&re(&format!("/{}$", ci(f)))), "the template {f} is writable: {line}");
+    }
+    assert!(
+        line.contains(&format!("(literal {})", lit(&t.at(ROOT_TOP_LINK)))),
+        "the root-top hardlink is held by path: {line}"
+    );
+    for n in [".envrc", "x.env", "notes.txt"] {
+        assert!(
+            !line.contains(&re(&format!("/{}$", ci(n)))),
+            "{n} is not held for reading, so it is not held for writing: {line}"
+        );
     }
 }
