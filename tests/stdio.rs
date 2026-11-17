@@ -902,6 +902,259 @@ fn the_sandbox_hides_credential_stores_unless_the_call_names_one() {
 }
 
 #[test]
+fn a_dotenv_file_is_unreadable_unless_named_and_the_facts_say_so() {
+    let (_d, r) = root();
+    std::fs::write(r.join(".env"), "DOTENV-SECRET\n").unwrap();
+    std::fs::write(r.join(".env.local"), "LOCAL-SECRET\n").unwrap();
+    std::fs::write(r.join(".envrc"), "not-hidden\n").unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    // Read by a program that does not name it, as a dotenv loader does: denied, and the facts list both files.
+    let (f, d) = h.run(json!({ "argv": ["sh", "-c", "cat .env; cat .env.local; cat .envrc"], "cwd": r }));
+    assert_eq!(f["hiddenSecrets"], json!([r.join(".env"), r.join(".env.local")]));
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(!out.contains("DOTENV-SECRET") && !out.contains("LOCAL-SECRET"), "{out}");
+    assert!(out.contains("not-hidden"), ".envrc is not a dotenv file: {out}");
+    // Named as a path argument, flagged secret in the facts the person approved: readable, and no longer listed.
+    let (f, d) = h.run(json!({ "argv": ["cat", ".env"], "cwd": r, "pathArgs": [{ "arg": 1 }] }));
+    assert_eq!(f["paths"][0]["secret"], true);
+    assert_eq!(f["hiddenSecrets"], json!([r.join(".env.local")]));
+    assert_eq!(text(&h.read_all(&d["stdout"])), "DOTENV-SECRET\n");
+    h.close();
+}
+
+/// A dotenv template (`.env.example`, `.env.sample`, `.env.template`) is readable and not listed; a hardlink at a
+/// root's top to a hidden dotenv file is the same inode under another name, and is held and listed like the file.
+#[test]
+fn a_dotenv_template_is_readable_and_a_root_top_hardlink_to_a_dotenv_file_is_not() {
+    let (_d, r) = root();
+    std::fs::write(r.join(".env"), "DOTENV-SECRET\n").unwrap();
+    std::fs::write(r.join(".env.example"), "TEMPLATE\n").unwrap();
+    std::fs::write(r.join(".env.local"), "LOCAL-SECRET\n").unwrap();
+    std::fs::hard_link(r.join(".env"), r.join("notes.txt")).unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let (f, d) = h.run(json!({ "argv": ["sh", "-c", "cat .env.example; cat notes.txt; cat .env.local"], "cwd": r }));
+    assert_eq!(f["hiddenSecrets"], json!([r.join(".env"), r.join(".env.local"), r.join("notes.txt")]));
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(out.contains("TEMPLATE"), "a template is readable: {out}");
+    assert!(!out.contains("DOTENV-SECRET") && !out.contains("LOCAL-SECRET"), "{out}");
+    // Named: a template is not secret; a hardlink is, by inode, and naming it is the way through as for the file.
+    let (f, _d) = h.run(json!({ "argv": ["cat", ".env.example"], "cwd": r, "pathArgs": [{ "arg": 1 }] }));
+    assert_eq!(f["paths"][0]["secret"], false);
+    let (f, d) = h.run(json!({ "argv": ["cat", "notes.txt"], "cwd": r, "pathArgs": [{ "arg": 1 }] }));
+    assert_eq!(f["paths"][0]["secret"], true, "a hardlink to .env is secret whatever it is called");
+    assert_eq!(f["hiddenSecrets"], json!([r.join(".env"), r.join(".env.local")]));
+    assert_eq!(text(&h.read_all(&d["stdout"])), "DOTENV-SECRET\n");
+    // A template that IS the .env inode stays secret.
+    std::fs::remove_file(r.join(".env.example")).unwrap();
+    std::fs::hard_link(r.join(".env"), r.join(".env.example")).unwrap();
+    let (f, _d) = h.run(json!({ "argv": ["cat", ".env.example"], "cwd": r, "pathArgs": [{ "arg": 1 }] }));
+    assert_eq!(f["paths"][0]["secret"], true, "a template that is a hardlink to .env is secret");
+    h.close();
+}
+
+/// A hardlink in one root to a dotenv file at another root's top is held by inode across roots: listed when not named,
+/// and flagged secret (so the call asks) and readable when named.
+#[test]
+fn a_cross_root_hardlink_to_a_dotenv_file_is_held_and_flagged_secret_when_named() {
+    let (_d, a) = root();
+    let (_e, b) = root();
+    std::fs::write(a.join(".env"), "DOTENV-SECRET\n").unwrap();
+    match std::fs::hard_link(a.join(".env"), b.join("cross.txt")) {
+        Ok(()) => {}
+        // Two temp dirs on different filesystems: no hardlink between them to test.
+        Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
+            eprintln!(
+                "skipped: the two temp dirs are on different filesystems, so no hardlink between them can be made"
+            );
+            return;
+        }
+        Err(e) => panic!("the cross-root hardlink could not be made: {e}"),
+    }
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [a, b] }));
+    let (f, d) =
+        h.run(json!({ "argv": ["sh", "-c", "cat ../*/cross.txt; cat \"$0\"", b.join("cross.txt")], "cwd": a }));
+    let mut held = vec![a.join(".env"), b.join("cross.txt")];
+    held.sort();
+    assert_eq!(f["hiddenSecrets"], json!(held));
+    assert!(!text(&h.read_all(&d["stdout"])).contains("DOTENV-SECRET"));
+    let (f, d) = h.run(json!({ "argv": ["cat", b.join("cross.txt")], "cwd": a, "pathArgs": [{ "arg": 1 }] }));
+    assert_eq!(f["paths"][0]["secret"], true, "the cross-root link is secret by inode");
+    assert_eq!(f["hiddenSecrets"], json!([a.join(".env")]));
+    assert_eq!(text(&h.read_all(&d["stdout"])), "DOTENV-SECRET\n");
+    h.close();
+}
+
+/// A held dotenv file cannot be renamed, removed or written, nor a root-top hardlink to one: a rename needs no read,
+/// and a renamed `.env` would be read by the next call under a name nothing holds. A template stays writable.
+#[test]
+fn a_held_dotenv_file_cannot_be_renamed_removed_or_written() {
+    let (_d, r) = root();
+    std::fs::write(r.join(".env"), "DOTENV-SECRET\n").unwrap();
+    std::fs::write(r.join(".env.example"), "TEMPLATE\n").unwrap();
+    std::fs::hard_link(r.join(".env"), r.join("notes.txt")).unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    for cmd in
+        ["mv .env moved.txt", "mv notes.txt moved.txt", "rm .env", "rm notes.txt", "echo X >> .env", "echo X > .env"]
+    {
+        let (_f, d) = h.run(json!({ "argv": ["sh", "-c", cmd], "cwd": r }));
+        assert_ne!(d["code"], 0, "{cmd} succeeded: {d}");
+        assert!(!r.join("moved.txt").exists(), "{cmd}");
+        assert_eq!(std::fs::read(r.join(".env")).unwrap(), b"DOTENV-SECRET\n", "{cmd}");
+        assert_eq!(std::fs::read(r.join("notes.txt")).unwrap(), b"DOTENV-SECRET\n", "{cmd}");
+    }
+    let (_f, d) = h.run(json!({ "argv": ["sh", "-c", "echo NEW > .env.example"], "cwd": r }));
+    assert_eq!(d["code"], 0, "a template is writable: {d}");
+    assert_eq!(std::fs::read(r.join(".env.example")).unwrap(), b"NEW\n");
+    // On macOS no dotenv name can be made either, the bootstrap copy from a template included (`host-plain` is the way
+    // through); Linux masks only the files a call starts with, so there the copy makes a new name, held from the next call.
+    let (_f, d) = h.run(json!({ "argv": ["sh", "-c", "cp .env.example .env.production"], "cwd": r }));
+    if cfg!(target_os = "macos") {
+        assert_ne!(d["code"], 0, "the bootstrap copy made a dotenv name: {d}");
+        assert!(!r.join(".env.production").exists());
+    } else {
+        assert_eq!(d["code"], 0, "{d}");
+        let (f, _d) = h.run(json!({ "argv": ["true"], "cwd": r }));
+        assert!(f["hiddenSecrets"].as_array().unwrap().contains(&json!(r.join(".env.production"))), "{f}");
+    }
+    // Overwriting a held one fails on both: the write deny on macOS, the read-only `/dev/null` bind on Linux.
+    let (_f, d) = h.run(json!({ "argv": ["sh", "-c", "cp .env.example .env"], "cwd": r }));
+    assert_ne!(d["code"], 0, "the bootstrap copy overwrote .env: {d}");
+    assert_eq!(std::fs::read(r.join(".env")).unwrap(), b"DOTENV-SECRET\n");
+    h.close();
+}
+
+/// What a dotenv loader meets: the read of a held file fails on both platforms, with nothing of it printed. On Linux
+/// the file is a bind of `/dev/null` and bubblewrap's binds are `nodev`, so the open is EACCES; on macOS the profile's
+/// deny is EPERM. `hiddenSecrets` says which file and why.
+#[test]
+fn a_held_dotenv_read_fails_with_the_platforms_refusal() {
+    let (_d, r) = root();
+    std::fs::write(r.join(".env"), "DOTENV-SECRET\n").unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let (f, d) = h.run(json!({ "argv": ["cat", ".env"], "cwd": r }));
+    assert_eq!(f["hiddenSecrets"], json!([r.join(".env")]));
+    assert_ne!(d["code"], 0);
+    assert_eq!(text(&h.read_all(&d["stdout"])), "");
+    let err = text(&h.read_all(&d["stderr"]));
+    let want = if cfg!(target_os = "macos") { "Operation not permitted" } else { "Permission denied" };
+    assert!(err.contains(want), "{err}");
+    h.close();
+}
+
+/// A symlink at a root's top with a held name is what a loader opens: it is listed, and the regular file it resolves to
+/// is held with it on both platforms, inside the roots or outside every one. A dangling one is not listed.
+#[test]
+fn a_root_top_symlink_named_as_a_dotenv_file_is_held_with_its_target() {
+    let (_d, r) = root();
+    let (_o, o) = root();
+    std::fs::write(r.join("config.txt"), "LINKED-SECRET\n").unwrap();
+    std::fs::write(o.join("prod"), "OUTSIDE-SECRET\n").unwrap();
+    std::os::unix::fs::symlink("config.txt", r.join(".env")).unwrap();
+    std::os::unix::fs::symlink(o.join("prod"), r.join(".env.production")).unwrap();
+    std::os::unix::fs::symlink("missing", r.join(".env.local")).unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let script = format!("cat .env; cat config.txt; cat .env.production; cat {}", o.join("prod").display());
+    let (f, d) = h.run(json!({ "argv": ["sh", "-c", script], "cwd": r }));
+    let mut held = vec![r.join(".env"), r.join(".env.production"), r.join("config.txt"), o.join("prod")];
+    held.sort();
+    assert_eq!(f["hiddenSecrets"], json!(held));
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(!out.contains("LINKED-SECRET") && !out.contains("OUTSIDE-SECRET"), "{out}");
+    h.close();
+}
+
+/// A template that a root-top held-name link resolves to is the live env file: held for reading and for writing on both
+/// platforms, through the link and by its own name. A template nothing points at stays readable and writable.
+#[test]
+fn a_template_a_held_name_links_to_is_held_for_reading_and_writing() {
+    let (_d, r) = root();
+    std::fs::write(r.join(".env.example"), "LIVE-SECRET\n").unwrap();
+    std::fs::write(r.join(".env.sample"), "TEMPLATE\n").unwrap();
+    std::os::unix::fs::symlink(".env.example", r.join(".env")).unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let (f, d) = h.run(json!({ "argv": ["sh", "-c", "cat .env.example; cat .env; cat .env.sample"], "cwd": r }));
+    assert_eq!(f["hiddenSecrets"], json!([r.join(".env"), r.join(".env.example")]));
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(!out.contains("LIVE-SECRET"), "{out}");
+    assert!(out.contains("TEMPLATE"), "an unlinked template is readable: {out}");
+    for cmd in ["echo X >> .env.example", "echo X > .env.example", "echo X >> .env"] {
+        let (_f, d) = h.run(json!({ "argv": ["sh", "-c", cmd], "cwd": r }));
+        assert_ne!(d["code"], 0, "{cmd} succeeded: {d}");
+        assert_eq!(std::fs::read(r.join(".env.example")).unwrap(), b"LIVE-SECRET\n", "{cmd}");
+    }
+    let (_f, d) = h.run(json!({ "argv": ["sh", "-c", "echo NEW > .env.sample"], "cwd": r }));
+    assert_eq!(d["code"], 0, "an unlinked template is writable: {d}");
+    assert_eq!(std::fs::read(r.join(".env.sample")).unwrap(), b"NEW\n");
+    h.close();
+}
+
+/// The documented gap: a hardlink at a root's top whose other name is a DEEPER dotenv file is not held, since the host
+/// matches a top-level link only against the dotenv files it finds at a root's top. It reads the secret on both
+/// platforms. This row pins the gap; it fails when the gap closes, and then the docs change with it.
+#[test]
+fn a_root_top_hardlink_to_a_deeper_dotenv_file_is_the_documented_gap() {
+    let (_d, r) = root();
+    std::fs::create_dir(r.join("app")).unwrap();
+    std::fs::write(r.join("app/.env"), "NESTED\n").unwrap();
+    std::fs::hard_link(r.join("app/.env"), r.join("notes.txt")).unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let (f, d) = h.run(json!({ "argv": ["cat", "notes.txt"], "cwd": r }));
+    assert_eq!(f["hiddenSecrets"], json!([]), "a link to a deeper dotenv file is not listed");
+    assert_eq!(text(&h.read_all(&d["stdout"])), "NESTED\n", "the gap is open");
+    h.close();
+}
+
+/// macOS denies a dotenv file at any depth; Linux masks only a root's top (docs/SANDBOX.md, the documented gap).
+#[cfg(target_os = "macos")]
+#[test]
+fn a_nested_dotenv_file_is_unreadable_on_macos() {
+    let (_d, r) = root();
+    std::fs::create_dir(r.join("app")).unwrap();
+    std::fs::write(r.join("app/.env.production"), "NESTED-SECRET\n").unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let (f, d) = h.run(json!({ "argv": ["sh", "-c", "cat app/.env.production"], "cwd": r }));
+    assert_eq!(f["hiddenSecrets"], json!([]), "only a root's top is listed");
+    assert!(!text(&h.read_all(&d["stdout"])).contains("NESTED-SECRET"));
+    h.close();
+}
+
+#[test]
 fn held_output_is_hidden_from_children() {
     let (_d, r) = root();
     let mut h = Host::start();

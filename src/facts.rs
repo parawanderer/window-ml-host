@@ -197,8 +197,10 @@ pub fn looks_secret(p: &Path) -> bool {
         return true;
     }
     let Some(name) = comps.last() else { return false };
+    // A dotenv template is not one, by the sandbox's own list; one that is a hardlink to a hidden dotenv file is, which
+    // a name cannot show: the call's facts add the root-top hardlinks (`sandbox::root_top_secrets`, session.rs).
     SECRET_NAMES.contains(&name.as_str())
-        || name.starts_with(".env.")
+        || (name.starts_with(".env.") && !crate::sandbox::DOTENV_TEMPLATES.contains(&name.as_str()))
         || name.starts_with("id_")
         || SECRET_SUFFIXES.iter().any(|s| name.ends_with(s))
 }
@@ -377,6 +379,16 @@ mod tests {
             "/r/.netrc",
             "/Users/u/Library/Keychains/login.keychain-db",
         ] {
+            assert!(looks_secret(Path::new(p)), "{p}");
+        }
+    }
+
+    #[test]
+    fn a_dotenv_template_is_not_flagged_but_a_credential_directory_still_wins() {
+        for p in ["/r/.env.example", "/r/.ENV.Sample", "/r/app/.env.template"] {
+            assert!(!looks_secret(Path::new(p)), "{p}");
+        }
+        for p in ["/r/.env.examples", "/r/.env.example.local", "/home/u/.ssh/.env.example"] {
             assert!(looks_secret(Path::new(p)), "{p}");
         }
     }

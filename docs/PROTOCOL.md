@@ -130,12 +130,26 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
   "mode": "host",
   "sandboxed": true,
   "placement": "host-sandbox",                  // "host-sandbox" | "host-plain": the enforcer whose bound applies (EFFECTS.md)
+  "hiddenSecrets": ["/Users/me/proj/.env"],     // the files at a root's top the sandbox holds unreadable; [] unsandboxed
   "memoryBound": 536870912,                     // the bound the call will run under, after clamping
   "onOwnerLoss": { "policy": "orphan", "timeoutMs": 60000 },
   "owner": { "session": "…", "run": "…", "step": 3 },        // as given; null when none was
   "expiresInMs": 1800000 }                      // after this the id is gone and start fails UnknownId
 ```
 
+- **`hiddenSecrets`** lists the `.env`, `.env.*`, `.netrc`, `.git-credentials` and `.pgpass` files at the top of each
+  root that the sandbox will hold unreadable for this call, minus the ones it names, so a program that reads one without
+  naming it (a dotenv loader) and fails with EPERM can be explained: naming the file in a marked path argument re-allows
+  it (and asks, since it is flagged `secret`), and `host-plain` does not deny it. macOS denies the same names at any
+  depth; only the root's top is listed. The templates `.env.example`, `.env.sample` and `.env.template` are not hidden
+  unless a held name resolves to one (a hardlink, or a root-top held-name symlink, to it); a regular file at a root's
+  top that shares its inode with a dotenv-named file at a root's top is, and is listed (a top-level link to a deeper
+  dotenv file is not: SANDBOX.md, the gap). A symlink at a root's top with one of those names is listed, with the
+  regular file it resolves to, which may be outside every root; the link is held through that target (on Linux the
+  target is masked and the link is not), so a listed path is held but is not always itself a mask. A hidden file's read
+  fails, with EPERM on macOS and EACCES on Linux, and this list says which file and why. A path named in `pathArgs` is
+  readable by every process of the call, not only the program given it: the approval is the control. `[]` for an
+  unsandboxed call (docs/SANDBOX.md).
 - **`tilde`** lists each argument that began with `~`, in argv order and then `cwd`: `{ "index": 1, "from": "~/notes.txt",
   "to": "/Users/me/notes.txt" }`. `index` is `number | "cwd" | "path"`: the argv position, the string `"cwd"` for the `cwd` argument, or, in `put`'s facts, `"path"` for its `path`.
   The host rewrites argv and `cwd` before it resolves anything, so `argv`, `paths[].given`, the facts' paths and the
