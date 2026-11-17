@@ -36,7 +36,7 @@ malformed is `BadRequest`, never a silent fallback. `done` always reports the sc
 | Network, a credentialed call (`credential` on `spawn`, `src/credential.rs`) | outbound TCP to its own proxy alone (`(remote ip "localhost:<port>")`, `src/proxy.rs`), which admits only `CONNECT <granted host>:443`; no DNS resolver socket; `com.apple.trustd.agent`; exec always program-only; the provider's token in the env, its config dir a throwaway under `$TMPDIR` | needs Landlock (`SandboxFailed` without it). The call keeps `--unshare-net`, so it has no network at all; the proxy listens on a unix socket in the call's own directory, bound into the sandbox (the session's socket directory is masked, so no other call's socket is visible). `exec-under` first starts `wmlhost forward`, which carries `127.0.0.1:18443` inside the namespace to that socket, then applies the call's ruleset; exec always program-only; the same token, config dir and proxy env |
 | Processes (`exec: "any"`, the floor) | start any program, all inheriting the profile | the same, in a fresh PID namespace |
 | Processes (`exec: "program-only"`) | only the resolved set, by `literal`; `sh -c 'ls'` cannot exec `ls` | the same, by Landlock EXECUTE grants |
-| Credential stores (`.ssh`, `.gnupg`, `.aws`, `.azure`, `.kube`, `.docker`, `.password-store`, `~/Library/Keychains`, `.config/gh`, `.config/gcloud`, `.netrc`, `.git-credentials`, `.pgpass`) | unreadable at ANY depth, matched by regex, case-insensitively | masked under `$HOME` only (an empty tmpfs or `/dev/null` bound over each that exists) |
+| Credential stores (`.ssh`, `.gnupg`, `.aws`, `.azure`, `.kube`, `.docker`, `.password-store`, `~/Library/Keychains`, `.config/gh`, `.config/gcloud`, `.netrc`, `.git-credentials`, `.pgpass`, `.env`, `.env.*`) | unreadable at ANY depth, matched by regex, case-insensitively | masked under `$HOME` only (an empty tmpfs or `/dev/null` bound over each that exists), and `.env` / `.env.*` also at the TOP of each root; a deeper one is readable (the gap below) |
 | …unless the call NAMES one | a marked path argument flagged `secret` is re-allowed by a `literal` rule: the person approved this exact path | the same, by not masking it |
 | Files that run code later (`.git/hooks/`, `.git/config`, `.gitmodules`, `.vscode/`, `.idea/`, `.claude/`, `.gitconfig`, `.mcp.json`, `.envrc`, shell rc files) | unwritable at any depth (regex), and `.git` cannot be renamed away | absent envelope: re-bound read-only where they exist at the TOP of each root when the call starts (the gap stays); `write: "roots"`: never writable, the name-immutable top level covers the ones that do not exist yet |
 | The session's held output | neither readable nor writable | masked (empty tmpfs) |
@@ -59,6 +59,8 @@ sandbox that does not start fails the job instead of taking the fail-closed path
 | `the_sandbox_keeps_files_that_run_code_later_read_only` | appending to `.git/hooks/pre-commit`, `.git/config`, `.vscode/settings.json` (contents unchanged) | `git add a` in the same repository |
 | `the_sandbox_denies_a_network_connect` | `bash` `/dev/tcp` to a listener on 127.0.0.1 (the listener sees nothing) | the same call with `sandbox: false` connects (the control) |
 | `the_sandbox_hides_credential_stores_unless_the_call_names_one` | `sh -c 'cat ~/.ssh/id_test'` (not named) | `cat ~/.ssh/id_test` with the path marked, facts showing `secret: true` |
+| `a_dotenv_file_is_unreadable_unless_named_and_the_facts_say_so` | `sh -c 'cat .env; cat .env.local'` (not named; facts list both in `hiddenSecrets`) | `cat .env` with the path marked; `.envrc` is not a dotenv file |
+| `a_nested_dotenv_file_is_unreadable_on_macos` | macOS: `sh -c 'cat app/.env.production'` | |
 | `held_output_is_hidden_from_children` | `cat $TMPDIR/../../out/*` | |
 | `a_protected_path_created_during_the_call_…` | macOS: `mkdir .vscode && echo > .vscode/tasks.json` | Linux (absent envelope): the same call SUCCEEDS (the gap below, pinned by the test) |
 | `write_roots_withholds_make_dir_so_envrc_cannot_appear_as_a_directory` (sibling under `write: "roots"`) | macOS and Linux-with-Landlock: the same `mkdir .vscode` is denied | Linux-without-Landlock: the call is `SandboxFailed` (`can_hold`), never run wide |
@@ -218,9 +220,13 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
   enumerates both lists.
 - **`write: "roots"` refuses the named casualties above.** That is the cost of asking for a name-immutable top level,
   not a defect: the worker sends it only when the claims permit no new top-level name.
-- **A secret inside a root is not hidden from a directory walk.** `rg pattern .` reads `root/.env`. The facts flag `.env`
-  only when it is NAMED. Hiding every secret-looking file in the roots would break dotenv-using test suites, which the
-  person approved by name. Flagged to window-ml's `SHELL.md` as an open question.
+- **A secret inside a root is not hidden from a directory walk**, except a dotenv file. `rg pattern .` reads
+  `root/key.pem`; the facts flag it only when it is NAMED. AMENDED 2026-11-17 (window-ml's coordinator, with
+  SECRET_HANDLES.md's incident of 2026-10-21): `.env` and `.env.*` are unreadable unless named, at any depth on macOS
+  and at each root's top on Linux, where Landlock cannot deny one file inside a granted tree, so `root/app/.env` stays
+  readable there (a documented gap, no walk at spawn). A dotenv loader under the sandbox then fails with EPERM; the
+  call's facts list what was hidden (`hiddenSecrets`, PROTOCOL.md), and naming the file or running `host-plain` is the
+  way through.
 - **`sysctl-read` is allowed in full** on macOS (`sandbox-runtime` lists names). It discloses machine facts such as the
   hostname, not files.
 - **On macOS, a host started inside the host's sandbox reports `sandboxed: false`, `placement: "host-plain"`.** Its

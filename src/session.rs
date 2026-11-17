@@ -749,6 +749,9 @@ impl Session {
             "mode": "host",
             "sandboxed": sandboxed,
             "placement": if sandboxed { "host-sandbox" } else { "host-plain" },
+            // The secret-looking files at the top of each root the sandbox will hold unreadable: so a loader's EPERM
+            // can be explained (name the file, which asks, or run host-plain). Empty for an unsandboxed call.
+            "hiddenSecrets": if sandboxed { sandbox::root_top_secrets(&config.roots, &named_secrets) } else { vec![] },
             "memoryBound": memory_bound,
             "onOwnerLoss": owner_loss.json(),
             "owner": owner,

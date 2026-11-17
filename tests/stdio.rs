@@ -902,6 +902,49 @@ fn the_sandbox_hides_credential_stores_unless_the_call_names_one() {
 }
 
 #[test]
+fn a_dotenv_file_is_unreadable_unless_named_and_the_facts_say_so() {
+    let (_d, r) = root();
+    std::fs::write(r.join(".env"), "DOTENV-SECRET\n").unwrap();
+    std::fs::write(r.join(".env.local"), "LOCAL-SECRET\n").unwrap();
+    std::fs::write(r.join(".envrc"), "not-hidden\n").unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    // Read by a program that does not name it, as a dotenv loader does: denied, and the facts list both files.
+    let (f, d) = h.run(json!({ "argv": ["sh", "-c", "cat .env; cat .env.local; cat .envrc"], "cwd": r }));
+    assert_eq!(f["hiddenSecrets"], json!([r.join(".env"), r.join(".env.local")]));
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(!out.contains("DOTENV-SECRET") && !out.contains("LOCAL-SECRET"), "{out}");
+    assert!(out.contains("not-hidden"), ".envrc is not a dotenv file: {out}");
+    // Named as a path argument, flagged secret in the facts the person approved: readable, and no longer listed.
+    let (f, d) = h.run(json!({ "argv": ["cat", ".env"], "cwd": r, "pathArgs": [{ "arg": 1 }] }));
+    assert_eq!(f["paths"][0]["secret"], true);
+    assert_eq!(f["hiddenSecrets"], json!([r.join(".env.local")]));
+    assert_eq!(text(&h.read_all(&d["stdout"])), "DOTENV-SECRET\n");
+    h.close();
+}
+
+/// macOS denies a dotenv file at any depth; Linux masks only a root's top (docs/SANDBOX.md, the documented gap).
+#[cfg(target_os = "macos")]
+#[test]
+fn a_nested_dotenv_file_is_unreadable_on_macos() {
+    let (_d, r) = root();
+    std::fs::create_dir(r.join("app")).unwrap();
+    std::fs::write(r.join("app/.env.production"), "NESTED-SECRET\n").unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let (f, d) = h.run(json!({ "argv": ["sh", "-c", "cat app/.env.production"], "cwd": r }));
+    assert_eq!(f["hiddenSecrets"], json!([]), "only a root's top is listed");
+    assert!(!text(&h.read_all(&d["stdout"])).contains("NESTED-SECRET"));
+    h.close();
+}
+
+#[test]
 fn held_output_is_hidden_from_children() {
     let (_d, r) = root();
     let mut h = Host::start();
