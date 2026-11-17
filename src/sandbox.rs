@@ -610,20 +610,43 @@ fn is_dotenv_name(name: &str) -> bool {
 /// `.git-credentials`, `.pgpass`, and a hardlink at a root's top to one of them, which is the same inode under another name), minus the ones the call
 /// names: what a call's facts report as `hiddenSecrets`, and what Linux masks. macOS denies the same names at any
 /// depth, and these paths besides; Linux masks only these, since Landlock cannot deny one file inside a granted tree
-/// (docs/SANDBOX.md). A symlink is not listed or masked. A hardlink deeper than a root's top is not seen (the gap).
+/// (docs/SANDBOX.md). A symlink at a root's top with a held name is listed, and the regular file it resolves to is held
+/// with it (Linux masks the target, since a bind lands there; a dangling link, or one to anything but a regular file,
+/// is neither). A hardlink deeper than a root's top is not seen (the gap).
 pub fn root_top_secrets(roots: &[PathBuf], allow_read: &[PathBuf]) -> Vec<PathBuf> {
     use std::os::unix::fs::MetadataExt;
-    let (mut named, mut linked) = (vec![], vec![]);
+    let (mut named, mut linked, mut links) = (vec![], vec![], vec![]);
     for r in roots {
         let Ok(rd) = std::fs::read_dir(r) else { continue };
+        // A target inside a root is reported in the root's own spelling (`/var` and not `/private/var` on macOS), so it
+        // is one path with the root's other entries and with what the call names.
+        let real = std::fs::canonicalize(r).unwrap_or_else(|_| r.clone());
+        let spelled = |t: PathBuf| t.strip_prefix(&real).map(|rel| r.join(rel)).unwrap_or(t);
         for e in rd.flatten() {
             // `DirEntry::metadata` does not follow a symlink, so a link is not a file here.
             let Ok(md) = e.metadata() else { continue };
-            if !md.is_file() || allow_read.contains(&e.path()) {
+            let held_name = is_dotenv_name(&e.file_name().to_string_lossy().to_lowercase());
+            if allow_read.contains(&e.path()) {
+                continue;
+            }
+            if md.file_type().is_symlink() && held_name {
+                // What a loader opening the link reads is its target: hold that file too, wherever it is.
+                let Ok(t) = std::fs::canonicalize(e.path()).map(spelled) else { continue };
+                let Ok(tm) = std::fs::metadata(&t) else { continue };
+                // `/proc` and `/dev` are the call's own inside the sandbox (a fresh procfs and device tree), so a link
+                // there reads the call's own state, and a mask of the host's path would fail the spawn.
+                let own = t.starts_with("/proc") || t.starts_with("/dev");
+                if tm.is_file() && !own && !allow_read.contains(&t) {
+                    links.push(e.path());
+                    named.push((t, tm.dev(), tm.ino()));
+                }
+                continue;
+            }
+            if !md.is_file() {
                 continue;
             }
             let entry = (e.path(), md.dev(), md.ino());
-            if is_dotenv_name(&e.file_name().to_string_lossy().to_lowercase()) {
+            if held_name {
                 named.push(entry);
             } else if md.nlink() > 1 {
                 linked.push(entry);
@@ -632,6 +655,7 @@ pub fn root_top_secrets(roots: &[PathBuf], allow_read: &[PathBuf]) -> Vec<PathBu
     }
     let same = |a: &(PathBuf, u64, u64)| named.iter().any(|b| a.1 == b.1 && a.2 == b.2);
     let mut out: Vec<PathBuf> = linked.iter().filter(|l| same(l)).map(|l| l.0.clone()).collect();
+    out.extend(links);
     out.extend(named.into_iter().map(|n| n.0));
     out.sort();
     out.dedup();
@@ -1021,7 +1045,7 @@ mod tests {
     }
 
     #[test]
-    fn root_top_secrets_are_dotenv_files_at_the_top_not_named_and_not_links() {
+    fn root_top_secrets_are_dotenv_files_and_held_name_links_at_the_top_not_named() {
         let root = tempfile::tempdir().unwrap();
         let r = root.path();
         for f in [".env", ".ENV.local", ".env.production", ".envrc", ".environment", "env", "sub/.env"] {
@@ -1032,7 +1056,9 @@ mod tests {
         std::os::unix::fs::symlink(r.join(".env"), r.join(".env.link")).unwrap();
         let roots = vec![r.to_path_buf()];
         let got = root_top_secrets(&roots, &[]);
-        assert_eq!(got, vec![r.join(".ENV.local"), r.join(".env"), r.join(".env.production")]);
+        // `.env.link` has a held name, so it is listed, and its target `.env` is held with it.
+        assert_eq!(got, vec![r.join(".ENV.local"), r.join(".env"), r.join(".env.link"), r.join(".env.production")]);
+        // Naming `.env` opens the file, and the link that resolves to it with it.
         assert_eq!(root_top_secrets(&roots, &[r.join(".env")]), vec![r.join(".ENV.local"), r.join(".env.production")]);
     }
 
@@ -1056,6 +1082,37 @@ mod tests {
         }
         let got = root_top_secrets(&[r.to_path_buf()], &[]);
         assert_eq!(got, vec![r.join(".Git-Credentials"), r.join(".netrc"), r.join(".pgpass")]);
+    }
+
+    #[test]
+    fn a_root_top_symlink_with_a_held_name_is_listed_and_its_target_held_with_it() {
+        let (root, outside) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let r = root.path().canonicalize().unwrap();
+        let o = outside.path().canonicalize().unwrap();
+        std::fs::write(r.join("config.txt"), "S").unwrap();
+        std::fs::hard_link(r.join("config.txt"), r.join("copy.txt")).unwrap();
+        std::fs::write(o.join("prod"), "P").unwrap();
+        std::fs::create_dir(r.join("dir")).unwrap();
+        let link = |t: &Path, l: &str| std::os::unix::fs::symlink(t, r.join(l)).unwrap();
+        link(Path::new("config.txt"), ".env");
+        link(&o.join("prod"), ".env.production");
+        link(Path::new("missing"), ".env.local");
+        link(Path::new("dir"), ".env.d");
+        link(Path::new("/dev/null"), ".env.null");
+        link(Path::new("config.txt"), "notes.txt");
+        let mut want =
+            vec![r.join(".env"), r.join(".env.production"), r.join("config.txt"), r.join("copy.txt"), o.join("prod")];
+        want.sort();
+        let roots = std::slice::from_ref(&r);
+        assert_eq!(
+            root_top_secrets(roots, &[]),
+            want,
+            "a dangling link, a directory, a device and an unheld name are not"
+        );
+        assert!(
+            !root_top_secrets(roots, &[r.join(".env")]).contains(&r.join("config.txt")),
+            "naming the link opens its target"
+        );
     }
 
     #[test]

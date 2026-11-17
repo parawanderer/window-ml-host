@@ -970,7 +970,12 @@ fn a_cross_root_hardlink_to_a_dotenv_file_is_held_and_flagged_secret_when_named(
     match std::fs::hard_link(a.join(".env"), b.join("cross.txt")) {
         Ok(()) => {}
         // Two temp dirs on different filesystems: no hardlink between them to test.
-        Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => return,
+        Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
+            eprintln!(
+                "skipped: the two temp dirs are on different filesystems, so no hardlink between them can be made"
+            );
+            return;
+        }
         Err(e) => panic!("the cross-root hardlink could not be made: {e}"),
     }
     let mut h = Host::start();
@@ -1053,6 +1058,32 @@ fn a_held_dotenv_read_fails_with_the_platforms_refusal() {
     let err = text(&h.read_all(&d["stderr"]));
     let want = if cfg!(target_os = "macos") { "Operation not permitted" } else { "Permission denied" };
     assert!(err.contains(want), "{err}");
+    h.close();
+}
+
+/// A symlink at a root's top with a held name is what a loader opens: it is listed, and the regular file it resolves to
+/// is held with it on both platforms, inside the roots or outside every one. A dangling one is not listed.
+#[test]
+fn a_root_top_symlink_named_as_a_dotenv_file_is_held_with_its_target() {
+    let (_d, r) = root();
+    let (_o, o) = root();
+    std::fs::write(r.join("config.txt"), "LINKED-SECRET\n").unwrap();
+    std::fs::write(o.join("prod"), "OUTSIDE-SECRET\n").unwrap();
+    std::os::unix::fs::symlink("config.txt", r.join(".env")).unwrap();
+    std::os::unix::fs::symlink(o.join("prod"), r.join(".env.production")).unwrap();
+    std::os::unix::fs::symlink("missing", r.join(".env.local")).unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let script = format!("cat .env; cat config.txt; cat .env.production; cat {}", o.join("prod").display());
+    let (f, d) = h.run(json!({ "argv": ["sh", "-c", script], "cwd": r }));
+    let mut held = vec![r.join(".env"), r.join(".env.production"), r.join("config.txt"), o.join("prod")];
+    held.sort();
+    assert_eq!(f["hiddenSecrets"], json!(held));
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(!out.contains("LINKED-SECRET") && !out.contains("OUTSIDE-SECRET"), "{out}");
     h.close();
 }
 
