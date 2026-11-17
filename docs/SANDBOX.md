@@ -224,12 +224,12 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
   `root/key.pem`; the facts flag it only when it is NAMED. AMENDED 2026-11-17 (window-ml's coordinator, with
   SECRET_HANDLES.md's incident of 2026-10-21): `.env` and `.env.*` are unreadable unless named, at any depth on macOS
   and at each root's top on Linux, where Landlock cannot deny one file inside a granted tree, so `root/app/.env` stays
-  readable there (a documented gap, no walk at spawn). A dotenv loader under the sandbox then fails with EPERM; the
-  call's facts list what was hidden (`hiddenSecrets`, PROTOCOL.md; the credential files `.netrc`, `.git-credentials` and
-  `.pgpass` at a root's top are held, masked and listed the same way), and naming the file or running `host-plain` is
-  the way through. On Linux a masked file reads as EMPTY, not as an error (`/dev/null` is bound over it), so a loader
-  sees no variables and no failure; `hiddenSecrets` is how the caller learns why. The rest of the rule (2026-11-17, the
-  coordinator's rulings on host#46):
+  readable there (a documented gap, no walk at spawn). A dotenv loader under the sandbox then fails, with EPERM on
+  macOS and EACCES on Linux (the file is a bind of `/dev/null`, and bubblewrap's binds are `nodev`, so the device
+  cannot be opened; measured on CI's ubuntu-latest); the call's facts list what was hidden (`hiddenSecrets`,
+  PROTOCOL.md; the credential files `.netrc`, `.git-credentials` and `.pgpass` at a root's top are held, masked and
+  listed the same way), and naming the file or running `host-plain` is the way through. The rest of the rule
+  (2026-11-17, the coordinator's rulings on host#46):
   - The templates `.env.example`, `.env.sample` and `.env.template` (exact names, case-insensitive) are neither denied
     nor masked: they are committed, and a model reads them usefully. A real secret written into one is not protected.
     Every other `.env.*` stays denied. On macOS a call cannot create or overwrite a dotenv name either (the write deny

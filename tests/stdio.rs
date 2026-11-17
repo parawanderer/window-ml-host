@@ -1034,29 +1034,11 @@ fn a_held_dotenv_file_cannot_be_renamed_removed_or_written() {
     h.close();
 }
 
-/// What a dotenv loader meets: on Linux the masked file reads as EMPTY with no error (`/dev/null` is bound over it),
-/// so `hiddenSecrets` is the only tell; on macOS the read is refused (`a_held_dotenv_read_is_refused_on_macos`).
-#[cfg(target_os = "linux")]
+/// What a dotenv loader meets: the read of a held file fails on both platforms, with nothing of it printed. On Linux
+/// the file is a bind of `/dev/null` and bubblewrap's binds are `nodev`, so the open is EACCES; on macOS the profile's
+/// deny is EPERM. `hiddenSecrets` says which file and why.
 #[test]
-fn a_held_dotenv_file_reads_as_empty_and_not_as_an_error_on_linux() {
-    let (_d, r) = root();
-    std::fs::write(r.join(".env"), "DOTENV-SECRET\n").unwrap();
-    let mut h = Host::start();
-    if !h.sandbox_available() {
-        return h.close();
-    }
-    h.ok("configure", json!({ "roots": [r] }));
-    let (f, d) = h.run(json!({ "argv": ["cat", ".env"], "cwd": r }));
-    assert_eq!(f["hiddenSecrets"], json!([r.join(".env")]));
-    assert_eq!(d["code"], 0, "{}", text(&h.read_all(&d["stderr"])));
-    assert_eq!(text(&h.read_all(&d["stdout"])), "");
-    h.close();
-}
-
-/// macOS's half of the same: the read of a held dotenv file fails with EPERM, and nothing of it is printed.
-#[cfg(target_os = "macos")]
-#[test]
-fn a_held_dotenv_read_is_refused_on_macos() {
+fn a_held_dotenv_read_fails_with_the_platforms_refusal() {
     let (_d, r) = root();
     std::fs::write(r.join(".env"), "DOTENV-SECRET\n").unwrap();
     let mut h = Host::start();
@@ -1069,7 +1051,8 @@ fn a_held_dotenv_read_is_refused_on_macos() {
     assert_ne!(d["code"], 0);
     assert_eq!(text(&h.read_all(&d["stdout"])), "");
     let err = text(&h.read_all(&d["stderr"]));
-    assert!(err.contains("Operation not permitted"), "{err}");
+    let want = if cfg!(target_os = "macos") { "Operation not permitted" } else { "Permission denied" };
+    assert!(err.contains(want), "{err}");
     h.close();
 }
 
