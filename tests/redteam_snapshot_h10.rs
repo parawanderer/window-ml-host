@@ -26,12 +26,15 @@
 //!      repository's store in its own `objects/info/alternates` at this head), and the alternate store is byte-identical
 //!      afterwards.
 //!   I. an index mid-merge (conflict stages) makes the call SAY it cannot build a tree, and writes nothing trying.
-//!   J. the index's SHAPE and SIZE, which the copy must decide from the file itself: a FIFO does not block the host, a
-//!      socket, a directory, a link to `/dev/zero` and a link to a real index are all refused (the last named as a link,
-//!      never followed), an index too large to copy is not copied and leaves nothing large in the host's directory, and
-//!      the person's own index keeps its bytes, mtime and inode.
+//!   J. the index's SHAPE and SIZE, which the copy must decide from the file itself. A `.git/index` that is a LINK is
+//!      no index at all (host#45's ruling at 299b59a6): six targets — a real index holding a staged change, a copy
+//!      outside the repository, a FIFO, a sparse file past the cap, `/dev/zero`, a dangling name — are each never
+//!      opened, `from_head` is set, the base is HEAD's tree, and neither `.git` nor the target moves. A FIFO at the
+//!      index path, a socket, a directory and an index the person cannot read are REFUSED and the message names the
+//!      shape; an index too large to copy is not copied and leaves nothing large in the host's directory; the person's
+//!      own index keeps its bytes, mtime and inode.
 //!
-//! MUTATION PER ROW, MEASURED AT a6e4971f (notes, not committed changes — one applied alone, this file run, the
+//! MUTATION PER ROW, MEASURED AT a6e4971f (section J re-measured at 299b59a6; notes, not committed changes — one applied alone, this file run, the
 //! source reverted with `git checkout -- src/`; it was 10/10 green before and after):
 //!   A  src/snapshot.rs `Scratch::new`: the `GIT_CONFIG_COUNT`/`KEY_2`/`VALUE_2` trio (`core.hooksPath=/dev/null`)
 //!      removed → A red: `rev-parse --git-path hooks` answers the directory the repository names. Measured separately
@@ -51,15 +54,20 @@
 //!   F  src/snapshot.rs `split_index`: the git query replaced by the old directory listing (any `sharedindex.*` means
 //!      split) → F red: the leftover shared half sends the tree to HEAD and the staged `late.txt` is gone. With
 //!      `rev-parse --shared-index-path` in place the row is green.
-//!   J1 src/snapshot.rs `open_index`: `OFlags::NONBLOCK` dropped → J1 red, by timeout: opening a FIFO for reading
-//!      without it waits for a writer, and no writer comes.
-//!   J2 src/snapshot.rs `open_index`: `OFlags::NOFOLLOW` dropped → J2 red on the link-to-a-regular-index case: the
-//!      link is followed, the file behind it is accepted, and the reason no longer says a link was refused.
-//!   J3 src/snapshot.rs `INDEX_MAX` → 64 (a cap below a real index) → J4 red at "the copy is the person's index": the
-//!      bound's comparison is load-bearing, and a real index has to be under it. The bound's VALUE cannot be measured
-//!      from above (see CANNOT ROW): a 256 MiB index cannot be made VALID, and an invalid one is refused by the split
-//!      query before the cap is consulted, so raising `INDEX_MAX` moves nothing.
-//!   J4 pins a one-way copy (read, never written back); no one-line change to src/ reds it, which is the point.
+//!   J1 src/snapshot.rs `open_index`: `OFlags::NONBLOCK` dropped → J1 red at the wall-clock bound: opening a FIFO for
+//!      reading without it waits for a writer, and no writer comes.
+//!   J2a src/snapshot.rs `open_index`: the `Errno::LOOP` arm removed (the ruling reverted) → J2 red at "a link is no
+//!      index, not a refusal": the link is refused with "could not be opened without following a link: Too many levels
+//!      of symbolic links", so the target is still unread but the base and `from_head` are wrong.
+//!   J2b src/snapshot.rs `open_index`: `OFlags::NOFOLLOW` dropped → J2 red at "the base comes from HEAD": the link is
+//!      followed, the file behind it is accepted, and the staged change in the target reaches the base.
+//!   J3 src/snapshot.rs `INDEX_MAX` → 64 (a cap below a real index) → `the_persons_index_keeps_its_bytes_mtime_and_inode`
+//!      red at "the copy is the person's index": the bound's comparison is load-bearing, and a real index has to be
+//!      under it. The bound's VALUE cannot be measured from above (see CANNOT ROW): a 256 MiB index cannot be made
+//!      VALID, and an invalid one is refused by the split query before the cap is consulted, so raising `INDEX_MAX`
+//!      moves nothing.
+//!   J4 (the person's index untouched) pins a one-way copy, read and never written back; no one-line change to src/
+//!      reds it, which is the point.
 //!
 //! WHAT THIS FILE CANNOT ROW (named so the next reader does not look for it):
 //!   - `INDEX_MAX`'s VALUE: 256 MiB of VALID index entries cannot be built in a test's time, and a sparse file that
@@ -148,10 +156,17 @@ fn dot_git(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     while let Some(d) = stack.pop() {
         for e in std::fs::read_dir(&d).unwrap().flatten() {
             let p = e.path();
-            if e.file_type().unwrap().is_dir() {
+            // Never OPEN a non-regular file: in the shape rows `.git/index` can be a link to a FIFO or to `/dev/zero`,
+            // and a `read` of a FIFO with no writer blocks the very row that is measuring whether the host blocks.
+            let Ok(md) = std::fs::symlink_metadata(&p) else { continue };
+            if md.is_dir() {
                 stack.push(p);
-            } else {
+            } else if md.file_type().is_symlink() {
+                m.insert(p.clone(), format!("-> {}", std::fs::read_link(&p).unwrap().display()).into_bytes());
+            } else if md.is_file() {
                 m.insert(p.clone(), std::fs::read(&p).unwrap_or_default());
+            } else {
+                m.insert(p.clone(), b"<not a regular file>".to_vec());
             }
         }
     }
@@ -642,59 +657,103 @@ fn an_index_that_is_a_fifo_is_refused_instead_of_blocking_the_host() {
     refused_cleanly(&t, &marks, &e);
 }
 
+/// A `.git/index` that is a LINK is no index at all (host#45's ruling at 299b59a6): the open is `O_NOFOLLOW`, so the
+/// target is never read, the base is HEAD's tree, and nothing under `.git` moves. Each target here is a shape a FOLLOW
+/// would be punished by: a real index holding a staged change the base must NOT show, a copy outside the repository,
+/// a FIFO that would block the host, a sparse file past the copy's cap, `/dev/zero`, and a dangling name. The FIFO is
+/// what makes the wall-clock bound load-bearing: without `O_NOFOLLOW` the row hangs instead of failing.
 #[test]
-fn the_shapes_the_index_copy_refuses_and_what_it_calls_them() {
+fn a_symlinked_index_takes_heads_tree_and_never_opens_its_target() {
     if !have_git() {
         return;
     }
-    // Every shape a `.git/index` can be that is not a readable regular file, and the reason each is refused. A link to
-    // a REAL index is the one that would be copied if the open followed it. A socket is refused by the OPEN (macOS
-    // answers "Operation not supported on socket"), so its reason is the open's wording rather than the shape's — either
-    // is a refusal, and both are reported to the person.
-    for (shape, want) in [
-        ("link-to-index", &["without following a link"][..]),
-        ("link-to-dev-zero", &["without following a link"][..]),
-        ("dangling", &["without following a link"][..]),
-        ("socket", &["not a regular file", "could not be opened"][..]),
-        ("directory", &["not a regular file"][..]),
-    ] {
+    for shape in ["real-index", "outside", "fifo", "oversized", "dev-zero", "dangling"] {
         let (t, root, marks) = repo();
+        std::fs::write(root.join("staged.txt"), "staged\n").unwrap();
+        run(&root, &["add", "staged.txt"]);
         let index = root.join(".git/index");
         let real = root.join(".git/real-index");
         std::fs::rename(&index, &real).unwrap();
+        let outside = t.path().canonicalize().unwrap();
         let target = match shape {
-            "link-to-index" => {
-                symlink(&real, &index).unwrap();
-                Some(real.clone())
+            "real-index" => real.clone(),
+            "outside" => {
+                let p = outside.join("outside-index");
+                std::fs::copy(&real, &p).unwrap();
+                p
             }
-            "link-to-dev-zero" => {
-                symlink("/dev/zero", &index).unwrap();
-                None
+            "fifo" => {
+                let p = outside.join("fifo-index");
+                assert!(Command::new("mkfifo").arg(&p).status().unwrap().success(), "premise: a FIFO target");
+                p
             }
-            "dangling" => {
-                symlink(root.join(".git/nowhere"), &index).unwrap();
-                None
+            "oversized" => {
+                let p = outside.join("big-index");
+                let f = std::fs::File::create(&p).unwrap();
+                f.set_len((256 << 20) + 4096).unwrap();
+                p
             }
-            "socket" => {
-                let _l = std::os::unix::net::UnixListener::bind(&index).unwrap();
-                None
-            }
-            "directory" => {
-                std::fs::create_dir(&index).unwrap();
-                None
-            }
+            "dev-zero" => PathBuf::from("/dev/zero"),
+            "dangling" => outside.join("nowhere"),
             _ => unreachable!(),
         };
-        let real_before = target.as_ref().map(|p| (std::fs::read(p).unwrap(), std::fs::metadata(p).unwrap().len()));
+        symlink(&target, &index).unwrap();
+        let target_len = std::fs::metadata(&target).ok().map(|m| m.len());
+        clear(&marks);
+        let git_before = dot_git(&root);
+        let got = scratch_within(git_on_path(), inspect(&root), scratch_base(&t), 10);
+        let Some(got) = got else { panic!("{shape}: the host blocked on the link's target") };
+        let s = got.unwrap_or_else(|e| panic!("{shape}: a link is no index, not a refusal: {e}"));
+        assert!(s.from_head, "{shape}: the base comes from HEAD");
+        let (g, r) = (git_on_path(), inspect(&root));
+        let tree = s.tree(&g, &r).unwrap();
+        assert_eq!(tree, head_tree(&root), "{shape}: HEAD's tree");
+        assert!(!entries(&s, &g, &r, &tree).contains("staged.txt"), "{shape}: the link's target was read");
+        let large: Vec<_> = base_files(&scratch_base(&t)).into_iter().filter(|(_, n)| *n > 8 << 20).collect();
+        assert!(large.is_empty(), "{shape}: the host's directory holds the target's bytes: {large:?}");
+        drop(s);
+        assert_eq!(dot_git(&root), git_before, "{shape}: nothing under .git moved");
+        assert_no_marks(&marks);
+        assert!(
+            std::fs::symlink_metadata(&index).unwrap().file_type().is_symlink(),
+            "{shape}: the person's link stays"
+        );
+        assert_eq!(std::fs::metadata(&target).ok().map(|m| m.len()), target_len, "{shape}: the target is untouched");
+    }
+}
+
+/// What stays a REFUSAL, and what the call calls it: a socket (the open answers "Operation not supported on socket"),
+/// a directory and an index the person cannot read. A FIFO at the index path is J1.
+#[test]
+fn the_shapes_that_are_still_refused_and_what_they_are_called() {
+    if !have_git() {
+        return;
+    }
+    for (shape, want) in [
+        ("socket", &["not a regular file", "could not be opened"][..]),
+        ("directory", &["not a regular file"][..]),
+        ("unreadable", &["could not be opened"][..]),
+    ] {
+        let (t, root, marks) = repo();
+        let index = root.join(".git/index");
+        std::fs::remove_file(&index).unwrap();
+        match shape {
+            "socket" => {
+                let _l = std::os::unix::net::UnixListener::bind(&index).unwrap();
+            }
+            "directory" => std::fs::create_dir(&index).unwrap(),
+            "unreadable" => {
+                std::fs::write(&index, "not an index the host may read\n").unwrap();
+                std::fs::set_permissions(&index, std::fs::Permissions::from_mode(0o000)).unwrap();
+            }
+            _ => unreachable!(),
+        }
         let (g, r) = (git_on_path(), inspect(&root));
         let e = Scratch::new(&g, &r, &scratch_base(&t)).err().unwrap_or_else(|| panic!("{shape}: refused"));
         assert!(
             want.iter().any(|w| e.contains(w)),
             "{shape}: the refusal names the shape, want one of {want:?} in {e}"
         );
-        if let (Some(p), Some(before)) = (&target, real_before) {
-            assert_eq!(std::fs::read(p).unwrap(), before.0, "{shape}: the file the link names is untouched");
-        }
         refused_cleanly(&t, &marks, &e);
     }
 }
