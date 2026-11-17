@@ -8,9 +8,12 @@
 //! `GIT_OBJECT_DIRECTORY`, under the host's git belt (src/gitfacts.rs), so a tree or a blob it writes lands there and the
 //! person's index, HEAD, stash list and object store are unchanged; the two `rev-parse --git-path` queries that find the
 //! repository's object directory and index run before the scratch exists and name neither.
-//! The private directory goes when the `Scratch` is dropped, which is when the diff has been made. A split index
-//! (`sharedindex.*` beside it) is not copied, since its shared half would be read from, and could be rewritten in, the
-//! repository's git directory: the tree is built from HEAD instead, so the stat cache is lost but nothing is written.
+//! The private directory goes when the `Scratch` is dropped, which is when the diff has been made. The person's index
+//! is opened without following a link and copied only when it is a regular file of at most 256 MiB (a link is refused;
+//! a larger one, or a missing one, leaves the tree to come from HEAD). A split index (git's `rev-parse
+//! --shared-index-path` names a shared half) is not copied either, since its shared half would be read from, and could
+//! be rewritten in, the repository's git directory: the tree is built from HEAD instead, so the stat cache is lost but
+//! nothing is written. The scratch index is never written split (`core.splitIndex=false`).
 //! Entering the changed files is H11; this module only holds the store and writes the tree.
 
 use std::os::unix::ffi::OsStrExt;
@@ -34,7 +37,9 @@ impl Scratch {
     /// person's, or HEAD's tree when that is a split index. A repository with neither an index nor a commit gets an
     /// empty one. `Err` names why the store could not be made, which the call reports as a null diff.
     pub fn new(git: &Git, repo: &RepoConfig, base: &Path) -> Result<Scratch, String> {
-        let git_dir = repo.git_dir.as_ref().ok_or("the repository's git directory was not found")?;
+        if repo.git_dir.is_none() {
+            return Err("the repository's git directory was not found".into());
+        }
         let path_of = |name: &str| -> Result<PathBuf, String> {
             let (code, out) = git
                 .query_env(repo, &[], None, &["rev-parse", "--git-path", name], None)
@@ -69,11 +74,23 @@ impl Scratch {
             // through the clean filter, at its path from the process's directory (write-tree never enters the work
             // tree): no hook resolves, and the spawn runs in, and names as its work tree, an empty directory.
             ("GIT_WORK_TREE".into(), p(&s.dir.join("empty"))),
-            ("GIT_CONFIG_COUNT".into(), "3".into()),
+            ("GIT_CONFIG_COUNT".into(), "4".into()),
             ("GIT_CONFIG_KEY_2".into(), "core.hooksPath".into()),
             ("GIT_CONFIG_VALUE_2".into(), "/dev/null".into()),
+            // The scratch index is never written split, whatever the repository's config says: a split write puts
+            // its shared half beside the index.
+            ("GIT_CONFIG_KEY_3".into(), "core.splitIndex".into()),
+            ("GIT_CONFIG_VALUE_3".into(), "false".into()),
         ];
-        if split_index(git_dir) || std::fs::copy(&index, s.dir.join("index")).is_err() {
+        // The person's index is opened without following a link and must be a regular file, before git reads it:
+        // a symlink to a FIFO would block the copy (and git), one to /dev/zero would fill the scratch.
+        let person = open_index(&index)?;
+        let copied = match person {
+            Some(f) if !split_index(git, repo) => copy_index(f, &s.dir.join("index")).map_err(made)?,
+            _ => false,
+        };
+        if !copied {
+            let _ = std::fs::remove_file(s.dir.join("index"));
             s.from_head = true;
             // No HEAD (a repository with no commit) leaves the index empty, which is what that repository has.
             let _ = s.git(git, repo, &["read-tree", "HEAD"]);
@@ -107,11 +124,50 @@ impl Drop for Scratch {
     }
 }
 
-/// Whether the repository keeps a split index: its index's shared half is a `sharedindex.<id>` in the git directory.
-fn split_index(git_dir: &Path) -> bool {
-    std::fs::read_dir(git_dir)
-        .map(|d| d.flatten().any(|e| e.file_name().to_string_lossy().starts_with("sharedindex.")))
-        .unwrap_or(true)
+/// The most bytes of the person's index copied; a larger one is not copied and the tree comes from HEAD.
+const INDEX_MAX: u64 = 256 << 20;
+
+/// Whether the person's index is split, by git's own answer (`rev-parse --shared-index-path` prints the shared half's
+/// path, nothing when it is not split): a `sharedindex.*` left in the git directory by `--no-split-index` does not
+/// make it so. When git cannot answer, it is treated as split, so nothing is copied that could name a shared half.
+fn split_index(git: &Git, repo: &RepoConfig) -> bool {
+    match git.query_env(repo, &[], None, &["rev-parse", "--shared-index-path"], None) {
+        Some((0, out)) => !out.iter().all(u8::is_ascii_whitespace),
+        _ => true,
+    }
+}
+
+/// The person's index, opened for reading without following a link and without blocking on a FIFO: `None` when there
+/// is none (a `clone --no-checkout`), `Err` when it is a link or anything but a regular file.
+fn open_index(path: &Path) -> Result<Option<std::fs::File>, String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let flags = (rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32;
+    let f = match std::fs::OpenOptions::new().read(true).custom_flags(flags).open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("the repository's index could not be opened without following a link: {e}")),
+    };
+    match f.metadata() {
+        Ok(m) if m.is_file() => Ok(Some(f)),
+        Ok(_) => Err("the repository's index is not a regular file".into()),
+        Err(e) => Err(format!("the repository's index could not be read: {e}")),
+    }
+}
+
+/// Copies the person's index into the scratch, at most [`INDEX_MAX`] bytes, keeping its mtime so the entries git
+/// treats as racily clean stay so. `false` when it is larger, which leaves the tree to come from HEAD.
+fn copy_index(mut from: std::fs::File, to: &Path) -> std::io::Result<bool> {
+    let md = from.metadata()?;
+    if md.len() > INDEX_MAX {
+        return Ok(false);
+    }
+    let mut out = std::fs::File::create_new(to)?;
+    let n = std::io::copy(&mut std::io::Read::take(&mut from, INDEX_MAX + 1), &mut out)?;
+    if n > INDEX_MAX {
+        return Ok(false);
+    }
+    out.set_modified(md.modified()?)?;
+    Ok(true)
 }
 
 fn rand_bytes() -> [u8; 8] {
@@ -305,6 +361,30 @@ mod tests {
         let e = Scratch::new(&g, &r, &base).err().unwrap();
         assert!(e.contains("newline"), "{e}");
         assert_eq!(std::fs::read_dir(&base).unwrap().count(), 0, "no scratch directory is left in {}", base.display());
+    }
+
+    #[test]
+    fn an_index_that_is_a_link_is_refused_without_being_followed() {
+        if !have_git() {
+            return;
+        }
+        // A link to a regular file and a dangling one: refused by the no-follow open, before any copy or git read,
+        // so a link to a FIFO or to /dev/zero is refused the same way and cannot block or fill anything.
+        for target in ["real-index", "nowhere"] {
+            let (t, root, _marks) = repo();
+            let index = root.join(".git/index");
+            if target == "real-index" {
+                std::fs::rename(&index, root.join(".git/real-index")).unwrap();
+            } else {
+                std::fs::remove_file(&index).unwrap();
+            }
+            std::os::unix::fs::symlink(root.join(".git").join(target), &index).unwrap();
+            let (g, r) = (git_on_path(), inspect(&root));
+            let base = scratch_base(&t);
+            let e = Scratch::new(&g, &r, &base).err().unwrap();
+            assert!(e.contains("without following a link"), "{target}: {e}");
+            assert_eq!(std::fs::read_dir(&base).unwrap().count(), 0, "{target}: no scratch is left");
+        }
     }
 
     #[test]
