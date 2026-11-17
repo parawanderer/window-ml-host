@@ -232,12 +232,16 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
   coordinator's rulings on host#46):
   - The templates `.env.example`, `.env.sample` and `.env.template` (exact names, case-insensitive) are neither denied
     nor masked: they are committed, and a model reads them usefully. A real secret written into one is not protected.
-    Every other `.env.*` stays denied.
+    Every other `.env.*` stays denied. On macOS a call cannot create or overwrite a dotenv name either (the write deny
+    below), so the bootstrap `cp .env.example .env` is refused in a sandboxed call, and `host-plain` is the way through.
+    On Linux the copy makes a new name, which the next call holds; overwriting a held one fails on both.
   - The deny is by NAME, and a hardlink is another name: `ln .env notes.txt` is the same inode. At each root's top the
-    host checks inodes, so a regular file there that is a hardlink to a hidden dotenv file is denied, masked and listed
-    in `hiddenSecrets` like the file itself, on both platforms (a template that is such a link included). Deeper than a
-    root's top a hardlink is readable: a documented gap. The call cannot make such a link itself (`link` naming a
-    denied file is refused on macOS), so the gap is a link that already existed.
+    host checks inodes, so a regular file there that shares its inode with a dotenv-named file AT a root's top is
+    denied, masked and listed in `hiddenSecrets` like the file itself, on both platforms (a template that is such a link
+    included). Two shapes are a documented gap and readable: a hardlink deeper than a root's top, and a hardlink at a
+    root's top to a DEEPER dotenv file (`ln app/.env notes.txt`), since only the dotenv files at a root's top are
+    matched by inode. The call cannot make such a link itself (`link` naming a denied file is refused on macOS), so the
+    gap is a link that already existed.
   - A held file cannot be renamed, moved, removed or written by a sandboxed call, since a rename needs no read and
     `mv .env notes.txt` would hand the next call the value under a name nothing holds. On macOS the profile denies
     `file-write*` at any depth on every name the read side holds by name, `.env`, `.env.*`, `.netrc`,

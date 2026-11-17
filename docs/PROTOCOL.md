@@ -142,7 +142,8 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
   naming it (a dotenv loader) and fails with EPERM can be explained: naming the file in a marked path argument re-allows
   it (and asks, since it is flagged `secret`), and `host-plain` does not deny it. macOS denies the same names at any
   depth; only the root's top is listed. The templates `.env.example`, `.env.sample` and `.env.template` are not hidden;
-  a regular file at a root's top that is a hardlink to a hidden dotenv file is, and is listed. On Linux a hidden file
+  a regular file at a root's top that shares its inode with a dotenv-named file at a root's top is, and is listed (a
+  top-level link to a deeper dotenv file is not: SANDBOX.md, the gap). On Linux a hidden file
   reads as EMPTY, with no error, so this list is the only way the caller learns why. A path named in `pathArgs` is
   readable by every process of the call, not only the program given it: the approval is the control. `[]` for an
   unsandboxed call (docs/SANDBOX.md).

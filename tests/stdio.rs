@@ -967,8 +967,11 @@ fn a_cross_root_hardlink_to_a_dotenv_file_is_held_and_flagged_secret_when_named(
     let (_d, a) = root();
     let (_e, b) = root();
     std::fs::write(a.join(".env"), "DOTENV-SECRET\n").unwrap();
-    if std::fs::hard_link(a.join(".env"), b.join("cross.txt")).is_err() {
-        return; // two temp dirs on different filesystems: no hardlink between them to test
+    match std::fs::hard_link(a.join(".env"), b.join("cross.txt")) {
+        Ok(()) => {}
+        // Two temp dirs on different filesystems: no hardlink between them to test.
+        Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => return,
+        Err(e) => panic!("the cross-root hardlink could not be made: {e}"),
     }
     let mut h = Host::start();
     if !h.sandbox_available() {
@@ -1013,6 +1016,80 @@ fn a_held_dotenv_file_cannot_be_renamed_removed_or_written() {
     let (_f, d) = h.run(json!({ "argv": ["sh", "-c", "echo NEW > .env.example"], "cwd": r }));
     assert_eq!(d["code"], 0, "a template is writable: {d}");
     assert_eq!(std::fs::read(r.join(".env.example")).unwrap(), b"NEW\n");
+    // On macOS no dotenv name can be made either, the bootstrap copy from a template included (`host-plain` is the way
+    // through); Linux masks only the files a call starts with, so there the copy makes a new name, held from the next call.
+    let (_f, d) = h.run(json!({ "argv": ["sh", "-c", "cp .env.example .env.production"], "cwd": r }));
+    if cfg!(target_os = "macos") {
+        assert_ne!(d["code"], 0, "the bootstrap copy made a dotenv name: {d}");
+        assert!(!r.join(".env.production").exists());
+    } else {
+        assert_eq!(d["code"], 0, "{d}");
+        let (f, _d) = h.run(json!({ "argv": ["true"], "cwd": r }));
+        assert!(f["hiddenSecrets"].as_array().unwrap().contains(&json!(r.join(".env.production"))), "{f}");
+    }
+    // Overwriting a held one fails on both: the write deny on macOS, the read-only `/dev/null` bind on Linux.
+    let (_f, d) = h.run(json!({ "argv": ["sh", "-c", "cp .env.example .env"], "cwd": r }));
+    assert_ne!(d["code"], 0, "the bootstrap copy overwrote .env: {d}");
+    assert_eq!(std::fs::read(r.join(".env")).unwrap(), b"DOTENV-SECRET\n");
+    h.close();
+}
+
+/// What a dotenv loader meets: on Linux the masked file reads as EMPTY with no error (`/dev/null` is bound over it),
+/// so `hiddenSecrets` is the only tell; on macOS the read is refused (`a_held_dotenv_read_is_refused_on_macos`).
+#[cfg(target_os = "linux")]
+#[test]
+fn a_held_dotenv_file_reads_as_empty_and_not_as_an_error_on_linux() {
+    let (_d, r) = root();
+    std::fs::write(r.join(".env"), "DOTENV-SECRET\n").unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let (f, d) = h.run(json!({ "argv": ["cat", ".env"], "cwd": r }));
+    assert_eq!(f["hiddenSecrets"], json!([r.join(".env")]));
+    assert_eq!(d["code"], 0, "{}", text(&h.read_all(&d["stderr"])));
+    assert_eq!(text(&h.read_all(&d["stdout"])), "");
+    h.close();
+}
+
+/// macOS's half of the same: the read of a held dotenv file fails with EPERM, and nothing of it is printed.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_held_dotenv_read_is_refused_on_macos() {
+    let (_d, r) = root();
+    std::fs::write(r.join(".env"), "DOTENV-SECRET\n").unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let (f, d) = h.run(json!({ "argv": ["cat", ".env"], "cwd": r }));
+    assert_eq!(f["hiddenSecrets"], json!([r.join(".env")]));
+    assert_ne!(d["code"], 0);
+    assert_eq!(text(&h.read_all(&d["stdout"])), "");
+    let err = text(&h.read_all(&d["stderr"]));
+    assert!(err.contains("Operation not permitted"), "{err}");
+    h.close();
+}
+
+/// The documented gap: a hardlink at a root's top whose other name is a DEEPER dotenv file is not held, since the host
+/// matches a top-level link only against the dotenv files it finds at a root's top. It reads the secret on both
+/// platforms. This row pins the gap; it fails when the gap closes, and then the docs change with it.
+#[test]
+fn a_root_top_hardlink_to_a_deeper_dotenv_file_is_the_documented_gap() {
+    let (_d, r) = root();
+    std::fs::create_dir(r.join("app")).unwrap();
+    std::fs::write(r.join("app/.env"), "NESTED\n").unwrap();
+    std::fs::hard_link(r.join("app/.env"), r.join("notes.txt")).unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let (f, d) = h.run(json!({ "argv": ["cat", "notes.txt"], "cwd": r }));
+    assert_eq!(f["hiddenSecrets"], json!([]), "a link to a deeper dotenv file is not listed");
+    assert_eq!(text(&h.read_all(&d["stdout"])), "NESTED\n", "the gap is open");
     h.close();
 }
 

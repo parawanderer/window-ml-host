@@ -1059,6 +1059,17 @@ mod tests {
     }
 
     #[test]
+    fn a_root_top_hardlink_to_a_deeper_dotenv_file_is_not_a_root_top_secret() {
+        // The documented gap: only the dotenv files AT a root's top are matched by inode.
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path();
+        std::fs::create_dir(r.join("app")).unwrap();
+        std::fs::write(r.join("app/.env"), "S").unwrap();
+        std::fs::hard_link(r.join("app/.env"), r.join("notes.txt")).unwrap();
+        assert_eq!(root_top_secrets(&[r.to_path_buf()], &[]), Vec::<PathBuf>::new());
+    }
+
+    #[test]
     fn a_root_top_hardlink_to_a_hidden_dotenv_file_is_a_root_top_secret() {
         let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         let (ra, rb) = (a.path(), b.path());
