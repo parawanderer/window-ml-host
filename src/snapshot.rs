@@ -2,14 +2,18 @@
 //! FILE_ATTACHMENTS.md, H10).
 //!
 //! A [`Scratch`] holds a copy of the person's index (for its stat cache) and a private object directory, both in the
-//! host's own directory, with the repository's object directory as an alternate. Every git spawn names the copy as
-//! `GIT_INDEX_FILE` and the private directory as `GIT_OBJECT_DIRECTORY`, under the host's git belt (src/gitfacts.rs),
-//! so a tree or a blob it writes lands there and the person's index, HEAD, stash list and object store are unchanged.
+//! host's own directory, with the repository's object directory as an alternate (named in the private directory's
+//! `info/alternates`, which has no separator to quote, unlike `GIT_ALTERNATE_OBJECT_DIRECTORIES`). Every git spawn that
+//! reads or writes the index or objects names the copy as `GIT_INDEX_FILE` and the private directory as
+//! `GIT_OBJECT_DIRECTORY`, under the host's git belt (src/gitfacts.rs), so a tree or a blob it writes lands there and the
+//! person's index, HEAD, stash list and object store are unchanged; the two `rev-parse --git-path` queries that find the
+//! repository's object directory and index run before the scratch exists and name neither.
 //! The private directory goes when the `Scratch` is dropped, which is when the diff has been made. A split index
 //! (`sharedindex.*` beside it) is not copied, since its shared half would be read from, and could be rewritten in, the
 //! repository's git directory: the tree is built from HEAD instead, so the stat cache is lost but nothing is written.
 //! Entering the changed files is H11; this module only holds the store and writes the tree.
 
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 
@@ -37,35 +41,37 @@ impl Scratch {
             if code != 0 {
                 return Err(format!("git rev-parse --git-path {name} exited {code}"));
             }
-            let p = PathBuf::from(String::from_utf8_lossy(&out).trim());
+            let out = out.strip_suffix(b"\n").unwrap_or(&out);
+            let p = PathBuf::from(std::ffi::OsStr::from_bytes(out));
             Ok(if p.is_absolute() { p } else { repo.root.join(p) })
         };
         let objects = path_of("objects")?;
         let index = path_of("index")?;
         let dir = base.join(format!("snapshot-{}", hex::encode(rand_bytes())));
-        std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(dir.join("objects"))
-            .and_then(|_| std::fs::create_dir(dir.join("empty")))
-            .map_err(|e| format!("the scratch directory could not be made: {e}"))?;
+        let made = |e: std::io::Error| format!("the scratch directory could not be made: {e}");
+        std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir).map_err(made)?;
+        // From here on the directory exists, so every early return below removes it (Drop).
+        let mut s = Scratch { env: vec![], dir, from_head: false };
+        let objects_dir = s.dir.join("objects");
+        std::fs::create_dir_all(objects_dir.join("info")).map_err(made)?;
+        std::fs::create_dir(s.dir.join("empty")).map_err(made)?;
+        let alt = objects.as_os_str().as_bytes();
+        if alt.contains(&b'\n') {
+            return Err("the repository's object directory has a newline in its path".into());
+        }
+        std::fs::write(objects_dir.join("info/alternates"), [alt, b"\n"].concat()).map_err(made)?;
         let p = |p: &Path| p.to_string_lossy().into_owned();
-        let mut s = Scratch {
-            env: vec![
-                ("GIT_INDEX_FILE".into(), p(&dir.join("index"))),
-                ("GIT_OBJECT_DIRECTORY".into(), p(&dir.join("objects"))),
-                ("GIT_ALTERNATE_OBJECT_DIRECTORIES".into(), p(&objects)),
-                // Writing the index runs `post-index-change`, and its check of a racily clean entry reads the file
-                // through the clean filter, at its path from the process's directory (write-tree never enters the work
-                // tree): no hook resolves, and the spawn runs in, and names as its work tree, an empty directory.
-                ("GIT_WORK_TREE".into(), p(&dir.join("empty"))),
-                ("GIT_CONFIG_COUNT".into(), "3".into()),
-                ("GIT_CONFIG_KEY_2".into(), "core.hooksPath".into()),
-                ("GIT_CONFIG_VALUE_2".into(), "/dev/null".into()),
-            ],
-            dir,
-            from_head: false,
-        };
+        s.env = vec![
+            ("GIT_INDEX_FILE".into(), p(&s.dir.join("index"))),
+            ("GIT_OBJECT_DIRECTORY".into(), p(&objects_dir)),
+            // Writing the index runs `post-index-change`, and its check of a racily clean entry reads the file
+            // through the clean filter, at its path from the process's directory (write-tree never enters the work
+            // tree): no hook resolves, and the spawn runs in, and names as its work tree, an empty directory.
+            ("GIT_WORK_TREE".into(), p(&s.dir.join("empty"))),
+            ("GIT_CONFIG_COUNT".into(), "3".into()),
+            ("GIT_CONFIG_KEY_2".into(), "core.hooksPath".into()),
+            ("GIT_CONFIG_VALUE_2".into(), "/dev/null".into()),
+        ];
         if split_index(git_dir) || (index.exists() && std::fs::copy(&index, s.dir.join("index")).is_err()) {
             s.from_head = true;
             // No HEAD (a repository with no commit) leaves the index empty, which is what that repository has.
@@ -156,8 +162,12 @@ mod tests {
     /// A repository with one commit, a hook, a clean filter and an fsmonitor configured, each of which would leave
     /// `marks/<name>` if it ran.
     fn repo() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        repo_named("w")
+    }
+
+    fn repo_named(name: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
         let t = tempfile::tempdir().unwrap();
-        let root = t.path().join("w");
+        let root = t.path().join(name);
         let marks = t.path().join("marks");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::create_dir_all(&marks).unwrap();
@@ -262,6 +272,38 @@ mod tests {
         assert_eq!(s.tree(&g, &r).unwrap(), empty);
         drop(s);
         assert_eq!(dot_git(&root), before);
+    }
+
+    // --- the alternate, and a scratch that fails part-way ---
+
+    #[test]
+    fn a_colon_in_the_repository_path_keeps_its_objects_reachable() {
+        if !have_git() {
+            return;
+        }
+        // `GIT_ALTERNATE_OBJECT_DIRECTORIES` splits on ':', which would drop this store while write-tree still exits 0.
+        let (t, root, _marks) = repo_named("w:x");
+        let blob = run(&root, &["rev-parse", "HEAD:a.txt"]);
+        let (g, r) = (git_on_path(), inspect(&root));
+        let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+        let read = s.git(&g, &r, &["cat-file", "blob", &blob]).unwrap();
+        assert_eq!((read.0, read.1), (0, b"one\n".to_vec()), "HEAD's blob is read through the alternate");
+        assert_eq!(s.tree(&g, &r).unwrap(), run(&root, &["rev-parse", "HEAD^{tree}"]));
+    }
+
+    #[test]
+    fn a_scratch_that_fails_after_its_directory_exists_leaves_nothing_behind() {
+        if !have_git() {
+            return;
+        }
+        // A newline in the object directory's path cannot be written to `info/alternates`: refused after the
+        // scratch directory was made, which must go with it.
+        let (t, root, _marks) = repo_named("w\nx");
+        let (g, r) = (git_on_path(), inspect(&root));
+        let base = scratch_base(&t);
+        let e = Scratch::new(&g, &r, &base).err().unwrap();
+        assert!(e.contains("newline"), "{e}");
+        assert_eq!(std::fs::read_dir(&base).unwrap().count(), 0, "no scratch directory is left in {}", base.display());
     }
 
     // --- the split index falls back to HEAD ---
