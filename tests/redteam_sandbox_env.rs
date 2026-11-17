@@ -70,6 +70,7 @@
 //!     the consent surface, and the sheet shows what was named. Not a gap in the sandbox, a property of the approval.
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 use window_ml_host::facts::looks_secret;
@@ -185,6 +186,7 @@ impl Tree {
     }
     /// What `sandbox-exec` with `profile` makes of a read of `path`: whether it succeeded, and its output (either the
     /// bytes or the refusal).
+    #[cfg(target_os = "macos")]
     fn read_under(&self, profile: &str, path: &Path) -> (bool, String) {
         let out = Command::new("/usr/bin/sandbox-exec").args(["-p", profile, "/bin/cat"]).arg(path).output().unwrap();
         (
@@ -209,7 +211,15 @@ impl Tree {
 fn a_dotenv_file_is_unreadable_at_any_depth_and_through_a_link_or_a_parent() {
     let t = Tree::new();
     let profile = seatbelt_profile(&plan(vec![t.root.clone()]));
-    for rel in [".env", ".env.local", ".env.production", ".env.examples", ".env.example.local", "app/.env", "app/.env.production"] {
+    for rel in [
+        ".env",
+        ".env.local",
+        ".env.production",
+        ".env.examples",
+        ".env.example.local",
+        "app/.env",
+        "app/.env.production",
+    ] {
         let (ok, out) = t.read_under(&profile, &t.at(rel));
         assert!(!ok, "{rel} was readable: {out}");
     }
@@ -288,7 +298,10 @@ fn the_deny_line_is_case_insensitive_and_does_not_cross_a_directory() {
         assert!(deny.contains(n), "{n} is still denied: {deny}");
     }
     // The root-top hardlink is denied by its PATH, since no name rule sees the inode.
-    assert!(deny.contains(&format!("(literal {})", lit(&t.at(ROOT_TOP_LINK)))), "the hardlink is a judged path: {deny}");
+    assert!(
+        deny.contains(&format!("(literal {})", lit(&t.at(ROOT_TOP_LINK)))),
+        "the hardlink is a judged path: {deny}"
+    );
 }
 
 /// The order the profile relies on: deny by name, allow the templates, then deny again everything the template's name
@@ -413,6 +426,7 @@ fn the_sandbox_does_not_let_a_program_make_the_hardlink_itself() {
 }
 
 /// A single-quoted shell word, so a path with a space or a quote cannot change what the row runs.
+#[cfg(target_os = "macos")]
 fn q(p: &Path) -> String {
     format!("'{}'", p.display().to_string().replace('\'', r"'\''"))
 }
