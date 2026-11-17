@@ -36,7 +36,7 @@ malformed is `BadRequest`, never a silent fallback. `done` always reports the sc
 | Network, a credentialed call (`credential` on `spawn`, `src/credential.rs`) | outbound TCP to its own proxy alone (`(remote ip "localhost:<port>")`, `src/proxy.rs`), which admits only `CONNECT <granted host>:443`; no DNS resolver socket; `com.apple.trustd.agent`; exec always program-only; the provider's token in the env, its config dir a throwaway under `$TMPDIR` | needs Landlock (`SandboxFailed` without it). The call keeps `--unshare-net`, so it has no network at all; the proxy listens on a unix socket in the call's own directory, bound into the sandbox (the session's socket directory is masked, so no other call's socket is visible). `exec-under` first starts `wmlhost forward`, which carries `127.0.0.1:18443` inside the namespace to that socket, then applies the call's ruleset; exec always program-only; the same token, config dir and proxy env |
 | Processes (`exec: "any"`, the floor) | start any program, all inheriting the profile | the same, in a fresh PID namespace |
 | Processes (`exec: "program-only"`) | only the resolved set, by `literal`; `sh -c 'ls'` cannot exec `ls` | the same, by Landlock EXECUTE grants |
-| Credential stores (`.ssh`, `.gnupg`, `.aws`, `.azure`, `.kube`, `.docker`, `.password-store`, `~/Library/Keychains`, `.config/gh`, `.config/gcloud`, `.netrc`, `.git-credentials`, `.pgpass`, `.env`, `.env.*`) | unreadable at ANY depth, matched by regex, case-insensitively | masked under `$HOME` only (an empty tmpfs or `/dev/null` bound over each that exists), and `.env` / `.env.*` also at the TOP of each root, with a hardlink there to one; a deeper one is readable (the gap below); the `.env.example`, `.env.sample` and `.env.template` templates are readable on both |
+| Credential stores (`.ssh`, `.gnupg`, `.aws`, `.azure`, `.kube`, `.docker`, `.password-store`, `~/Library/Keychains`, `.config/gh`, `.config/gcloud`, `.netrc`, `.git-credentials`, `.pgpass`, `.env`, `.env.*`) | unreadable at ANY depth, matched by regex, case-insensitively | masked under `$HOME` only (an empty tmpfs or `/dev/null` bound over each that exists), and `.env` / `.env.*` / `.netrc` / `.git-credentials` / `.pgpass` also at the TOP of each root, with a hardlink there to one; a deeper one is readable (the gap below); the `.env.example`, `.env.sample` and `.env.template` templates are readable on both |
 | …unless the call NAMES one | a marked path argument flagged `secret` is re-allowed by a `literal` rule: the person approved this exact path | the same, by not masking it |
 | Files that run code later (`.git/hooks/`, `.git/config`, `.gitmodules`, `.vscode/`, `.idea/`, `.claude/`, `.gitconfig`, `.mcp.json`, `.envrc`, shell rc files) | unwritable at any depth (regex), and `.git` cannot be renamed away | absent envelope: re-bound read-only where they exist at the TOP of each root when the call starts (the gap stays); `write: "roots"`: never writable, the name-immutable top level covers the ones that do not exist yet |
 | The session's held output | neither readable nor writable | masked (empty tmpfs) |
@@ -225,9 +225,10 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
   SECRET_HANDLES.md's incident of 2026-10-21): `.env` and `.env.*` are unreadable unless named, at any depth on macOS
   and at each root's top on Linux, where Landlock cannot deny one file inside a granted tree, so `root/app/.env` stays
   readable there (a documented gap, no walk at spawn). A dotenv loader under the sandbox then fails with EPERM; the
-  call's facts list what was hidden (`hiddenSecrets`, PROTOCOL.md), and naming the file or running `host-plain` is the
-  way through. On Linux a masked file reads as EMPTY, not as an error (`/dev/null` is bound over it), so a loader sees
-  no variables and no failure; `hiddenSecrets` is how the caller learns why. The rest of the rule (2026-11-17, the
+  call's facts list what was hidden (`hiddenSecrets`, PROTOCOL.md; the credential files `.netrc`, `.git-credentials` and
+  `.pgpass` at a root's top are held, masked and listed the same way), and naming the file or running `host-plain` is
+  the way through. On Linux a masked file reads as EMPTY, not as an error (`/dev/null` is bound over it), so a loader
+  sees no variables and no failure; `hiddenSecrets` is how the caller learns why. The rest of the rule (2026-11-17, the
   coordinator's rulings on host#46):
   - The templates `.env.example`, `.env.sample` and `.env.template` (exact names, case-insensitive) are neither denied
     nor masked: they are committed, and a model reads them usefully. A real secret written into one is not protected.
@@ -239,12 +240,13 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
     denied file is refused on macOS), so the gap is a link that already existed.
   - A held file cannot be renamed, moved, removed or written by a sandboxed call, since a rename needs no read and
     `mv .env notes.txt` would hand the next call the value under a name nothing holds. On macOS the profile denies
-    `file-write*` on the dotenv names (not the templates, which stay writable) at any depth and on each root-top
-    hardlink. On Linux a root-top held file is a bind mount of `/dev/null`: a rename or unlink fails with EBUSY and a
-    write with EROFS. A deeper dotenv file on Linux is readable anyway (the gap above). Naming a file re-allows its
-    READ only, never a write. On macOS a sandboxed call can rename the directory that holds a deeper dotenv file, but
-    not read the file at its new path: the read deny matches the file's own name at any depth, and a parent's rename
-    leaves that name unchanged.
+    `file-write*` at any depth on every name the read side holds by name, `.env`, `.env.*`, `.netrc`,
+    `.git-credentials` and `.pgpass` (not the templates, which stay writable), and on each root-top hardlink to one.
+    On Linux a root-top held file is a bind mount of `/dev/null`: a rename or unlink fails with EBUSY and a write with
+    EROFS. A deeper dotenv file on Linux is readable anyway (the gap above). Naming a file re-allows its READ only,
+    never a write. On macOS a sandboxed call can rename the directory that holds a deeper dotenv file, but not read the
+    file at its new path: the read deny matches the file's own name at any depth, and a parent's rename leaves that name
+    unchanged.
   - A link or rename made OUTSIDE the sandbox between the host's scan of the roots and the spawn is judged by
     nothing: the scan is a snapshot of names and inodes at spawn time (a documented gap).
   - Naming a secret path in `pathArgs` unmasks it for the WHOLE call, every process in it, not only the program that

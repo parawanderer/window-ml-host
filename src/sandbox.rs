@@ -599,14 +599,15 @@ const DENY_READ_PREFIXES: &[&str] = &[".env."];
 /// (a real one in them is not protected, docs/SANDBOX.md). Exact names, case-insensitive.
 pub const DOTENV_TEMPLATES: &[&str] = &[".env.example", ".env.sample", ".env.template"];
 
-/// Whether a file name (lowercased) is one the sandbox holds unreadable by name: `.env` or `.env.*`, not a template.
+/// Whether a file name (lowercased) is one the sandbox holds unreadable by name: `.env`, `.env.*` but a template,
+/// `.netrc`, `.git-credentials` or `.pgpass`.
 fn is_dotenv_name(name: &str) -> bool {
     (DENY_READ_FILES.contains(&name) || DENY_READ_PREFIXES.iter().any(|p| name.starts_with(p)))
         && !DOTENV_TEMPLATES.contains(&name)
 }
 
-/// The files at the TOP of each root that the sandbox holds unreadable (`.env`, `.env.*` but the templates, and a
-/// hardlink at a root's top to one of them, which is the same inode under another name), minus the ones the call
+/// The files at the TOP of each root that the sandbox holds unreadable (`.env`, `.env.*` but the templates, `.netrc`,
+/// `.git-credentials`, `.pgpass`, and a hardlink at a root's top to one of them, which is the same inode under another name), minus the ones the call
 /// names: what a call's facts report as `hiddenSecrets`, and what Linux masks. macOS denies the same names at any
 /// depth, and these paths besides; Linux masks only these, since Landlock cannot deny one file inside a granted tree
 /// (docs/SANDBOX.md). A symlink is not listed or masked. A hardlink deeper than a root's top is not seen (the gap).
@@ -729,7 +730,7 @@ pub fn seatbelt_profile(plan: &Plan) -> String {
     p.push(format!("(allow file-write* {})", write.join(" ")));
     let deny_write: Vec<String> = deny_write_regexes().iter().map(|r| re(r)).collect();
     p.push(format!("(deny file-write* {})", deny_write.join(" ")));
-    // A dotenv file (not a template) and a root-top hardlink to one are never written, renamed or removed: a rename
+    // A held name (`is_dotenv_name`) and a root-top hardlink to one are never written, renamed or removed: a rename
     // needs no read, so `mv .env notes.txt` in one call would let the next read the value under a name nothing holds.
     let names: Vec<String> = DENY_READ_FILES
         .iter()
@@ -1044,6 +1045,17 @@ mod tests {
         }
         let got = root_top_secrets(&[r.to_path_buf()], &[]);
         assert_eq!(got, vec![r.join(".env.example.local"), r.join(".env.examples")], "exact names only");
+    }
+
+    #[test]
+    fn the_credential_files_at_a_roots_top_are_root_top_secrets_like_a_dotenv_file() {
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path();
+        for f in [".netrc", ".Git-Credentials", ".pgpass", ".envrc", "x.env", "netrc"] {
+            std::fs::write(r.join(f), "").unwrap();
+        }
+        let got = root_top_secrets(&[r.to_path_buf()], &[]);
+        assert_eq!(got, vec![r.join(".Git-Credentials"), r.join(".netrc"), r.join(".pgpass")]);
     }
 
     #[test]
