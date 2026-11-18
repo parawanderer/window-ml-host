@@ -1118,7 +1118,10 @@ fn a_template_a_held_name_links_to_is_held_for_reading_and_writing() {
 
 /// A file outside every root cannot be hardlinked into one, so a later write through the in-root name never lands on the
 /// outside inode: macOS refuses the link by its profile, Linux by the mount each root is (EXDEV). The write after the
-/// refused link makes a new, unrelated file.
+/// refused link makes a new, unrelated file. Measured under the default scope and under the `write: "roots"` envelope,
+/// which is given on `start` (an unknown `configure` key is ignored). The roots pass links into an existing
+/// subdirectory, so the top level's name-immutable deny cannot be what refuses it and the inode rule is measured there
+/// too.
 #[test]
 fn a_file_outside_every_root_cannot_be_hardlinked_into_one() {
     use std::os::unix::fs::MetadataExt;
@@ -1129,15 +1132,17 @@ fn a_file_outside_every_root_cannot_be_hardlinked_into_one() {
     if !h.sandbox_available() {
         return h.close();
     }
+    std::fs::create_dir(r.join("sub")).unwrap();
+    h.ok("configure", json!({ "roots": [r] }));
     for write in [None, Some("roots")] {
-        let mut cfg = json!({ "roots": [r] });
-        if let Some(w) = write {
-            cfg["write"] = json!(w);
-        }
-        h.ok("configure", cfg);
-        let _ = std::fs::remove_file(r.join("x"));
+        let dir = if write.is_some() { r.join("sub") } else { r.clone() };
+        let _ = std::fs::remove_file(dir.join("x"));
         let script = format!("ln {} x; echo LN=$?; echo PWNED >> x", o.join("victim").display());
-        let (_f, d) = h.run(json!({ "argv": ["sh", "-c", script], "cwd": r }));
+        let args = json!({ "argv": ["sh", "-c", script], "cwd": dir });
+        let (_f, d) = match write {
+            Some(w) => run_envelope(&mut h, args, json!({ "write": w, "exec": "any" })),
+            None => h.run(args),
+        };
         let out = text(&h.read_all(&d["stdout"]));
         let err = text(&h.read_all(&d["stderr"]));
         assert!(out.contains("LN=") && !out.contains("LN=0"), "the link was made ({write:?}): {out} {err}");
@@ -1145,9 +1150,7 @@ fn a_file_outside_every_root_cannot_be_hardlinked_into_one() {
         assert!(err.contains(want), "refused by another mechanism than measured ({write:?}): {err}");
         assert_eq!(std::fs::read(o.join("victim")).unwrap(), b"ORIGINAL\n", "{write:?}");
         assert_eq!(std::fs::metadata(o.join("victim")).unwrap().nlink(), 1, "{write:?}");
-        if write.is_none() {
-            assert_eq!(std::fs::read(r.join("x")).unwrap(), b"PWNED\n", "the write made a new file");
-        }
+        assert_eq!(std::fs::read(dir.join("x")).unwrap(), b"PWNED\n", "the write made a new file ({write:?})");
     }
     h.close();
 }
