@@ -1,0 +1,609 @@
+{
+  "program": "sed",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "sed",
+        "-n",
+        "p",
+        "a.txt"
+      ],
+      "note": "the script is the first operand, not a path; the file after it is read",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "-n",
+        "p",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "s/a/b/g",
+        "a.txt",
+        "b.txt"
+      ],
+      "note": "every operand after the script is a file read",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?",
+        "read:fs:b.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "s/a/b/g",
+        "a.txt",
+        "b.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-e",
+        "p",
+        "-e",
+        "d",
+        "a.txt"
+      ],
+      "note": "-e gives the script, so every operand is a file (pathsFrom 0)",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 5,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "-e",
+        "p",
+        "-e",
+        "d",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-ne",
+        "p",
+        "a.txt"
+      ],
+      "note": "-e in a cluster takes the next argument as its script",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "-ne",
+        "p",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-es/a/b/",
+        "a.txt"
+      ],
+      "note": "-e with its script attached",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "-es/a/b/",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-E",
+        "s/(a)b/\\1/",
+        "a.txt"
+      ],
+      "note": "-E only changes the regex dialect",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "-E",
+        "s/(a)b/\\1/",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-r",
+        "-u",
+        "1d",
+        "a.txt"
+      ],
+      "note": "-r and -u: the same meaning in GNU and BSD",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "-r",
+        "-u",
+        "1d",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "p",
+        "-"
+      ],
+      "note": "a lone - is a file to macOS sed (stdin to GNU): claimed as a path",
+      "described": true,
+      "effects": [
+        "read:fs:-:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "p",
+        "-"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "--",
+        "p",
+        "a.txt"
+      ],
+      "note": "the terminator before the script",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "--",
+        "p",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "/x/{s/a/b/;p;}",
+        "a.txt"
+      ],
+      "note": "a block with an address",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "/x/{s/a/b/;p;}",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "p"
+      ],
+      "note": "no file: stdin, nothing to resolve",
+      "described": true,
+      "effects": [],
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "p"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "w out.txt",
+        "a.txt"
+      ],
+      "note": "w writes a file the argv does not name: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "w out.txt",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "s/a/b/w out.txt",
+        "a.txt"
+      ],
+      "note": "the s flag w writes a file: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "s/a/b/w out.txt",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "r /etc/passwd",
+        "a.txt"
+      ],
+      "note": "r reads a file the argv does not name: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "r /etc/passwd",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "s/a/b/e",
+        "a.txt"
+      ],
+      "note": "the s flag e runs the pattern space as a command (GNU): unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "s/a/b/e",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-i",
+        "",
+        "s/a/b/",
+        "a.txt"
+      ],
+      "note": "-i is a flavour's alone (GNU attached, BSD separate): undetected, unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        },
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "-i",
+        "",
+        "s/a/b/",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "p",
+        "a.txt",
+        "-n"
+      ],
+      "note": "a flag after an operand: GNU permutes, BSD stops; undetected, unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "p",
+        "a.txt",
+        "-n"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-f",
+        "prog.sed",
+        "a.txt"
+      ],
+      "note": "-f reads a script this manifest cannot check: unlisted, unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "-f",
+        "prog.sed",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-n"
+      ],
+      "note": "no script at all: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "-n"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "s/[[:a:[]/]/X/",
+        "a.txt"
+      ],
+      "note": "a bracket expression GNU and BSD end in different places: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "s/[[:a:[]/]/X/",
+        "a.txt"
+      ]
+    }
+  ]
+}

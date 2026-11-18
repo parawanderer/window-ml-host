@@ -1,0 +1,47 @@
+{
+  "program": "awk",
+  "version": {
+    "range": "*",
+    "args": [],
+    "pattern": ""
+  },
+  "flavours": {
+    "bsd": {
+      "system": "macos"
+    }
+  },
+  "okCodes": [
+    0
+  ],
+  "echoes": false,
+  "command": {
+    "effects": [
+      "read"
+    ],
+    "paths": {
+      "operandsFrom": 1
+    },
+    "noPaths": "nothing",
+    "terminator": "--",
+    "optionsFirst": true,
+    "script": "awk",
+    "flags": {
+      "-F": {
+        "value": true
+      },
+      "-v": {
+        "value": true
+      }
+    },
+    "flavour": {
+      "bsd": {
+        "flags": {
+          "-safe": {}
+        },
+        "harden": [
+          "-safe"
+        ]
+      }
+    }
+  }
+}

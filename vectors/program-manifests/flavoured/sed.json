@@ -1,0 +1,715 @@
+{
+  "program": "sed",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "sed",
+        "-i",
+        "s/a/b/",
+        "a.txt"
+      ],
+      "flavour": "gnu",
+      "note": "GNU -i edits in place with no backup: a.txt is written",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?",
+        "write-names:fs:a.txt:?:?",
+        "write:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "--sandbox",
+        "-i",
+        "s/a/b/",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-i.bak",
+        "s/a/b/",
+        "a.txt"
+      ],
+      "flavour": "gnu",
+      "note": "-i.bak writes a backup file the argv does not name: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "--sandbox",
+        "-i.bak",
+        "s/a/b/",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-ni",
+        "p",
+        "a.txt"
+      ],
+      "flavour": "gnu",
+      "note": "-n then -i in one cluster: -i takes the empty rest",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?",
+        "write-names:fs:a.txt:?:?",
+        "write:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "--sandbox",
+        "-ni",
+        "p",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-in",
+        "p",
+        "a.txt"
+      ],
+      "flavour": "gnu",
+      "note": "-in is -i with the suffix n (a backup file), not -i -n: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "--sandbox",
+        "-in",
+        "p",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "s/a/b/",
+        "a.txt",
+        "-i"
+      ],
+      "flavour": "gnu",
+      "note": "GNU permutes: -i after the file still edits it in place",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?",
+        "write-names:fs:a.txt:?:?",
+        "write:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "--sandbox",
+        "s/a/b/",
+        "a.txt",
+        "-i"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-i",
+        "",
+        "s/a/b/",
+        "a.txt"
+      ],
+      "flavour": "gnu",
+      "note": "the BSD spelling under GNU: the empty argument is the script",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?",
+        "read:fs:s/a/b/:?:?",
+        "write-names:fs:a.txt:?:?",
+        "write-names:fs:s/a/b/:?:?",
+        "write:fs:a.txt:?:?",
+        "write:fs:s/a/b/:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "write"
+        },
+        {
+          "arg": 4,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "--sandbox",
+        "-i",
+        "",
+        "s/a/b/",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "--in-place",
+        "s/a/b/",
+        "a.txt"
+      ],
+      "flavour": "gnu",
+      "note": "the long -i",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?",
+        "write-names:fs:a.txt:?:?",
+        "write:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "--sandbox",
+        "--in-place",
+        "s/a/b/",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "--expression=p",
+        "a.txt"
+      ],
+      "flavour": "gnu",
+      "note": "a GNU long flag giving the script",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "--sandbox",
+        "--expression=p",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "--sandbox",
+        "p",
+        "a.txt"
+      ],
+      "flavour": "gnu",
+      "note": "--sandbox already given: the hardening is not repeated",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "--sandbox",
+        "p",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-n",
+        "p",
+        "a.txt"
+      ],
+      "flavour": "gnu",
+      "note": "the hardening inserts --sandbox",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "--sandbox",
+        "-n",
+        "p",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "s/a/b/w out",
+        "a.txt"
+      ],
+      "flavour": "gnu",
+      "note": "w still writes a file the argv does not name, under --sandbox too: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "--sandbox",
+        "s/a/b/w out",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "s/[[:a:[]/]/X/",
+        "a.txt"
+      ],
+      "flavour": "gnu",
+      "note": "a bracket expression GNU and BSD end in different places: unknown even when detected",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "--sandbox",
+        "s/[[:a:[]/]/X/",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-i",
+        "",
+        "s/a/b/",
+        "a.txt"
+      ],
+      "flavour": "bsd",
+      "note": "BSD -i takes its suffix as the next argument; empty is no backup",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?",
+        "write-names:fs:a.txt:?:?",
+        "write:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "-i",
+        "",
+        "s/a/b/",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-i",
+        ".bak",
+        "s/a/b/",
+        "a.txt"
+      ],
+      "flavour": "bsd",
+      "note": "a backup suffix writes a file the argv does not name: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "-i",
+        ".bak",
+        "s/a/b/",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-i",
+        "s/a/b/",
+        "a.txt"
+      ],
+      "flavour": "bsd",
+      "note": "the GNU spelling under BSD: the script is taken as the suffix: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "-i",
+        "s/a/b/",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-I",
+        "",
+        "s/a/b/",
+        "a.txt"
+      ],
+      "flavour": "bsd",
+      "note": "BSD -I, in place across the files as one stream",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?",
+        "write-names:fs:a.txt:?:?",
+        "write:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "write"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "-I",
+        "",
+        "s/a/b/",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-I",
+        "",
+        "s/a/b/",
+        "a.txt"
+      ],
+      "flavour": "gnu",
+      "note": "GNU has no -I: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        },
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "--sandbox",
+        "-I",
+        "",
+        "s/a/b/",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "--expression=p",
+        "a.txt"
+      ],
+      "flavour": "bsd",
+      "note": "BSD has no long flags: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "--expression=p",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "p",
+        "a.txt",
+        "-n"
+      ],
+      "flavour": "bsd",
+      "note": "BSD stops at the first operand: -n is a file it reads",
+      "described": true,
+      "effects": [
+        "read:fs:-n:?:?",
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "p",
+        "a.txt",
+        "-n"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "p",
+        "a.txt",
+        "-i"
+      ],
+      "flavour": "bsd",
+      "note": "after an operand, -i is a file name to BSD but a write to GNU: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "p",
+        "a.txt",
+        "-i"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "p",
+        "a.txt"
+      ],
+      "flavour": "other",
+      "note": "a sed its manifest does not describe: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "sed",
+        "p",
+        "a.txt"
+      ]
+    }
+  ]
+}

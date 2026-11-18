@@ -1,0 +1,129 @@
+{
+  "program": "sed",
+  "version": {
+    "range": "*",
+    "args": [],
+    "pattern": ""
+  },
+  "flavours": {
+    "gnu": {
+      "probe": {
+        "args": [
+          "--version"
+        ],
+        "pattern": "^sed \\(GNU sed\\) (\\d+\\.\\d+)",
+        "range": ">=4.3 <5"
+      }
+    },
+    "bsd": {
+      "system": "macos"
+    }
+  },
+  "okCodes": [
+    0
+  ],
+  "echoes": false,
+  "env": [
+    "POSIXLY_CORRECT"
+  ],
+  "command": {
+    "effects": [
+      "read"
+    ],
+    "paths": {
+      "operandsFrom": 1
+    },
+    "noPaths": "nothing",
+    "terminator": "--",
+    "optionsFirst": true,
+    "dashIsPath": true,
+    "clusters": true,
+    "script": "sed",
+    "flags": {
+      "-n": {},
+      "-e": {
+        "value": true,
+        "script": true,
+        "pathsFrom": 0
+      },
+      "-E": {},
+      "-r": {},
+      "-u": {}
+    },
+    "flavour": {
+      "gnu": {
+        "flags": {
+          "--quiet": {},
+          "--silent": {},
+          "--expression": {
+            "value": true,
+            "script": true,
+            "pathsFrom": 0
+          },
+          "--regexp-extended": {},
+          "-s": {},
+          "--separate": {},
+          "--unbuffered": {},
+          "-z": {},
+          "--null-data": {},
+          "-l": {
+            "value": true
+          },
+          "--line-length": {
+            "value": true
+          },
+          "--debug": {},
+          "-i": {
+            "attachedValue": true,
+            "values": [
+              ""
+            ],
+            "effects": [
+              "write",
+              "write-names"
+            ]
+          },
+          "--in-place": {
+            "effects": [
+              "write",
+              "write-names"
+            ]
+          },
+          "--sandbox": {}
+        },
+        "argOrder": "permute",
+        "harden": [
+          "--sandbox"
+        ]
+      },
+      "bsd": {
+        "flags": {
+          "-i": {
+            "value": true,
+            "values": [
+              ""
+            ],
+            "effects": [
+              "write",
+              "write-names"
+            ]
+          },
+          "-I": {
+            "value": true,
+            "values": [
+              ""
+            ],
+            "effects": [
+              "write",
+              "write-names"
+            ]
+          },
+          "-l": {},
+          "-a": {},
+          "-H": {}
+        },
+        "argOrder": "stop"
+      }
+    }
+  }
+}

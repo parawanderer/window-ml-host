@@ -11,8 +11,10 @@ use window_ml_host::manifest::{
 
 // --- program manifest vectors ---
 
-const PROGRAMS: [&str; 15] =
-    ["cat", "cp", "find", "gh", "git", "head", "jq", "ls", "mv", "rg", "rm", "rmdir", "tail", "unlink", "wc"];
+const PROGRAMS: [&str; 17] = [
+    "awk", "cat", "cp", "find", "gh", "git", "head", "jq", "ls", "mv", "rg", "rm", "rmdir", "sed", "tail", "unlink",
+    "wc",
+];
 
 fn dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("vectors/program-manifests")
@@ -49,11 +51,46 @@ fn every_vector_call_describes_as_recorded() {
             assert_eq!(json!(harden_argv(&argv, &d)), c["hardened"], "hardened: {who}");
         }
     }
-    assert_eq!(total, 471);
+    assert_eq!(total, 507);
 }
 
 #[test]
-fn all_fifteen_programs_have_a_manifest_and_a_calls_file() {
+fn every_flavoured_call_describes_as_recorded_under_its_flavour() {
+    let mut total = 0;
+    for program in ["awk", "sed"] {
+        let manifest: Manifest = serde_json::from_value(load("manifests", program)).unwrap();
+        assert!(manifest.flavours.is_some(), "{program} declares flavours");
+        let fx = load("flavoured", program);
+        assert_eq!(fx["program"], program);
+        let version = fx["version"].as_str().unwrap();
+        for c in fx["calls"].as_array().unwrap() {
+            total += 1;
+            let argv: Vec<String> =
+                c["argv"].as_array().unwrap().iter().map(|a| a.as_str().unwrap().to_string()).collect();
+            let flavour = match c["flavour"].as_str().unwrap() {
+                "gnu" => Flavour::Gnu,
+                "bsd" => Flavour::Bsd,
+                "other" => Flavour::Other,
+                f => panic!("{program}: flavour {f}"),
+            };
+            let who = format!("{program}: {argv:?} as {flavour:?} ({})", c["note"].as_str().unwrap());
+            let d = describe_call_as(&argv, &manifest, Some(version), &[], Some(flavour));
+            assert_eq!(json!(d.described), c["described"], "described: {who}: {:?}", d.why);
+            assert_eq!(d.effects.to_json(), c["effects"], "effects: {who}");
+            assert_eq!(serde_json::to_value(&d.path_args).unwrap(), c["pathArgs"], "pathArgs: {who}");
+            assert_eq!(json!(d.acts_on_dir), c["actsOnDir"], "actsOnDir: {who}");
+            assert_eq!(json!(d.runner), c["runner"], "runner: {who}");
+            assert_eq!(json!(d.ok_codes), c["okCodes"], "okCodes: {who}");
+            assert_eq!(json!(d.echoes), c["echoes"], "echoes: {who}");
+            assert_eq!(json!(d.recursive), c["recursive"], "recursive: {who}");
+            assert_eq!(json!(harden_argv(&argv, &d)), c["hardened"], "hardened: {who}");
+        }
+    }
+    assert_eq!(total, 25);
+}
+
+#[test]
+fn all_seventeen_programs_have_a_manifest_and_a_calls_file() {
     let mut names: Vec<String> = fs::read_dir(dir().join("manifests"))
         .unwrap()
         .map(|e| e.unwrap().path().file_stem().unwrap().to_string_lossy().into_owned())
@@ -70,12 +107,13 @@ fn all_fifteen_programs_have_a_manifest_and_a_calls_file() {
 
 /// The copy's hash, held by window-ml's `tests/program-manifest.test.mjs` too: a change to a manifest or call fixture
 /// on either side fails both suites until the copy and both pins move together.
-const VECTOR_PIN: &str = "a09ef075ba3ef647db8dff2924b71de18ca0d59f1c8028b7fd1f3c1c5627ec3d";
+const VECTOR_PIN: &str = "597122c31a364b90cd17d6cc5f2b629ff19d9263ccbc0242b361b27af65d52c7";
 
-/// The agreed input (lanes 10 and 11, 2026-10-21): every `calls/*.json` and `manifests/*.json` by that name, sorted
-/// bytewise, one `<sha256 of the raw bytes>  <name>\n` line each (shasum's format), and the sha256 of those lines.
+/// The agreed input (lanes 10 and 11, 2026-10-21): every `calls/*.json`, `flavoured/*.json`, `manifests/*.json` and
+/// `scanners/*.json` by that name, sorted bytewise, one `<sha256 of the raw bytes>  <name>\n` line each (shasum's format), and the sha256 of
+/// those lines.
 fn vector_hash() -> String {
-    let mut names: Vec<String> = ["calls", "manifests"]
+    let mut names: Vec<String> = ["calls", "flavoured", "manifests", "scanners"]
         .iter()
         .flat_map(|kind| {
             fs::read_dir(dir().join(kind))
@@ -291,8 +329,13 @@ fn flavoured() -> Manifest {
 
 #[test]
 fn a_manifest_without_flavours_describes_every_vector_identically_whatever_the_flavour() {
+    let mut plain = 0;
     for program in PROGRAMS {
         let manifest: Manifest = serde_json::from_value(load("manifests", program)).unwrap();
+        if manifest.flavours.is_some() {
+            continue;
+        }
+        plain += 1;
         let fx = load("calls", program);
         let version = fx["version"].as_str().unwrap();
         for c in fx["calls"].as_array().unwrap() {
@@ -308,6 +351,7 @@ fn a_manifest_without_flavours_describes_every_vector_identically_whatever_the_f
             }
         }
     }
+    assert_eq!(plain, 15);
 }
 
 /// One flavour row: argv, the flavour, whether it is described, and the path operands when it is.
