@@ -1151,6 +1151,8 @@ fn a_file_outside_every_root_cannot_be_hardlinked_into_one() {
         assert_eq!(std::fs::read(o.join("victim")).unwrap(), b"ORIGINAL\n", "{write:?}");
         assert_eq!(std::fs::metadata(o.join("victim")).unwrap().nlink(), 1, "{write:?}");
         assert_eq!(std::fs::read(dir.join("x")).unwrap(), b"PWNED\n", "the write made a new file ({write:?})");
+        let applied = json!({ "write": write.unwrap_or("today"), "exec": "any" });
+        assert_eq!(d["envelope"], applied, "done reports what was applied ({write:?})");
     }
     h.close();
 }
