@@ -359,7 +359,7 @@ fn under_stop_an_argument_after_an_operand_that_spells_a_flag_doing_more_than_a_
     // window-ml's row of the same name: the two describers agree on `tool f.txt --write-all` (red-team, window-ml#1963).
     let m: Manifest = serde_json::from_value(json!({
         "program": "tool", "version": { "range": "*", "args": [], "pattern": "" }, "flavours": { "bsd": { "system": "macos" } },
-        "command": { "effects": ["read"], "paths": "operands", "clusters": true, "flags": {
+        "command": { "effects": ["read"], "paths": "operands", "clusters": true, "terminator": "--", "flags": {
             "-n": {}, "--write-all": { "effects": ["write"] }, "-w": { "effects": ["write"] },
             "--out": { "value": true, "valueIsPath": "write" }, "-R": { "recursive": true },
             "--exec": { "runner": true, "effects": ["runs-code"] }, "--grep": { "value": true, "effects": ["read"] } },
@@ -367,7 +367,7 @@ fn under_stop_an_argument_after_an_operand_that_spells_a_flag_doing_more_than_a_
     }))
     .unwrap();
     let bsd = Some(Flavour::Bsd);
-    let tails: [&[&str]; 11] = [
+    let tails: [&[&str]; 12] = [
         &["--write-all"],
         &["--write-all=x"],
         &["-w"],
@@ -379,6 +379,7 @@ fn under_stop_an_argument_after_an_operand_that_spells_a_flag_doing_more_than_a_
         &["--rm"],
         &["--", "--write-all"],
         &["g", "-w"],
+        &["-xw"],
     ];
     for tail in tails {
         let a: Vec<&str> = ["tool", "f.txt"].iter().chain(tail).copied().collect();
@@ -393,4 +394,8 @@ fn under_stop_an_argument_after_an_operand_that_spells_a_flag_doing_more_than_a_
         assert_eq!(d.path_args.iter().map(|p| p.arg).collect::<Vec<_>>(), vec![1, 2], "{a:?}");
     }
     assert!(describe_call_as(&args(&["tool", "-w", "f.txt"]), &m, None, &[], bsd).described);
+    // A `--` the command honours, before any operand, ends the options for every implementation: what follows stays an operand.
+    let t = describe_call_as(&args(&["tool", "--", "f.txt", "--write-all"]), &m, None, &[], bsd);
+    assert!(t.described, "{:?}", t.why);
+    assert_eq!(t.path_args.iter().map(|p| p.arg).collect::<Vec<_>>(), vec![2, 3]);
 }
