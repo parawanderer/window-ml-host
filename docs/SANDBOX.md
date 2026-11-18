@@ -251,8 +251,11 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
   - A call cannot hardlink a file from OUTSIDE every root into one either, so a write through an in-root name can never
     land on an outside inode. macOS refuses the `link` (EPERM); on Linux each root is its own bind mount over the
     read-only `/`, so the link crosses mounts and fails with EXDEV before Landlock is asked. A write to that name after
-    the refused link makes a new file. The same layout means no outside file shares a mount with a root inside the
-    sandbox, so Landlock's REFER check cannot be shown to refuse it on its own.
+    the refused link makes a new file. The row measures this under the default scope and under the `write: "roots"`
+    envelope; the roots pass links into an existing subdirectory, since at the top level the name-immutable deny would
+    refuse the new name whatever its inode, and both refusals read "Operation not permitted" on macOS. The same layout
+    means no outside file shares a mount with a root inside the sandbox, so Landlock's REFER check cannot be shown to
+    refuse it on its own.
   - A held file cannot be renamed, moved, removed or written by a sandboxed call, since a rename needs no read and
     `mv .env notes.txt` would hand the next call the value under a name nothing holds. On macOS the profile denies
     `file-write*` at any depth on every name the read side holds by name, `.env`, `.env.*`, `.netrc`,
