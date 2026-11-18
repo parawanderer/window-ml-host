@@ -435,6 +435,34 @@
         "--end-of-options",
         "x"
       ]
+    },
+    {
+      "argv": [
+        "ls",
+        "f",
+        "-l"
+      ],
+      "note": "a flag after an operand: GNU reads it as a flag, BSD as a file name the host never resolved (optionsFirst)",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "ls",
+        "f",
+        "-l"
+      ]
     }
   ]
 }

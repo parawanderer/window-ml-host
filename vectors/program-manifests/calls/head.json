@@ -247,10 +247,17 @@
         "head",
         "-"
       ],
-      "note": "- is stdin, not a path",
+      "note": "- is a FILE for BSD (macOS opens the name -), stdin for GNU: claimed as a path, the stricter reading (dashIsPath)",
       "described": true,
-      "effects": [],
-      "pathArgs": [],
+      "effects": [
+        "read:fs:-:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        }
+      ],
       "actsOnDir": false,
       "runner": false,
       "okCodes": [
@@ -469,6 +476,40 @@
         "head",
         "-q",
         "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "head",
+        "f",
+        "-n",
+        "5"
+      ],
+      "note": "a flag after an operand: GNU reads it as a flag, BSD as a file name the host never resolved (optionsFirst)",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 1,
+          "role": "read"
+        },
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "head",
+        "f",
+        "-n",
+        "5"
       ]
     }
   ]

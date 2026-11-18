@@ -16,6 +16,7 @@
     "paths": "operands",
     "noPaths": "nothing",
     "terminator": "--",
+    "optionsFirst": true,
     "clusters": true,
     "flags": {
       "-b": {},
