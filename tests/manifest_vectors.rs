@@ -116,6 +116,28 @@ fn an_unknown_key_in_a_manifest_fails_to_parse() {
     flag["command"]["flags"][&first]["runer"] = json!(true);
     assert!(serde_json::from_value::<Manifest>(flag).is_err(), "flag");
     assert!(serde_json::from_value::<Manifest>(base).is_ok());
+
+    // Every level under `flavours`, at the top and in a command: an unknown key there is a dropped hardening or flag.
+    let base = flavoured_json();
+    let levels: [(&str, &[&str]); 7] = [
+        ("flavours", &["flavours"]),
+        ("flavours.gnu", &["flavours", "gnu"]),
+        ("flavours.gnu.probe", &["flavours", "gnu", "probe"]),
+        ("flavours.bsd", &["flavours", "bsd"]),
+        ("command.flavour", &["command", "flavour"]),
+        ("command.flavour.gnu", &["command", "flavour", "gnu"]),
+        ("command.flavour.bsd", &["command", "flavour", "bsd"]),
+    ];
+    for (name, path) in levels {
+        let mut m = base.clone();
+        let mut at = &mut m;
+        for key in path {
+            at = &mut at[*key];
+        }
+        at["runer"] = json!(true);
+        assert!(serde_json::from_value::<Manifest>(m).is_err(), "{name}");
+    }
+    assert!(serde_json::from_value::<Manifest>(base).is_ok());
 }
 
 #[test]
@@ -252,16 +274,19 @@ fn args(a: &[&str]) -> Vec<String> {
 
 /// window-ml's flavoured fixture (tests/program-manifest.test.mjs `FLAVOURED`): GNU permutes and hardens with
 /// --sandbox; BSD stops at the first operand and has its own -l.
-fn flavoured() -> Manifest {
-    serde_json::from_value(json!({
+fn flavoured_json() -> serde_json::Value {
+    json!({
         "program": "tool", "version": { "range": "*", "args": [], "pattern": "" },
         "flavours": { "gnu": { "probe": { "args": ["--version"], "pattern": "^tool \\(GNU tool\\) (\\d+\\.\\d+)", "range": ">=4.3 <5" } }, "bsd": { "system": "macos" } },
         "command": {
             "effects": ["read"], "paths": "operands", "terminator": "--", "clusters": true, "flags": { "-n": {} },
             "flavour": { "gnu": { "flags": { "--quiet": {}, "--sandbox": {} }, "argOrder": "permute", "harden": ["--sandbox"] }, "bsd": { "flags": { "-l": {} }, "argOrder": "stop" } }
         }
-    }))
-    .unwrap()
+    })
+}
+
+fn flavoured() -> Manifest {
+    serde_json::from_value(flavoured_json()).unwrap()
 }
 
 #[test]
