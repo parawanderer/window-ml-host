@@ -5,7 +5,9 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use window_ml_host::manifest::{Direction, Manifest, Network, ProgramEffect, describe_call, harden_argv, in_range};
+use window_ml_host::manifest::{
+    Direction, Flavour, Manifest, Network, ProgramEffect, describe_call, describe_call_as, harden_argv, in_range,
+};
 
 // --- program manifest vectors ---
 
@@ -240,4 +242,89 @@ fn an_unknown_effect_word_fails_to_parse() {
     ok["command"]["effects"] = json!(["write-names"]);
     ok["command"]["flags"][&first]["effects"] = json!([{ "network": { "direction": "write" } }]);
     assert!(serde_json::from_value::<Manifest>(ok).is_ok());
+}
+
+// --- flavours: what each implementation adds (window-ml PROGRAM_MANIFEST.md "Flavours", ruled 2026-11-17) ---
+
+fn args(a: &[&str]) -> Vec<String> {
+    a.iter().map(|s| s.to_string()).collect()
+}
+
+/// window-ml's flavoured fixture (tests/program-manifest.test.mjs `FLAVOURED`): GNU permutes and hardens with
+/// --sandbox; BSD stops at the first operand and has its own -l.
+fn flavoured() -> Manifest {
+    serde_json::from_value(json!({
+        "program": "tool", "version": { "range": "*", "args": [], "pattern": "" },
+        "flavours": { "gnu": { "probe": { "args": ["--version"], "pattern": "^tool \\(GNU tool\\) (\\d+\\.\\d+)", "range": ">=4.3 <5" } }, "bsd": { "system": "macos" } },
+        "command": {
+            "effects": ["read"], "paths": "operands", "terminator": "--", "clusters": true, "flags": { "-n": {} },
+            "flavour": { "gnu": { "flags": { "--quiet": {}, "--sandbox": {} }, "argOrder": "permute", "harden": ["--sandbox"] }, "bsd": { "flags": { "-l": {} }, "argOrder": "stop" } }
+        }
+    }))
+    .unwrap()
+}
+
+#[test]
+fn a_manifest_without_flavours_describes_every_vector_identically_whatever_the_flavour() {
+    for program in PROGRAMS {
+        let manifest: Manifest = serde_json::from_value(load("manifests", program)).unwrap();
+        let fx = load("calls", program);
+        let version = fx["version"].as_str().unwrap();
+        for c in fx["calls"].as_array().unwrap() {
+            let argv: Vec<String> =
+                c["argv"].as_array().unwrap().iter().map(|a| a.as_str().unwrap().to_string()).collect();
+            let today = describe_call(&argv, &manifest, Some(version), &[]);
+            for f in [Some(Flavour::Gnu), Some(Flavour::Bsd), Some(Flavour::Other), None] {
+                assert_eq!(
+                    describe_call_as(&argv, &manifest, Some(version), &[], f),
+                    today,
+                    "{program} {argv:?} as {f:?}"
+                );
+            }
+        }
+    }
+}
+
+/// One flavour row: argv, the flavour, whether it is described, and the path operands when it is.
+type Row = (&'static [&'static str], Option<Flavour>, bool, Option<Vec<usize>>);
+
+#[test]
+fn a_detected_flavour_reads_the_core_and_its_overlay_undetected_the_core_with_options_first_other_nothing() {
+    let m = flavoured();
+    let gnu = Some(Flavour::Gnu);
+    let bsd = Some(Flavour::Bsd);
+    let rows: Vec<Row> = vec![
+        (&["tool", "-n", "f"], gnu, true, Some(vec![2])),
+        (&["tool", "f", "--quiet"], gnu, true, Some(vec![1])),
+        (&["tool", "f", "-n"], gnu, true, Some(vec![1])),
+        (&["tool", "-l", "f"], gnu, false, None),
+        (&["tool", "-n", "f"], bsd, true, Some(vec![2])),
+        (&["tool", "-l", "f"], bsd, true, Some(vec![2])),
+        (&["tool", "--quiet", "f"], bsd, false, None),
+        (&["tool", "f", "-n"], bsd, true, Some(vec![1, 2])),
+        (&["tool", "f", "--", "-x"], bsd, true, Some(vec![1, 2, 3])),
+        (&["tool", "-n", "f"], None, true, Some(vec![2])),
+        (&["tool", "f", "-n"], None, false, None),
+        (&["tool", "--quiet", "f"], None, false, None),
+        (&["tool", "-l", "f"], None, false, None),
+        (&["tool", "-n", "f"], Some(Flavour::Other), false, None),
+        (&["tool", "f"], Some(Flavour::Other), false, None),
+    ];
+    for (argv, f, described, path_args) in rows {
+        let d = describe_call_as(&args(argv), &m, None, &[], f);
+        assert_eq!(d.described, described, "{argv:?} as {f:?}: {:?}", d.why);
+        if let Some(p) = path_args {
+            assert_eq!(d.path_args.iter().map(|p| p.arg).collect::<Vec<_>>(), p, "{argv:?} as {f:?}");
+        }
+    }
+}
+
+#[test]
+fn a_flavours_hardening_follows_the_cores_for_that_flavour_only() {
+    let m = flavoured();
+    let hardened = |f| harden_argv(&args(&["tool", "f"]), &describe_call_as(&args(&["tool", "f"]), &m, None, &[], f));
+    assert_eq!(hardened(Some(Flavour::Gnu)), args(&["tool", "--sandbox", "f"]));
+    for f in [Some(Flavour::Bsd), Some(Flavour::Other), None] {
+        assert_eq!(hardened(f), args(&["tool", "f"]), "{f:?}");
+    }
 }

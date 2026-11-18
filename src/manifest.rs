@@ -5,7 +5,12 @@
 //! parts of `src/effects.ts` they use (`fromProgramEffect`, `union`, `effectKey`). Paths are described as given: the
 //! reader does not resolve them (no `resolve` callback), so every filesystem effect key ends in `:?:?`. A manifest
 //! DESCRIBES a program and never decides; the policy that reads the description lives in the extension.
+//!
+//! A manifest that declares `flavours` (BSD and GNU, window-ml PROGRAM_MANIFEST.md "Flavours") is read here too:
+//! [`describe_call_as`] takes the flavour as an input. Detecting it is the extension's (`flavourOf`, from the facts
+//! this host reports); [`describe_call`] reads it undetected, and a manifest without `flavours` the same either way.
 
+use std::borrow::Cow;
 use std::fmt;
 
 use serde::de::{MapAccess, Visitor};
@@ -359,6 +364,82 @@ pub struct CommandSpec {
     pub pathspecs: bool,
     /// Which path operands a writing command writes. Absent, a command whose effects write writes every path operand.
     pub written_operands: Option<WrittenOperands>,
+    /// What one detected flavour adds to this command: only in a manifest that declares `flavours`.
+    pub flavour: Option<CommandFlavours>,
+    /// Internal (never in the JSON): a flavour that stops at the first operand reads every later argument as an operand.
+    #[serde(skip)]
+    pub stop: bool,
+}
+
+/// The overlays of one command, one per declared flavour.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CommandFlavours {
+    /// What GNU adds.
+    pub gnu: Option<FlavourOverlay>,
+    /// What BSD adds.
+    pub bsd: Option<FlavourOverlay>,
+}
+
+/// What one flavour adds to a command. Overlays only add: a flag in both the core and an overlay is refused by the
+/// extension's validator.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FlavourOverlay {
+    /// Flags only this flavour accepts with this meaning.
+    pub flags: Option<OrderedMap<FlagSpec>>,
+    /// How this flavour reads an argument starting with `-` after an operand.
+    pub arg_order: Option<ArgOrder>,
+    /// Hardening arguments for this flavour, after the command's own.
+    pub harden: Option<Vec<String>>,
+}
+
+/// How a flavour reads an argument starting with `-` after an operand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ArgOrder {
+    /// As a flag (GNU getopt).
+    Permute,
+    /// As an operand, with everything after the first operand (BSD getopt).
+    Stop,
+}
+
+/// How each declared flavour is recognised. The extension detects the flavour (window-ml `flavourOf`); the host only
+/// reads the manifest that declares it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Flavours {
+    /// GNU, by a version probe.
+    pub gnu: Option<GnuFlavour>,
+    /// BSD, as the system's own program.
+    pub bsd: Option<BsdFlavour>,
+}
+
+/// GNU's probe: the arguments, a regex anchored with `^` whose group 1 is the version, and the range it must be in.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GnuFlavour {
+    /// The version probe.
+    pub probe: VersionSpec,
+}
+
+/// BSD: the system whose own program it is.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BsdFlavour {
+    /// `"macos"`.
+    pub system: String,
+}
+
+/// Which implementation runs, as the extension detected it; `None` where a flavour is asked for is undetected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Flavour {
+    /// GNU, by its probe.
+    Gnu,
+    /// BSD, the system's own program.
+    Bsd,
+    /// An implementation the manifest does not describe.
+    Other,
 }
 
 /// The versions a manifest was written against and how the host reads the version.
@@ -394,6 +475,8 @@ pub struct Manifest {
     pub credential: Option<ManifestCredential>,
     /// What the credentialed profile may connect to.
     pub network: Option<ManifestNetwork>,
+    /// The implementations the manifest tells apart; absent, one description for every implementation.
+    pub flavours: Option<Flavours>,
     /// The command tree.
     pub command: CommandSpec,
 }
@@ -532,6 +615,51 @@ fn push_unique(list: &mut Vec<u8>, add: impl IntoIterator<Item = u8>) {
 /// name the manifest's program. `version` is the version the host recorded (`None`: not reported); `env_set` names the
 /// environment variables the call sets. Paths are left as given.
 pub fn describe_call(argv: &[String], m: &Manifest, version: Option<&str>, env_set: &[String]) -> CallDescription {
+    describe_call_as(argv, m, version, env_set, None)
+}
+
+/// A command as one flavour reads it (window-ml `flavoured`): a manifest without `flavours` as written; undetected
+/// (`None`) and `Other` the core with `optionsFirst`; a detected flavour the core's flags and its overlay's, its
+/// argument order, and both hardenings.
+fn flavoured<'a>(cmd: &'a CommandSpec, m: &Manifest, f: Option<Flavour>) -> Cow<'a, CommandSpec> {
+    if m.flavours.is_none() {
+        return Cow::Borrowed(cmd);
+    }
+    let overlay = match f {
+        Some(Flavour::Gnu) => cmd.flavour.as_ref().and_then(|o| o.gnu.as_ref()),
+        Some(Flavour::Bsd) => cmd.flavour.as_ref().and_then(|o| o.bsd.as_ref()),
+        _ => {
+            let mut c = cmd.clone();
+            c.options_first = true;
+            return Cow::Owned(c);
+        }
+    };
+    let Some(o) = overlay else { return Cow::Borrowed(cmd) };
+    let mut c = cmd.clone();
+    if let Some(flags) = &o.flags {
+        for (k, v) in flags.iter() {
+            c.flags.0.push((k.to_string(), v.clone()));
+        }
+    }
+    if let Some(order) = o.arg_order {
+        c.options_first = false;
+        c.stop = order == ArgOrder::Stop;
+    }
+    if let Some(h) = o.harden.as_ref().filter(|h| !h.is_empty()) {
+        c.harden = Some([c.harden.clone().unwrap_or_default(), h.clone()].concat());
+    }
+    Cow::Owned(c)
+}
+
+/// [`describe_call`] as one flavour reads the manifest (`flavour` from the extension's facts; `None`: undetected). A
+/// manifest without `flavours` describes the same whatever `flavour` says.
+pub fn describe_call_as(
+    argv: &[String],
+    m: &Manifest,
+    version: Option<&str>,
+    env_set: &[String],
+    flavour: Option<Flavour>,
+) -> CallDescription {
     let mut d = CallDescription {
         described: true,
         why: Vec::new(),
@@ -569,8 +697,12 @@ pub fn describe_call(argv: &[String], m: &Manifest, version: Option<&str>, env_s
         }
     }
 
+    if m.flavours.is_some() && flavour == Some(Flavour::Other) {
+        unknown(&mut d, format!("this {} is an implementation its manifest does not describe", m.program));
+    }
+
     let mut terms: Terms = Vec::new();
-    let mut cmd = &m.command;
+    let mut cmd = flavoured(&m.command, m, flavour);
     let mut i = 1;
     let mut operand_paths: Vec<usize> = Vec::new();
     if let Some(h) = cmd.harden.as_ref().filter(|h| !h.is_empty()) {
@@ -579,15 +711,15 @@ pub fn describe_call(argv: &[String], m: &Manifest, version: Option<&str>, env_s
     // Descend through subcommands: options before a subcommand belong to the level above it.
     loop {
         let r = if cmd.syntax == Some(Syntax::Find) {
-            parse_find(argv, i, cmd, &mut d, &mut terms)
+            parse_find(argv, i, &cmd, &mut d, &mut terms)
         } else {
-            parse_options(argv, i, cmd, &mut d, &mut terms)
+            parse_options(argv, i, &cmd, &mut d, &mut terms)
         };
         let Some(sub) = r.sub else {
-            operand_paths = finish_command(argv, cmd, &r.operands, r.paths_from, &mut d, &mut terms);
+            operand_paths = finish_command(argv, &cmd, &r.operands, r.paths_from, &mut d, &mut terms);
             break;
         };
-        let Some(next) = cmd.subcommands.as_ref().and_then(|s| s.get(&argv[sub])) else {
+        let Some(next) = cmd.subcommands.as_ref().and_then(|s| s.get(&argv[sub])).cloned() else {
             let path = std::iter::once(m.program.as_str()).chain(d.subcommand.iter().map(String::as_str));
             let msg =
                 format!("{} has no subcommand {:?} in its manifest", path.collect::<Vec<_>>().join(" "), argv[sub]);
@@ -595,10 +727,11 @@ pub fn describe_call(argv: &[String], m: &Manifest, version: Option<&str>, env_s
             break;
         };
         d.subcommand.push(argv[sub].clone());
+        let next = flavoured(&next, m, flavour).into_owned();
         if let Some(h) = next.harden.as_ref().filter(|h| !h.is_empty()) {
             d.harden.push(Harden { at: sub, args: h.clone() });
         }
-        cmd = next;
+        cmd = Cow::Owned(next);
         i = sub + 1;
     }
     if cmd.recursive {
@@ -813,7 +946,8 @@ fn parse_options(
     let mut i = start;
     while i < argv.len() {
         let a = argv[i].as_str();
-        if after_terminator {
+        // A flavour that stops at the first operand (BSD getopt) reads everything after it as an operand, `--` included.
+        if after_terminator || (cmd.stop && !operands.is_empty()) {
             if cmd.pathspecs && not_literal_pathspec(a) {
                 unknown(d, format!("pathspec {a:?} is magic or a glob, not a path"));
             }
