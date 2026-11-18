@@ -1,2 +1,2 @@
-window-ml f063ee6e (feat/files-argv): src/shell/manifests/*.json -> manifests/, tests/fixtures/program-calls/*.json -> calls/; cp.json added, writtenOperands on cp, every path operand of a writing command has role write
-sha256 60807baf3ec79d7b8bfd2aa3963440f12896c10fc7470df46208eb25eed084d3 (tests/manifest_vectors.rs VECTOR_PIN; window-ml holds the same pin)
+window-ml 0fd67ebd (#1951, optionsFirst on cat/head/tail/wc/ls): src/shell/manifests/*.json -> manifests/, tests/fixtures/program-calls/*.json -> calls/
+sha256 a09ef075ba3ef647db8dff2924b71de18ca0d59f1c8028b7fd1f3c1c5627ec3d (tests/manifest_vectors.rs VECTOR_PIN; window-ml holds the same pin)
