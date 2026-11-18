@@ -353,3 +353,44 @@ fn a_flavours_hardening_follows_the_cores_for_that_flavour_only() {
         assert_eq!(hardened(f), args(&["tool", "f"]), "{f:?}");
     }
 }
+
+#[test]
+fn under_stop_an_argument_after_an_operand_that_spells_a_flag_doing_more_than_a_read_is_unknown_in_every_spelling() {
+    // window-ml's row of the same name: the two describers agree on `tool f.txt --write-all` (red-team, window-ml#1963).
+    let m: Manifest = serde_json::from_value(json!({
+        "program": "tool", "version": { "range": "*", "args": [], "pattern": "" }, "flavours": { "bsd": { "system": "macos" } },
+        "command": { "effects": ["read"], "paths": "operands", "clusters": true, "flags": {
+            "-n": {}, "--write-all": { "effects": ["write"] }, "-w": { "effects": ["write"] },
+            "--out": { "value": true, "valueIsPath": "write" }, "-R": { "recursive": true },
+            "--exec": { "runner": true, "effects": ["runs-code"] }, "--grep": { "value": true, "effects": ["read"] } },
+            "flavour": { "bsd": { "argOrder": "stop", "flags": { "--rm": { "effects": ["write-names"] } } } } }
+    }))
+    .unwrap();
+    let bsd = Some(Flavour::Bsd);
+    let tails: [&[&str]; 11] = [
+        &["--write-all"],
+        &["--write-all=x"],
+        &["-w"],
+        &["-nw"],
+        &["--out", "o"],
+        &["--out=o"],
+        &["-R"],
+        &["--exec"],
+        &["--rm"],
+        &["--", "--write-all"],
+        &["g", "-w"],
+    ];
+    for tail in tails {
+        let a: Vec<&str> = ["tool", "f.txt"].iter().chain(tail).copied().collect();
+        let d = describe_call_as(&args(&a), &m, None, &[], bsd);
+        assert!(!d.described, "{a:?} was described under stop: {:?}", d.path_args);
+        assert!(d.why.iter().any(|w| w.contains("does more than read")), "{a:?}: {:?}", d.why);
+    }
+    for tail in [["-n"], ["--grep"], ["--nope"], ["-x"]] {
+        let a: Vec<&str> = ["tool", "f.txt"].iter().chain(&tail).copied().collect();
+        let d = describe_call_as(&args(&a), &m, None, &[], bsd);
+        assert!(d.described, "{a:?}: {:?}", d.why);
+        assert_eq!(d.path_args.iter().map(|p| p.arg).collect::<Vec<_>>(), vec![1, 2], "{a:?}");
+    }
+    assert!(describe_call_as(&args(&["tool", "-w", "f.txt"]), &m, None, &[], bsd).described);
+}

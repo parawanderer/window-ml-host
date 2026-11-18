@@ -931,6 +931,33 @@ fn not_literal_pathspec(a: &str) -> bool {
     a.starts_with(':') || a.contains(['*', '?', '[', '\\'])
 }
 
+/// Whether a flag only reads (window-ml `readOnlyFlag`): its effects are `read` or none, its value is no written path or
+/// directory, and it starts, echoes and walks nothing.
+fn read_only_flag(f: &FlagSpec) -> bool {
+    f.effects.iter().all(|e| *e == ProgramEffect::Read)
+        && f.value_is_path != Some(Role::Write)
+        && !f.value_is_dir
+        && !f.runner
+        && !f.echoes
+        && !f.recursive
+        && f.paths_from.is_none()
+}
+
+/// Under `argOrder: "stop"`, the declared flag a post-operand argument spells whose meaning is more than a read (window-ml
+/// `stopShadow`): `--name`, `--name=v`, the whole `-name`, or any letter of a `-abc` cluster. Read as a file name it
+/// would drop the write the manifest declares, so the call is unknown; both describers agree on `tool f.txt --write-all`.
+fn stop_shadow(a: &str, flags: &OrderedMap<FlagSpec>) -> Option<String> {
+    if a == "-" || !a.starts_with('-') {
+        return None;
+    }
+    let names: Vec<String> = if a.starts_with("--") {
+        vec![a.split('=').next().unwrap_or(a).to_string()]
+    } else {
+        std::iter::once(a.to_string()).chain(a[1..].chars().map(|c| format!("-{c}"))).collect()
+    };
+    names.into_iter().find(|n| flags.get(n).is_some_and(|f| !read_only_flag(f)))
+}
+
 /// Options-then-operands. Returns the operand indices, the path start a flag set, and the index of a subcommand name
 /// when the command has subcommands and one was reached before any operand.
 fn parse_options(
@@ -948,6 +975,16 @@ fn parse_options(
         let a = argv[i].as_str();
         // A flavour that stops at the first operand (BSD getopt) reads everything after it as an operand, `--` included.
         if after_terminator || (cmd.stop && !operands.is_empty()) {
+            if !after_terminator {
+                if let Some(shadow) = stop_shadow(a, &cmd.flags) {
+                    unknown(
+                        d,
+                        format!(
+                            "{a} follows an operand: this flavour reads it as a file name, but {shadow} is a flag that does more than read"
+                        ),
+                    );
+                }
+            }
             if cmd.pathspecs && not_literal_pathspec(a) {
                 unknown(d, format!("pathspec {a:?} is magic or a glob, not a path"));
             }
