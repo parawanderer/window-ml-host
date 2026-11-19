@@ -27,6 +27,7 @@ pub mod script_grammar;
 pub mod session;
 pub mod snapshot;
 pub mod snapshot_bounds;
+pub mod snapshot_report;
 pub mod store;
 pub mod tilde;
 pub mod tripwire;

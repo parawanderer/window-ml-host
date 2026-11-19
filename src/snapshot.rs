@@ -60,6 +60,8 @@ use crate::walk::WALK_CAP;
 pub struct Scratch {
     dir: PathBuf,
     env: Vec<(String, String)>,
+    /// The person's index, which [`Scratch::fill`] copies.
+    index: PathBuf,
     /// Whether the index came from HEAD because the person's was a split index, missing (a `clone --no-checkout`), or
     /// could not be copied.
     pub from_head: bool,
@@ -90,7 +92,7 @@ impl Scratch {
         let made = |e: std::io::Error| format!("the scratch directory could not be made: {e}");
         std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir).map_err(made)?;
         // From here on the directory exists, so every early return below removes it (Drop).
-        let mut s = Scratch { env: vec![], dir, from_head: false };
+        let mut s = Scratch { env: vec![], dir, index, from_head: false };
         let objects_dir = s.dir.join("objects");
         std::fs::create_dir_all(objects_dir.join("info")).map_err(made)?;
         std::fs::create_dir(s.dir.join("empty")).map_err(made)?;
@@ -115,27 +117,42 @@ impl Scratch {
             (format!("GIT_CONFIG_KEY_{}", BELT_CONFIG + 1), "core.splitIndex".into()),
             (format!("GIT_CONFIG_VALUE_{}", BELT_CONFIG + 1), "false".into()),
         ];
+        s.fill(git, repo)?;
+        Ok(s)
+    }
+
+    /// Fills the scratch index afresh: a copy of the person's index as it is now, or HEAD's tree when that is a split
+    /// index or none. A call's second snapshot fills it again rather than build on the first's entries, so both trees
+    /// come from one procedure (a tracked file the first left out of its tree is still tracked in the second).
+    pub fn fill(&mut self, git: &Git, repo: &RepoConfig) -> Result<(), String> {
+        let _ = std::fs::remove_file(self.dir.join("index"));
         // The person's index is opened without following a link and must be a regular file, before git reads it:
         // a symlink to a FIFO would block the copy (and git), one to /dev/zero would fill the scratch. A link is
         // treated as no index at all: its target is never opened, and the tree comes from HEAD.
-        let person = open_index(&index)?;
+        let person = open_index(&self.index)?;
         let copied = match person {
-            Some(f) if !split_index(git, repo) => copy_index(f, &s.dir.join("index"))
+            Some(f) if !split_index(git, repo) => copy_index(f, &self.dir.join("index"))
                 .map_err(|e| format!("the repository's index could not be copied into the scratch: {e}"))?,
             _ => false,
         };
+        self.from_head = !copied;
         if !copied {
-            let _ = std::fs::remove_file(s.dir.join("index"));
-            s.from_head = true;
+            let _ = std::fs::remove_file(self.dir.join("index"));
             // No HEAD (a repository with no commit) leaves the index empty, which is what that repository has.
-            let _ = s.git(git, repo, &["read-tree", "HEAD"]);
+            let _ = self.git(git, repo, &["read-tree", "HEAD"]);
         }
-        Ok(s)
+        Ok(())
     }
 
     /// Runs one git query against the scratch index and private objects: `(exit code, stdout)`.
     pub fn git(&self, git: &Git, repo: &RepoConfig, args: &[&str]) -> Option<(i32, Vec<u8>)> {
         git.query_env(repo, &self.env, Some(&self.dir.join("empty")), args, None)
+    }
+
+    /// [`Scratch::git`] keeping at most `cap` bytes of stdout: a listing or a diff body, which can pass the query's
+    /// 1 MiB.
+    pub fn git_capped(&self, git: &Git, repo: &RepoConfig, args: &[&str], cap: usize) -> Option<(i32, Vec<u8>)> {
+        git.query_capped(repo, &self.env, Some(&self.dir.join("empty")), args, None, cap)
     }
 
     /// Writes the scratch index as a tree into the private objects and returns its id.
