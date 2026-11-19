@@ -110,13 +110,17 @@ impl Scratch {
             // through the clean filter, at its path from the process's directory (write-tree never enters the work
             // tree): no hook resolves, and the spawn runs in, and names as its work tree, an empty directory.
             ("GIT_WORK_TREE".into(), p(&s.dir.join("empty"))),
-            ("GIT_CONFIG_COUNT".into(), (BELT_CONFIG + 2).to_string()),
+            ("GIT_CONFIG_COUNT".into(), (BELT_CONFIG + 3).to_string()),
             (format!("GIT_CONFIG_KEY_{BELT_CONFIG}"), "core.hooksPath".into()),
             (format!("GIT_CONFIG_VALUE_{BELT_CONFIG}"), "/dev/null".into()),
             // The scratch index is never written split, whatever the repository's config says: a split write puts
             // its shared half beside the index.
             (format!("GIT_CONFIG_KEY_{}", BELT_CONFIG + 1), "core.splitIndex".into()),
             (format!("GIT_CONFIG_VALUE_{}", BELT_CONFIG + 1), "false".into()),
+            // A patch's headers quote every byte past ASCII (a U+2028 in a name included), whatever the repository's
+            // config says: a name can forge no line of the report (src/snapshot_report.rs).
+            (format!("GIT_CONFIG_KEY_{}", BELT_CONFIG + 2), "core.quotePath".into()),
+            (format!("GIT_CONFIG_VALUE_{}", BELT_CONFIG + 2), "true".into()),
         ];
         s.fill(git, repo)?;
         Ok(s)
@@ -152,7 +156,13 @@ impl Scratch {
 
     /// [`Scratch::git`] keeping at most `cap` bytes of stdout: a listing or a diff body, which can pass the query's
     /// 1 MiB.
-    pub fn git_capped(&self, git: &Git, repo: &RepoConfig, args: &[&str], cap: usize) -> Option<(i32, Vec<u8>)> {
+    pub fn git_capped<A: AsRef<std::ffi::OsStr>>(
+        &self,
+        git: &Git,
+        repo: &RepoConfig,
+        args: &[A],
+        cap: usize,
+    ) -> Option<(i32, Vec<u8>)> {
         git.query_capped(repo, &self.env, Some(&self.dir.join("empty")), args, None, cap)
     }
 

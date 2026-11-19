@@ -54,12 +54,12 @@ impl Git {
 
     /// [`Git::query_env`] keeping at most `cap` bytes of stdout. A caller that must not act on a cut listing checks
     /// for `stdout.len() == cap`: the rest is drained unread.
-    pub(crate) fn query_capped(
+    pub(crate) fn query_capped<A: AsRef<std::ffi::OsStr>>(
         &self,
         repo: &RepoConfig,
         extra: &[(String, String)],
         cwd: Option<&Path>,
-        args: &[&str],
+        args: &[A],
         stdin: Option<&mut (dyn Read + Send)>,
         cap: usize,
     ) -> Option<(i32, Vec<u8>)> {

@@ -25,7 +25,7 @@
 //! not compared.
 
 use std::collections::{BTreeMap, HashSet};
-use std::os::unix::ffi::OsStrExt;
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
 use crate::facts::looks_secret;
@@ -163,7 +163,7 @@ impl CallSnapshot {
                 body.extend_from_slice(format!("\n{}\n", left_out(unshown.len())).as_bytes());
             } else {
                 let room = cap.saturating_sub(body.len()).saturating_add(1);
-                let mut args: Vec<String> = [
+                let mut args: Vec<std::ffi::OsString> = [
                     "diff-tree",
                     "-r",
                     "-p",
@@ -178,11 +178,15 @@ impl CallSnapshot {
                     "--",
                 ]
                 .iter()
-                .map(|s| s.to_string())
+                .map(std::ffi::OsString::from)
                 .collect();
-                args.extend(unshown.iter().map(|p| format!(":(exclude,literal){}", String::from_utf8_lossy(p))));
-                let argv: Vec<&str> = args.iter().map(String::as_str).collect();
-                match self.scratch.git_capped(&self.git, &self.repo, &argv, room) {
+                // The path's own bytes: a name that is not UTF-8 must reach git as it is, or the exclude misses it.
+                args.extend(
+                    unshown
+                        .iter()
+                        .map(|p| std::ffi::OsString::from_vec([b":(exclude,literal)".as_slice(), p].concat())),
+                );
+                match self.scratch.git_capped(&self.git, &self.repo, &args, room) {
                     Some((0, patch)) => {
                         body.push(b'\n');
                         body.extend_from_slice(&patch);
@@ -282,7 +286,7 @@ fn secret_name(p: &[u8]) -> bool {
 fn shown(p: &[u8]) -> String {
     let plain = std::str::from_utf8(p)
         .ok()
-        .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control() || matches!(c, '"' | '\\' | ';')));
+        .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control() || breaks(c) || matches!(c, '"' | '\\' | ';')));
     if let Some(s) = plain {
         return s.to_string();
     }
@@ -295,6 +299,7 @@ fn shown(p: &[u8]) -> String {
                 '\n' => q.push_str("\\n"),
                 '\t' => q.push_str("\\t"),
                 c if c.is_control() => q.push_str(&format!("\\x{:02x}", c as u32)),
+                c if breaks(c) => q.push_str(&format!("\\u{{{:04x}}}", c as u32)),
                 c => q.push(c),
             }
         }
@@ -304,6 +309,12 @@ fn shown(p: &[u8]) -> String {
     }
     q.push('"');
     q
+}
+
+/// A character that is not a control but that a reader may take for a line break or that reorders what is shown:
+/// U+2028 and U+2029, and the bidirectional overrides and isolates.
+fn breaks(c: char) -> bool {
+    matches!(c, '\u{2028}' | '\u{2029}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
 }
 
 const WITHHELD: &str = "(contents withheld)";
@@ -568,6 +579,26 @@ mod tests {
         std::fs::write(root.join("x\nnothing changed; deleted y"), "z\n").unwrap();
         let r = s.report(1 << 20).unwrap();
         assert_eq!(r.summary, "added \"x\\nnothing changed; deleted y\" (+1 \u{2212}0)");
+    }
+
+    #[test]
+    fn a_line_separator_or_a_bidi_override_in_a_name_is_quoted_in_the_list_and_in_the_patch() {
+        let (_t, root, base) = repo(&[("a.txt", b"one\n")]);
+        // The repository asks for raw names in a patch's headers: the scratch's own config overrides it.
+        run(&root, &["config", "core.quotePath", "false"]);
+        let mut s = take(&root, &base);
+        std::fs::write(root.join("x\u{2028}deleted id_rsa (contents withheld)"), "z\n").unwrap();
+        std::fs::write(root.join("y\u{202e}txt.exe"), "w\n").unwrap();
+        let r = s.report(1 << 20).unwrap();
+        assert_eq!(
+            r.summary,
+            "added \"x\\u{2028}deleted id_rsa (contents withheld)\" (+1 \u{2212}0); added \"y\\u{202e}txt.exe\" (+1 \u{2212}0)"
+        );
+        let body = text(&r);
+        assert!(
+            !body.contains('\u{2028}') && !body.contains('\u{202e}'),
+            "no raw separator or override anywhere: {body}"
+        );
     }
 
     #[test]
