@@ -4556,10 +4556,17 @@ fn a_sandboxed_call_cannot_read_the_scratch_its_report_is_compared_with() {
         .find(|p| p.file_name().unwrap().to_string_lossy().starts_with("wmlhost-"))
         .expect("the session's store");
     let snap = store.join("snap");
-    let (_, d) = h.run(json!({ "argv": ["sh", "-c", "ls \"$1\"", "_", snap], "cwd": r }));
-    assert_eq!(d["ok"], false, "the call listed its own scratch: {d}");
+    // macOS denies the read; Linux masks the directory with an empty tmpfs. Either way the call sees none of the
+    // scratch (which holds the first snapshot while the call runs), and what it writes there never reaches it.
+    let (_, d) = h.run(json!({ "argv": ["sh", "-c", "ls -A \"$1\"; touch \"$1/planted\"", "_", snap], "cwd": r }));
+    let out = text(&h.read_all(&d["stdout"]));
     let err = text(&h.read_all(&d["stderr"]));
-    assert!(err.contains("not permitted"), "{err}");
+    if cfg!(target_os = "macos") {
+        assert_eq!(d["ok"], false, "the call listed its own scratch: {d}");
+        assert!(err.contains("not permitted"), "{err}");
+    }
+    assert_eq!(out, "", "the call listed its own scratch: {d}");
+    assert!(snap.is_dir() && !snap.join("planted").exists(), "the call wrote into the store's snap/");
     assert_eq!(d["diff"]["summary"], "nothing changed during this call");
     h.close();
 }
