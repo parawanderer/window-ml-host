@@ -778,7 +778,7 @@ reported"`, and a registered group's `done` carries `"diff": null` with `"diffRe
 snapshotted"`.
 
 If more than 1000 paths would be left out of the patch (withheld, or reconciled with the lists), the patch is left out
-whole, and both the body and `summary` end with `the patch is left out: N paths are withheld from it, more than 1000`.
+whole, and both the body and `summary` end with `the patch is left out: N paths would be left out of it, more than 1000`.
 
 A message past the 1 MiB native limit is never dropped. An answer becomes `{ "seq", "error": { "code": "TooLarge" } }`.
 A `done` keeps its `event` and `id`: it first loses `protectedChanged` (absent: unknown), and if it is still too large it

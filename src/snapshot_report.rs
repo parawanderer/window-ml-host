@@ -453,7 +453,7 @@ fn list_section(body: &mut Vec<u8>, changes: &[Change], after: &Side) {
 
 /// What the body and the summary say when the patch is left out whole: how many paths, over [`EXCLUDE_MAX`].
 fn left_out(n: usize) -> String {
-    format!("the patch is left out: {n} paths are withheld from it, more than {EXCLUDE_MAX}")
+    format!("the patch is left out: {n} paths would be left out of it, more than {EXCLUDE_MAX}")
 }
 
 /// The summary line: the changes joined by `; `, at most [`SUMMARY_MAX`] named.
@@ -684,8 +684,10 @@ mod tests {
         }
         std::fs::write(root.join("a.txt"), "two\n").unwrap();
         let r = s.report(4 << 20).unwrap();
-        let said =
-            format!("the patch is left out: {} paths are withheld from it, more than {EXCLUDE_MAX}", EXCLUDE_MAX + 1);
+        let said = format!(
+            "the patch is left out: {} paths would be left out of it, more than {EXCLUDE_MAX}",
+            EXCLUDE_MAX + 1
+        );
         assert!(r.summary.ends_with(&format!("; and {} more; {said}", EXCLUDE_MAX + 2 - SUMMARY_MAX)), "{}", r.summary);
         let body = text(&r);
         assert!(body.contains(&format!("\n{said}\n")) && !body.contains("diff --git"), "{}", &body[body.len() - 300..]);
