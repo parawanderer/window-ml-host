@@ -52,13 +52,28 @@ fn have_git() -> bool {
 /// The `-c` flags every fixture git command carries; the last two stop git 2.56's detached `maintenance run --auto`,
 /// which would touch `.git` behind the row's back (src/snapshot.rs's own fixture says why).
 const GIT_FIXTURE: [&str; 10] = [
-    "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "maintenance.auto=false", "-c", "gc.auto=0",
+    "-c",
+    "user.name=t",
+    "-c",
+    "user.email=t@t",
+    "-c",
+    "commit.gpgsign=false",
+    "-c",
+    "maintenance.auto=false",
+    "-c",
+    "gc.auto=0",
 ];
 
 fn run(dir: &Path, args: &[&str]) -> String {
     let mut v: Vec<&str> = GIT_FIXTURE.to_vec();
     v.extend_from_slice(args);
-    let out = Command::new("git").args(&v).current_dir(dir).env("GIT_CONFIG_NOSYSTEM", "1").env("GIT_CONFIG_GLOBAL", "/dev/null").output().unwrap();
+    let out = Command::new("git")
+        .args(&v)
+        .current_dir(dir)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .output()
+        .unwrap();
     assert!(out.status.success(), "git {args:?} in {}: {}", dir.display(), String::from_utf8_lossy(&out.stderr));
     String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
@@ -142,9 +157,17 @@ fn shapes(paths: &[&'static str], mode: &'static str) -> Vec<Shape> {
 fn assert_excluded(s: &Scratch, g: &Git, r: &RepoConfig, tree: &[String], got: &[Shape]) {
     for shape in got {
         assert!(looks_secret(Path::new(shape.path)), "{} must be a shape the matcher catches", shape.path);
-        assert!(!tree.iter().any(|l| l.ends_with(&format!(" {}", shape.path))), "{} is in the tree: {tree:?}", shape.path);
+        assert!(
+            !tree.iter().any(|l| l.ends_with(&format!(" {}", shape.path))),
+            "{} is in the tree: {tree:?}",
+            shape.path
+        );
         let oid = blob_of(&r.root, shape.body.as_bytes());
-        assert!(!tree.iter().any(|l| l.split(' ').nth(1) == Some(&oid)), "{}'s body is in the tree under another path", shape.path);
+        assert!(
+            !tree.iter().any(|l| l.split(' ').nth(1) == Some(&oid)),
+            "{}'s body is in the tree under another path",
+            shape.path
+        );
         let (code, _) = s.git(g, r, &["cat-file", "-e", &oid]).unwrap();
         assert_ne!(code, 0, "{}'s body is in the private objects", shape.path);
     }
@@ -252,7 +275,8 @@ fn the_dotenv_templates_enter_so_the_exclusion_is_the_matchers_and_not_a_blanket
         return;
     }
     let (t, root) = repo();
-    let templates = shapes(&[".env.example", "templates-case/.ENV.EXAMPLE", "up/.env.sample", "up/.env.template"], "100644");
+    let templates =
+        shapes(&[".env.example", "templates-case/.ENV.EXAMPLE", "up/.env.sample", "up/.env.template"], "100644");
     let neighbours = shapes(&[".env", ".env.local", "up/.env"], "100644");
     write(&root, &templates);
     write(&root, &neighbours);
@@ -293,5 +317,8 @@ fn a_link_is_skipped_by_its_own_path_and_entered_as_its_target_text_never_follow
     let (code, _) = s.git(&g, &r, &["cat-file", "-e", &blob_of(&r.root, target)]).unwrap();
     assert_ne!(code, 0, "the link's target body is in the private objects: a link was followed");
     let link_oid = blob_of(&r.root, outside.join("id_ed25519").to_string_lossy().as_bytes());
-    assert!(tree.contains(&format!("120000 {link_oid} up/notes.txt")), "the ordinary link is not entered as its target text: {tree:?}");
+    assert!(
+        tree.contains(&format!("120000 {link_oid} up/notes.txt")),
+        "the ordinary link is not entered as its target text: {tree:?}"
+    );
 }
