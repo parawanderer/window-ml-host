@@ -18,7 +18,6 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use window_ml_host::gitconfig::RepoConfig;
 use window_ml_host::gitfacts::Git;
 use window_ml_host::snapshot_report::{CallSnapshot, Report};
 
@@ -86,7 +85,7 @@ fn a_secret_named_byte_string_that_is_not_utf8_keeps_its_body_out_of_the_report(
         eprintln!("skipped: this file system refuses a non-UTF-8 name; the ubuntu job is where this row measures");
         return;
     }
-    run(&root, &["add", "-f", "--", "id_rsa\u{fffd}"]);
+    run(&root, &["add", "-f", "-A"]);
     let mut s = take(&root, &base);
     std::fs::write(root.join(name), "rotated\n").unwrap();
     let r = s.report(1 << 20).unwrap();
@@ -105,10 +104,13 @@ fn a_path_holding_a_unicode_line_separator_cannot_forge_a_line_of_the_body() {
     std::fs::write(root.join(forge), "z\n").unwrap();
     let r = s.report(1 << 20).unwrap();
     let body = text(&r);
+    // The quoted name still carries its own text, so what a forged line means here is precise: no line of the list
+    // BEGINS with the text the name chose, and no raw separator is anywhere in the body for a reader to break at.
     assert!(
-        body.lines().all(|l| !l.contains("deleted id_rsa (contents withheld)")),
+        body.lines().all(|l| !l.trim_start().starts_with("deleted id_rsa")),
         "a file name forged a list line through U+2028:\n{body}"
     );
+    assert!(!body.contains('\u{2028}'), "no raw line separator is left in the body:\n{body}");
     assert!(r.summary.contains('"'), "the name is quoted in the summary: {}", r.summary);
 }
 
