@@ -36,7 +36,8 @@
 //!
 //! MUTATION PER ROW, MEASURED AT a6e4971f (section J re-measured at 299b59a6; notes, not committed changes — one applied alone, this file run, the
 //! source reverted with `git checkout -- src/`; it was 10/10 green before and after):
-//!   A  src/snapshot.rs `Scratch::new`: the `GIT_CONFIG_COUNT`/`KEY_2`/`VALUE_2` trio (`core.hooksPath=/dev/null`)
+//!   A  src/snapshot.rs `Scratch::new`: the `GIT_CONFIG_COUNT`/`KEY_2`/`VALUE_2` trio (`core.hooksPath=/dev/null`;
+//!      KEY_4 since the belt took `maintenance.auto` and `gc.auto`, so the note names the pair, not the index)
 //!      removed → A red: `rev-parse --git-path hooks` answers the directory the repository names. Measured separately
 //!      in a shell at the same env, because the mark alone cannot show it: with the trio gone, `git write-tree` really
 //!      DOES run the repository's `post-index-change` (and `git read-tree HEAD` does too), so the mark assertion below
