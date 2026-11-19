@@ -636,6 +636,22 @@ mod tests {
     }
 
     #[test]
+    fn a_tracked_secret_over_the_cap_shows_no_size_and_no_hash() {
+        let mut big = SECRET.as_bytes().to_vec();
+        big.resize((DIFF_CAP + 10) as usize, b'#');
+        let (_t, root, base) = repo(&[(".env", &big), ("a.txt", b"one\n")]);
+        let mut s = take(&root, &base);
+        big[0] = b'X';
+        std::fs::write(root.join(".env"), &big).unwrap();
+        let r = s.report(1 << 20).unwrap();
+        assert_eq!(r.summary, "changed .env (contents withheld)");
+        let body = text(&r);
+        assert!(body.contains("\nover the diff cap (1 MiB), after the call:\n.env (contents withheld)\n"), "{body}");
+        assert!(!body.contains("sha256") && !body.contains(&(DIFF_CAP + 10).to_string()), "{body}");
+        assert_no_secret(&r);
+    }
+
+    #[test]
     fn a_secret_name_in_a_directory_like_ssh_is_withheld_too() {
         let (_t, root, base) = repo(&[(".ssh/config", b"Host x\n"), ("a.txt", b"one\n")]);
         let mut s = take(&root, &base);
