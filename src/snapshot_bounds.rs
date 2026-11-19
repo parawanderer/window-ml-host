@@ -9,7 +9,11 @@
 //!
 //! The sha256 of a big file is the host's own, read from a descriptor opened without following a link, and kept in
 //! [`BigHashes`] by the file's whole stat (device, inode, size, both times to the nanosecond): a file whose stat is
-//! unchanged since it was hashed is not read again, which is the same trust git puts in its stat cache. A snapshot
+//! unchanged since it was hashed is not read again, which is the same trust git puts in its stat cache. As in git's
+//! racy-clean rule, a hash is kept only when the file's mtime and ctime are both more than [`RACY_TICK`] (2 s, FAT's
+//! granularity, the coarsest a work tree is likely on) before the read began: on a file system whose timestamps tick
+//! coarsely, a file rewritten to the same size inside one tick keeps its whole stat, and a kept hash would then be
+//! stale. Such a file is read again at every snapshot, within the budget. A snapshot
 //! reads at most [`BIG_HASH_BUDGET`] bytes of files not in the cache; a big file past it is listed with its size and
 //! no hash. At the 3 GB/s this machine's sha256 measured (`openssl speed -evp sha256`, Apple M5 Pro, 2026-11-19), the
 //! budget is under a second of hashing a snapshot, and the cache makes the second snapshot of a call cost nothing for a
@@ -27,6 +31,9 @@ pub const DIFF_CAP: u64 = 1 << 20;
 
 /// The most bytes of big files, not already in the cache, one snapshot reads to hash.
 pub const BIG_HASH_BUDGET: u64 = 2 << 30;
+
+/// How far before a read a file's mtime and ctime must both be for its hash to be kept.
+pub const RACY_TICK: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// The most hashes [`BigHashes`] keeps; past it the cache starts again empty.
 const CACHE_MAX: usize = 4096;
@@ -63,11 +70,18 @@ fn basis(md: &std::fs::Metadata) -> Basis {
 }
 
 /// Big files' sha256 by their stat, held by whoever takes a call's snapshots, and each snapshot's hash budget.
-#[derive(Default)]
 pub struct BigHashes {
     known: HashMap<Basis, String>,
     /// Bytes read for hashing since [`BigHashes::start`].
     spent: u64,
+    /// [`RACY_TICK`], shortened by tests.
+    tick: std::time::Duration,
+}
+
+impl Default for BigHashes {
+    fn default() -> Self {
+        BigHashes { known: HashMap::new(), spent: 0, tick: RACY_TICK }
+    }
 }
 
 /// What reading a big file for its hash came to.
@@ -101,6 +115,7 @@ impl BigHashes {
             return Hashed::Sha(None);
         }
         self.spent += md.size();
+        let began = std::time::SystemTime::now();
         let mut h = Sha256::new();
         let mut buf = vec![0u8; 1 << 20];
         let mut left = md.size() + 1;
@@ -123,6 +138,12 @@ impl BigHashes {
             return Hashed::Sha(None);
         }
         let hex = hex::encode(h.finalize());
+        let settled = |t: std::io::Result<std::time::SystemTime>| t.is_ok_and(|t| t + self.tick < began);
+        let ctime = std::time::UNIX_EPOCH
+            + std::time::Duration::new(md.ctime().max(0) as u64, md.ctime_nsec().clamp(0, 999_999_999) as u32);
+        if !(settled(md.modified()) && settled(Ok(ctime))) {
+            return Hashed::Sha(Some(hex));
+        }
         if self.known.len() >= CACHE_MAX {
             self.known.clear();
         }
@@ -187,7 +208,7 @@ mod tests {
         let p = t.path().join("big.bin");
         std::fs::write(&p, vec![7u8; 3 << 20]).unwrap();
         let md = std::fs::symlink_metadata(&p).unwrap();
-        let mut h = BigHashes::default();
+        let mut h = BigHashes { tick: std::time::Duration::ZERO, ..Default::default() };
         h.start();
         let Hashed::Sha(Some(a)) = h.sha256(&p, &md) else { panic!("hashed") };
         assert_eq!(a, hex::encode(Sha256::digest(vec![7u8; 3 << 20])));
@@ -195,6 +216,21 @@ mod tests {
         h.start();
         let Hashed::Sha(Some(b)) = h.sha256(&p, &md) else { panic!("cached") };
         assert_eq!((a, h.spent), (b, 0), "an unchanged stat is answered from the cache, reading nothing");
+    }
+
+    #[test]
+    fn a_file_changed_within_a_tick_of_the_read_is_hashed_again_every_time() {
+        let t = tempfile::tempdir().unwrap();
+        let p = t.path().join("big.bin");
+        std::fs::write(&p, vec![7u8; 2 << 20]).unwrap();
+        let md = std::fs::symlink_metadata(&p).unwrap();
+        let mut h = BigHashes::default();
+        for _ in 0..2 {
+            h.start();
+            assert!(matches!(h.sha256(&p, &md), Hashed::Sha(Some(_))));
+            assert_eq!(h.spent, 2 << 20, "read again: a same-size rewrite in this tick would keep the stat");
+        }
+        assert!(h.known.is_empty());
     }
 
     #[test]
