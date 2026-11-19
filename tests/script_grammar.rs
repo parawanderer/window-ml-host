@@ -277,6 +277,25 @@ fn an_awk_program_that_can_run_a_command_read_another_file_or_the_environment_or
 }
 
 #[test]
+fn a_word_or_a_redirection_split_by_a_backslash_newline_is_refused_as_the_spliced_text_would_read_it() {
+    for (p, why) in [
+        ("BEGIN{sys\\\ntem(\"id\")}", "\"system\""),
+        ("{get\\\nline d < \"/etc/passwd\"}", "\"getline\""),
+        ("BEGIN{print ENV\\\nIRON[\"HOME\"]}", "\"ENVIRON\""),
+        ("{prin\\\nt \"x\" > \"out\"}", "> after a print"),
+        ("{pr\\\nintf \"x\" >> \"out\"}", "> after a print"),
+        // The raw text is checked too, so a | that only splices into || still asks.
+        ("a |\\\n| b {print}", "a | that is not ||"),
+    ] {
+        refused_with(awk_program_refusal(p), why, p);
+    }
+    // A backslash-newline that splices nothing refused stays described.
+    for p in ["{print \\\n$1}", "NR>1\\\n{print}"] {
+        assert_eq!(awk_program_refusal(p), None, "{p:?}");
+    }
+}
+
+#[test]
 fn an_awk_operand_is_an_assignment_only_in_the_identifier_equals_value_form_awk_itself_reads_as_one() {
     for a in ["n=1", "FS=:", "_x9=", "a=b=c"] {
         assert!(is_awk_assignment(a), "{a}");
