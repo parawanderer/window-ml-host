@@ -20,7 +20,9 @@
 //! a racily clean file through the clean filter). A changed file is hashed with `git hash-object -w --no-filters
 //! --stdin-paths` into the private objects and entered with `git update-index -z --index-info`, which takes the id as
 //! given and runs no filter. Untracked files come from `ls-files --others --exclude-standard`, so an ignored file
-//! (an ignored `.env`) never enters a tree, except inside the uploads folder, whose untracked files all do. A path with
+//! (an ignored `.env`) never enters a tree, except inside the uploads folder, whose untracked files all do; and an
+//! untracked file whose path looks like a secret ([`looks_secret`]) enters neither tree, ignored or not, in the uploads
+//! folder or out. A path with
 //! a symlink among its parents is treated as deleted, as git treats it, so nothing outside the work tree is hashed;
 //! a symlink itself is entered as a link (its target text), never followed. An entry git keeps out of `status`
 //! (assume-unchanged, skip-worktree) and a submodule's gitlink are left as they are.
@@ -36,6 +38,7 @@ use std::os::unix::fs::DirBuilderExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
+use crate::facts::looks_secret;
 use crate::gitconfig::RepoConfig;
 use crate::gitfacts::{BELT_CONFIG, Git};
 
@@ -197,6 +200,11 @@ impl Scratch {
         }
         for p in untracked.split(|b| *b == 0).filter(|p| !p.is_empty() && !p.ends_with(b"/")) {
             if !seen.insert(p.to_vec()) {
+                continue;
+            }
+            // A secret-looking path never enters either tree, so the diff draws nothing for it (FILE_ATTACHMENTS.md
+            // H11, amended 2026-11-19); a tracked one is withheld by the report (H13).
+            if looks_secret(Path::new(std::ffi::OsStr::from_bytes(p))) {
                 continue;
             }
             match now(root, p, &mut parents) {
@@ -1018,5 +1026,34 @@ mod tests {
         let tree = scratch_tree(&s, &g, &r);
         let a: Vec<_> = tree.iter().filter(|l| l.ends_with(" a.txt")).collect();
         assert_eq!(a, [&format!("100644 {} a.txt", blob_of(&root, b"resolved\n"))], "{tree:?}");
+    }
+    #[test]
+    fn an_untracked_secret_looking_file_enters_neither_tree_and_an_ordinary_one_beside_it_does() {
+        if !have_git() {
+            return;
+        }
+        let (t, root, marks) = repo();
+        std::fs::write(root.join(".gitignore"), "up/\n").unwrap();
+        settle(&root, &marks);
+        std::fs::write(root.join(".env.local"), "TOKEN=hunter2\n").unwrap();
+        std::fs::write(root.join("notes.txt"), "plain\n").unwrap();
+        std::fs::create_dir_all(root.join("up/.ssh")).unwrap();
+        std::fs::write(root.join("up/id_ed25519"), "PRIVATE KEY\n").unwrap();
+        std::fs::write(root.join("up/.ssh/config"), "Host x\n").unwrap();
+        std::fs::write(root.join("up/report.csv"), "x,y\n").unwrap();
+        let (g, r) = (git_on_path(), inspect(&root));
+        let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+        s.enter_changes(&g, &r, Some(&root.join("up"))).unwrap();
+        let tree = scratch_tree(&s, &g, &r);
+        for secret in [".env.local", "up/id_ed25519", "up/.ssh/config"] {
+            assert!(!tree.iter().any(|l| l.ends_with(&format!(" {secret}"))), "{secret} is in no tree: {tree:?}");
+        }
+        for body in [b"TOKEN=hunter2\n".as_slice(), b"PRIVATE KEY\n", b"Host x\n"] {
+            let (code, _) = s.git(&g, &r, &["cat-file", "-e", &blob_of(&root, body)]).unwrap();
+            assert_ne!(code, 0, "nor is its body in the private objects");
+        }
+        let has = |path: &str, body: &[u8]| tree.contains(&format!("100644 {} {path}", blob_of(&root, body)));
+        assert!(has("notes.txt", b"plain\n"), "an ordinary untracked file still enters: {tree:?}");
+        assert!(has("up/report.csv", b"x,y\n"), "and one in the uploads folder: {tree:?}");
     }
 }
