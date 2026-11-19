@@ -768,8 +768,11 @@ size and sha256, then the patch. `summary` is the changes on one line, at most 2
 have written meanwhile. A path whose name looks like a secret never shows a line of its body: it is listed as `changed
 <path> (contents withheld)`, with no size, hash or line count. So is an ordinary name whose blob is a secret-looking
 path's blob in either tree (`cp .env notes.txt`). `fromHead`: a snapshot's index came from HEAD (a split index, or
-none), so every tracked file was hashed; the result is the same. A path that could forge a line (a control character,
-`"`, `\` or `;`) is printed quoted, with C escapes.
+none), so every tracked file was hashed; the result is the same. A path that could forge a line or reorder what is
+shown (a control character, `"`, `\`, `;`, U+2028 LINE SEPARATOR, U+2029 PARAGRAPH SEPARATOR, or a bidirectional
+override or isolate, U+202A to U+202E and U+2066 to U+2069) is printed quoted, with C escapes (`\u{2028}` for the
+last kinds). The patch's headers come from git with `core.quotePath=true` set by the scratch's own config, so a
+repository's `core.quotePath=false` cannot put a raw name there.
 
 `diff` is `null`, with `diffReason`, when either snapshot could not be taken: `"not a git repository"`, more than
 20 000 files in the work tree, git missing. ABSENT means an older host. An orphan's diff is not reported yet: its
