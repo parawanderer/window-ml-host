@@ -35,7 +35,7 @@ impl Git {
 
     /// Runs one query in the repository: `(exit code, stdout)`, `None` when git is missing, failed to start, or ran past
     /// the timeout (killed). `stdin` is written whole and closed.
-    fn query(&self, repo: &RepoConfig, args: &[&str], stdin: Option<&mut dyn Read>) -> Option<(i32, Vec<u8>)> {
+    fn query(&self, repo: &RepoConfig, args: &[&str], stdin: Option<&mut (dyn Read + Send)>) -> Option<(i32, Vec<u8>)> {
         self.query_env(repo, &[], None, args, stdin)
     }
 
@@ -47,7 +47,7 @@ impl Git {
         extra: &[(String, String)],
         cwd: Option<&Path>,
         args: &[&str],
-        stdin: Option<&mut dyn Read>,
+        stdin: Option<&mut (dyn Read + Send)>,
     ) -> Option<(i32, Vec<u8>)> {
         self.query_capped(repo, extra, cwd, args, stdin, MAX_STDOUT)
     }
@@ -60,7 +60,7 @@ impl Git {
         extra: &[(String, String)],
         cwd: Option<&Path>,
         args: &[&str],
-        stdin: Option<&mut dyn Read>,
+        stdin: Option<&mut (dyn Read + Send)>,
         cap: usize,
     ) -> Option<(i32, Vec<u8>)> {
         let program = self.program.as_ref()?;
@@ -75,34 +75,42 @@ impl Git {
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
         let mut child = c.spawn().ok()?;
-        if let Some(input) = stdin {
-            let mut w = child.stdin.take()?;
-            // A write error (git exited early) shows in the exit status below.
-            let _ = std::io::copy(input, &mut w);
-            let _ = w.flush();
-        }
+        let mut w = if stdin.is_some() { Some(child.stdin.take()?) } else { None };
         let mut out = child.stdout.take()?;
-        let reader = std::thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = out.by_ref().take(cap as u64).read_to_end(&mut buf);
-            // Drain the rest so git is never blocked on a full pipe.
-            let _ = std::io::copy(&mut out, &mut std::io::sink());
-            buf
-        });
-        let started = Instant::now();
-        let status = loop {
-            match child.try_wait() {
-                Ok(Some(s)) => break s,
-                Ok(None) if started.elapsed() < GIT_TIMEOUT => std::thread::sleep(Duration::from_millis(2)),
-                _ => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return None;
-                }
+        // The writer, the reader and the timeout run at once: git stops reading stdin while its stdout is full, so a
+        // copy that finished before the reader started would block for ever on a large input, with no timeout.
+        std::thread::scope(|scope| {
+            let reader = scope.spawn(move || {
+                let mut buf = Vec::new();
+                let _ = out.by_ref().take(cap as u64).read_to_end(&mut buf);
+                // Drain the rest so git is never blocked on a full pipe.
+                let _ = std::io::copy(&mut out, &mut std::io::sink());
+                buf
+            });
+            if let (Some(input), Some(mut w)) = (stdin, w.take()) {
+                scope.spawn(move || {
+                    // A write error (git exited early, or was killed) shows in the exit status below.
+                    let _ = std::io::copy(input, &mut w);
+                    let _ = w.flush();
+                    // Dropping `w` closes git's stdin.
+                });
             }
-        };
-        let stdout = reader.join().ok()?;
-        Some((status.code()?, stdout))
+            let started = Instant::now();
+            let status = loop {
+                match child.try_wait() {
+                    Ok(Some(s)) => break s,
+                    Ok(None) if started.elapsed() < GIT_TIMEOUT => std::thread::sleep(Duration::from_millis(2)),
+                    _ => {
+                        // Killing git closes both pipes, so the writer and the reader return and the scope ends.
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return None;
+                    }
+                }
+            };
+            let stdout = reader.join().ok()?;
+            Some((status.code()?, stdout))
+        })
     }
 
     /// Whether git ignores `rel` (relative to the work tree): `None` when git cannot be asked.
@@ -118,7 +126,7 @@ impl Git {
     /// carries no assume-unchanged or skip-worktree bit (either hides a change from git), and its blob is the index's
     /// and HEAD's. `None` when the repository's config runs code (the undo itself would run it) or git cannot be asked;
     /// `false` for an untracked, modified or ignored file, one over [`MAX_HASHED`], or a repository with no commit.
-    pub fn undoable(&self, repo: &RepoConfig, rel: &str, size: u64, content: &mut dyn Read) -> Option<bool> {
+    pub fn undoable(&self, repo: &RepoConfig, rel: &str, size: u64, content: &mut (dyn Read + Send)) -> Option<bool> {
         if repo.runs_code || repo.git_dir.is_none() {
             return None;
         }

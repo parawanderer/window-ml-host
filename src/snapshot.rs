@@ -157,6 +157,9 @@ impl Scratch {
         let mut files: Vec<(Vec<u8>, std::fs::Metadata)> = vec![];
         let mut links: Vec<(Vec<u8>, Vec<u8>)> = vec![];
         let mut seen: std::collections::HashSet<Vec<u8>> = std::collections::HashSet::new();
+        // One pass: the paths with any entry past stage 0 (a conflict's stages are consecutive in the listing).
+        let conflicts: std::collections::HashSet<&[u8]> =
+            entries.iter().filter(|e| e.stage != 0).map(|e| e.path.as_slice()).collect();
         for e in &entries {
             // A conflicted path's stages come as consecutive entries: the first decides for all of them.
             if !seen.insert(e.path.clone()) {
@@ -166,7 +169,7 @@ impl Scratch {
             if kept_by_git && e.stage == 0 {
                 continue;
             }
-            let conflicted = entries.iter().any(|o| o.path == e.path && o.stage != 0);
+            let conflicted = conflicts.contains(e.path.as_slice());
             match now(root, &e.path, &mut parents) {
                 Now::File(md) => {
                     let regular = e.mode == 0o100644 || e.mode == 0o100755;
@@ -308,7 +311,12 @@ impl Scratch {
     }
 
     /// Hashes the bytes of `input` as a blob into the private objects.
-    fn hash_stdin(&self, git: &Git, repo: &RepoConfig, input: &mut dyn std::io::Read) -> Result<String, String> {
+    fn hash_stdin(
+        &self,
+        git: &Git,
+        repo: &RepoConfig,
+        input: &mut (dyn std::io::Read + Send),
+    ) -> Result<String, String> {
         match self.git_stdin(git, repo, &["hash-object", "-w", "--no-filters", "--stdin"], input) {
             Some((0, out)) => Ok(String::from_utf8_lossy(&out).trim().to_string()),
             Some((code, _)) => Err(format!("git hash-object exited {code}")),
@@ -321,7 +329,7 @@ impl Scratch {
         git: &Git,
         repo: &RepoConfig,
         args: &[&str],
-        input: &mut dyn std::io::Read,
+        input: &mut (dyn std::io::Read + Send),
     ) -> Option<(i32, Vec<u8>)> {
         git.query_env(repo, &self.env, Some(&self.dir.join("empty")), args, Some(input))
     }
@@ -1055,5 +1063,31 @@ mod tests {
         let has = |path: &str, body: &[u8]| tree.contains(&format!("100644 {} {path}", blob_of(&root, body)));
         assert!(has("notes.txt", b"plain\n"), "an ordinary untracked file still enters: {tree:?}");
         assert!(has("up/report.csv", b"x,y\n"), "and one in the uploads folder: {tree:?}");
+    }
+    #[test]
+    fn a_changed_set_larger_than_a_pipe_holds_is_hashed_and_entered() {
+        if !have_git() {
+            return;
+        }
+        // About 4 000 absolute paths on stdin and as many ids on stdout: well past both pipes' buffers, which deadlocked
+        // when stdin was written whole before stdout was read (janitor-2, host#51: 2 400 paths hung).
+        let (t, root, marks) = repo();
+        std::fs::write(root.join(".gitignore"), ".gitattributes\n.gitignore\n").unwrap();
+        settle(&root, &marks);
+        let many = root.join("many-files-with-a-long-directory-name-so-each-absolute-path-is-long");
+        std::fs::create_dir(&many).unwrap();
+        for i in 0..4000 {
+            std::fs::write(many.join(format!("file-{i:05}.txt")), format!("{i}\n")).unwrap();
+        }
+        let (g, r) = (git_on_path(), inspect(&root));
+        let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+        let entered = s.enter_changes(&g, &r, None).unwrap();
+        assert_eq!(entered.hashed, 4000);
+        let tree = scratch_tree(&s, &g, &r);
+        assert_eq!(tree.iter().filter(|l| l.contains("/file-")).count(), 4000);
+        assert!(tree.contains(&format!(
+            "100644 {} many-files-with-a-long-directory-name-so-each-absolute-path-is-long/file-03999.txt",
+            blob_of(&root, b"3999\n")
+        )));
     }
 }
