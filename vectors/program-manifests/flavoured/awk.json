@@ -1,0 +1,136 @@
+{
+  "program": "awk",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "awk",
+        "{print}",
+        "a.txt"
+      ],
+      "flavour": "bsd",
+      "note": "the hardening inserts -safe (BSD awk's flag against system, pipes and redirection)",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "awk",
+        "-safe",
+        "{print}",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "awk",
+        "-safe",
+        "{print}",
+        "a.txt"
+      ],
+      "flavour": "bsd",
+      "note": "-safe already given: not repeated",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 3,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "awk",
+        "-safe",
+        "{print}",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "awk",
+        "-v",
+        "n=1",
+        "{print n}",
+        "a.txt"
+      ],
+      "flavour": "bsd",
+      "note": "-safe goes right after the name, before -v",
+      "described": true,
+      "effects": [
+        "read:fs:a.txt:?:?"
+      ],
+      "pathArgs": [
+        {
+          "arg": 4,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "awk",
+        "-safe",
+        "-v",
+        "n=1",
+        "{print n}",
+        "a.txt"
+      ]
+    },
+    {
+      "argv": [
+        "awk",
+        "{print}",
+        "a.txt"
+      ],
+      "flavour": "other",
+      "note": "an awk its manifest does not describe: unknown",
+      "described": false,
+      "effects": "unknown",
+      "pathArgs": [
+        {
+          "arg": 2,
+          "role": "read"
+        }
+      ],
+      "actsOnDir": false,
+      "runner": false,
+      "okCodes": [
+        0
+      ],
+      "echoes": false,
+      "recursive": false,
+      "hardened": [
+        "awk",
+        "{print}",
+        "a.txt"
+      ]
+    }
+  ]
+}

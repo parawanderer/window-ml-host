@@ -16,6 +16,8 @@ use std::fmt;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 
+use crate::script_grammar::{awk_program_refusal, is_awk_assignment, sed_script_refusal};
+
 // --- the format ---
 
 /// A JSON object whose entries keep the order the file wrote them in. A repeated key keeps the last value, as
@@ -292,6 +294,25 @@ pub struct FlagSpec {
     /// With this flag the command walks its directory arguments.
     #[serde(default)]
     pub recursive: bool,
+    /// The only values the flag is described with (BSD `sed -i ''`: `[""]`); any other value makes the call unknown.
+    pub values: Option<Vec<String>>,
+    /// A short flag whose value is the rest of its argument, empty when bare, and never the next argument (GNU
+    /// `sed -i`, `-i.bak`).
+    #[serde(default)]
+    pub attached_value: bool,
+    /// The value is a script in the command's `script` language (`sed -e`), checked by its grammar (`script_grammar`).
+    #[serde(default)]
+    pub script: bool,
+}
+
+/// A program language whose text a narrow grammar checks (`script_grammar`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScriptLang {
+    /// A sed script.
+    Sed,
+    /// An awk program.
+    Awk,
 }
 
 /// A `find`-style expression primary.
@@ -366,6 +387,10 @@ pub struct CommandSpec {
     pub written_operands: Option<WrittenOperands>,
     /// What one detected flavour adds to this command: only in a manifest that declares `flavours`.
     pub flavour: Option<CommandFlavours>,
+    /// The first operand is a program in this language unless a `script` flag gave one (`sed 's/a/b/' f`, `awk '{print
+    /// $1}' f`): a text outside its narrow grammar makes the call unknown. For `awk`, an operand that is an assignment
+    /// (`n=1`) is not a path.
+    pub script: Option<ScriptLang>,
     /// Internal (never in the JSON): a flavour that stops at the first operand reads every later argument as an operand.
     #[serde(skip)]
     pub stop: bool,
@@ -600,6 +625,8 @@ struct Parsed {
     operands: Vec<usize>,
     paths_from: Option<usize>,
     sub: Option<usize>,
+    /// The values of `script` flags, in order.
+    scripts: Vec<String>,
 }
 
 /// Appends `add` to `list`, skipping what it already holds (a JS `Set` over numbers, in insertion order).
@@ -717,6 +744,9 @@ pub fn describe_call_as(
         };
         let Some(sub) = r.sub else {
             operand_paths = finish_command(argv, &cmd, &r.operands, r.paths_from, &mut d, &mut terms);
+            if let Some(lang) = cmd.script {
+                check_script(argv, lang, &r.operands, &r.scripts, flavour == Some(Flavour::Gnu), &mut d);
+            }
             break;
         };
         let Some(next) = cmd.subcommands.as_ref().and_then(|s| s.get(&argv[sub])).cloned() else {
@@ -867,15 +897,53 @@ fn names_its_path(t: &ProgramEffect) -> bool {
     matches!(t, ProgramEffect::Read | ProgramEffect::Write | ProgramEffect::WriteNames)
 }
 
-/// Applies a flag to the call: its effects, its path or directory value, and its flags on the call as a whole.
+/// A `script` command's program (`script` flags' values joined by newlines, else its first operand) checked by its
+/// language's narrow grammar; one outside it makes the call unknown.
+fn check_script(
+    argv: &[String],
+    lang: ScriptLang,
+    operands: &[usize],
+    scripts: &[String],
+    gnu: bool,
+    d: &mut CallDescription,
+) {
+    let name = if lang == ScriptLang::Sed { "sed" } else { "awk" };
+    let text = if !scripts.is_empty() { Some(scripts.join("\n")) } else { operands.first().map(|i| argv[*i].clone()) };
+    let Some(text) = text else {
+        unknown(d, format!("{name} was given no program"));
+        return;
+    };
+    let why = if lang == ScriptLang::Sed { sed_script_refusal(&text, gnu) } else { awk_program_refusal(&text) };
+    if let Some(why) = why {
+        unknown(d, why);
+    }
+}
+
+/// The flags parsed so far: the path start a flag set and the values of `script` flags.
+struct Seen {
+    paths_from: Option<usize>,
+    scripts: Vec<String>,
+}
+
+/// Applies a flag to the call: its effects, its path or directory value, and its flags on the call as a whole. `text`
+/// is the flag's value as given, when it has one.
 fn apply(
     d: &mut CallDescription,
     terms: &mut Terms,
-    paths_from: &mut Option<usize>,
+    seen: &mut Seen,
     name: &str,
     f: &FlagSpec,
     value_at: Option<ValueAt>,
+    text: Option<&str>,
 ) {
+    if let Some(values) = &f.values {
+        if !text.is_some_and(|t| values.iter().any(|v| v == t)) {
+            unknown(d, format!("{name} {:?} is not a value its manifest describes", text.unwrap_or("")));
+        }
+    }
+    if let (true, Some(t)) = (f.script, text) {
+        seen.scripts.push(t.to_string());
+    }
     if f.effects.contains(&ProgramEffect::Unknown) {
         let msg = format!("{name} can make {} do what no manifest describes", d.program);
         unknown(d, msg);
@@ -910,7 +978,7 @@ fn apply(
         }
     }
     if let Some(p) = f.paths_from {
-        *paths_from = Some(p);
+        seen.paths_from = Some(p);
     }
     if f.runner {
         d.runner = true;
@@ -958,8 +1026,8 @@ fn stop_shadow(a: &str, flags: &OrderedMap<FlagSpec>) -> Option<String> {
     names.into_iter().find(|n| flags.get(n).is_some_and(|f| !read_only_flag(f)))
 }
 
-/// Options-then-operands. Returns the operand indices, the path start a flag set, and the index of a subcommand name
-/// when the command has subcommands and one was reached before any operand.
+/// Options-then-operands. Returns the operand indices, the path start a flag set, the values of `script` flags, and the
+/// index of a subcommand name when the command has subcommands and one was reached before any operand.
 fn parse_options(
     argv: &[String],
     start: usize,
@@ -968,7 +1036,7 @@ fn parse_options(
     terms: &mut Terms,
 ) -> Parsed {
     let mut operands: Vec<usize> = Vec::new();
-    let mut paths_from: Option<usize> = None;
+    let mut seen = Seen { paths_from: None, scripts: Vec::new() };
     let mut after_terminator = false;
     let mut i = start;
     while i < argv.len() {
@@ -1009,7 +1077,7 @@ fn parse_options(
         }
         if a == "-" || !a.starts_with('-') {
             if cmd.subcommands.is_some() && operands.is_empty() {
-                return Parsed { operands, paths_from, sub: Some(i) };
+                return Parsed { operands, paths_from: seen.paths_from, sub: Some(i), scripts: seen.scripts };
             }
             if cmd.pathspecs && not_literal_pathspec(a) {
                 unknown(d, format!("pathspec {a:?} is magic or a glob, not a path"));
@@ -1030,59 +1098,44 @@ fn parse_options(
                 i += 1;
                 continue;
             };
+            let after_eq = eq.map(|e| &a[e + 1..]);
             if f.value {
                 if eq.is_some() {
-                    apply(
-                        d,
-                        terms,
-                        &mut paths_from,
-                        name,
-                        f,
-                        Some(ValueAt { arg: i, split: Some("="), attached: false }),
-                    );
+                    let at = ValueAt { arg: i, split: Some("="), attached: false };
+                    apply(d, terms, &mut seen, name, f, Some(at), after_eq);
                 } else if i + 1 < argv.len() {
-                    apply(
-                        d,
-                        terms,
-                        &mut paths_from,
-                        name,
-                        f,
-                        Some(ValueAt { arg: i + 1, split: None, attached: false }),
-                    );
+                    let at = ValueAt { arg: i + 1, split: None, attached: false };
+                    apply(d, terms, &mut seen, name, f, Some(at), Some(&argv[i + 1]));
                     i += 1;
                 } else {
                     unknown(d, format!("{name} needs a value"));
                 }
             } else if eq.is_some() {
                 if f.optional_value {
-                    apply(d, terms, &mut paths_from, name, f, None);
+                    apply(d, terms, &mut seen, name, f, None, after_eq);
                 } else {
                     unknown(d, format!("{name} takes no value"));
                 }
             } else {
-                apply(d, terms, &mut paths_from, name, f, None);
+                apply(d, terms, &mut seen, name, f, None, None);
             }
             i += 1;
             continue;
         }
         // A single-dash flag: a whole name first (`-C`, `-name`), then a cluster of one-letter flags.
         if let Some(whole) = cmd.flags.get(a) {
-            if whole.value {
+            if whole.attached_value {
+                apply(d, terms, &mut seen, a, whole, None, Some(""));
+            } else if whole.value {
                 if i + 1 < argv.len() {
-                    apply(
-                        d,
-                        terms,
-                        &mut paths_from,
-                        a,
-                        whole,
-                        Some(ValueAt { arg: i + 1, split: None, attached: false }),
-                    );
+                    let at = ValueAt { arg: i + 1, split: None, attached: false };
+                    apply(d, terms, &mut seen, a, whole, Some(at), Some(&argv[i + 1]));
                     i += 1;
                 } else {
                     unknown(d, format!("{a} needs a value"));
                 }
             } else {
-                apply(d, terms, &mut paths_from, a, whole, None);
+                apply(d, terms, &mut seen, a, whole, None, None);
             }
             i += 1;
             continue;
@@ -1099,29 +1152,29 @@ fn parse_options(
                 unknown(d, format!("{a}: this command's short flags do not combine"));
                 break;
             }
+            let rest: String = letters[j + 1..].iter().collect();
+            if f.attached_value {
+                apply(d, terms, &mut seen, &name, f, None, Some(&rest));
+                break;
+            }
             if f.value {
                 if j + 1 < letters.len() {
-                    apply(d, terms, &mut paths_from, &name, f, Some(ValueAt { arg: i, split: None, attached: true }));
+                    let at = ValueAt { arg: i, split: None, attached: true };
+                    apply(d, terms, &mut seen, &name, f, Some(at), Some(&rest));
                 } else if i + 1 < argv.len() {
-                    apply(
-                        d,
-                        terms,
-                        &mut paths_from,
-                        &name,
-                        f,
-                        Some(ValueAt { arg: i + 1, split: None, attached: false }),
-                    );
+                    let at = ValueAt { arg: i + 1, split: None, attached: false };
+                    apply(d, terms, &mut seen, &name, f, Some(at), Some(&argv[i + 1]));
                     i += 1;
                 } else {
                     unknown(d, format!("{name} needs a value"));
                 }
                 break;
             }
-            apply(d, terms, &mut paths_from, &name, f, None);
+            apply(d, terms, &mut seen, &name, f, None, None);
         }
         i += 1;
     }
-    Parsed { operands, paths_from, sub: None }
+    Parsed { operands, paths_from: seen.paths_from, sub: None, scripts: seen.scripts }
 }
 
 /// find's grammar: options, then path operands up to the first expression token, then primaries and operators.
@@ -1188,7 +1241,7 @@ fn parse_find(argv: &[String], start: usize, cmd: &CommandSpec, d: &mut CallDesc
         }
         i += n + 1;
     }
-    Parsed { operands, paths_from: None, sub: None }
+    Parsed { operands, paths_from: None, sub: None, scripts: Vec::new() }
 }
 
 /// After parsing a command: its path operands (returned; `-` is stdin, not a path), what it acts on without them, and
@@ -1215,6 +1268,10 @@ fn finish_command(
     };
     if !cmd.dash_is_path {
         paths.retain(|i| argv[*i] != "-");
+    }
+    // awk reads an operand `name=value` as an assignment, never a file.
+    if cmd.script == Some(ScriptLang::Awk) {
+        paths.retain(|i| !is_awk_assignment(&argv[*i]));
     }
     for i in &paths {
         d.path_args.push(PathArg { arg: *i, split: None, role: Role::Read, walk: false });

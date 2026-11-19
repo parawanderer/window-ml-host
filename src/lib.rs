@@ -23,6 +23,7 @@ pub mod put;
 pub mod register;
 pub mod runner;
 pub mod sandbox;
+pub mod script_grammar;
 pub mod session;
 pub mod snapshot;
 pub mod store;
