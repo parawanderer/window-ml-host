@@ -29,6 +29,16 @@
 //! A file swapped for a link between the `lstat` and git's open of it would be hashed through the link, so every file
 //! is `lstat`ed again after hashing and one that changed is hashed again from a descriptor the host opened without
 //! following links; a swap and a swap back inside that window is the residue.
+//! Bounds (H12, src/snapshot_bounds.rs): only a captured file is in the tree. A regular file over `DIFF_CAP` (1 MiB)
+//! is left out, tracked or not, and listed with its size and sha256; a FIFO, a socket, a device, a file the host cannot
+//! open and an untracked file whose name looks like a secret are listed as not captured, with the reason, and a tracked
+//! one leaves the tree. git lists no FIFO, socket or device, so the host finds them by type in the directories the
+//! listings reached, never opening one; one in a directory that holds no file git lists is not found, and is in no
+//! tree either. A work tree of more than `WALK_CAP` (20 000) files, tracked and untracked but not ignored, gives a null
+//! diff with the reason, before any file is read. The changed set is hashed in one `hash-object --stdin-paths` batch
+//! whose answer is read under the git query's 1 MiB cap, about 25 500 ids: a larger changed set fails the snapshot
+//! (closed) rather than pair a path with another file's id, which `WALK_CAP` keeps out of reach (janitor-2, host#51).
+//!
 //! A git too old for `rev-parse --shared-index-path` echoes the option back, which reads as a split index: every
 //! repository's tree then comes from HEAD, so the stat cache is lost and every tracked file is hashed, and nothing is
 //! written into the repository.
@@ -41,6 +51,10 @@ use std::path::{Path, PathBuf};
 use crate::facts::looks_secret;
 use crate::gitconfig::RepoConfig;
 use crate::gitfacts::{BELT_CONFIG, Git};
+use crate::snapshot_bounds::{
+    Big, BigHashes, DIFF_CAP, Hashed, NOT_A_FILE, NotCaptured, UNREADABLE, WITHHELD_NAME, open_nofollow, special_files,
+};
+use crate::walk::WALK_CAP;
 
 /// A call's scratch index and private object directory. Removed on drop.
 pub struct Scratch {
@@ -135,8 +149,25 @@ impl Scratch {
 
     /// Enters the work tree's changes into the scratch index (H11): each tracked path whose `lstat` differs from its
     /// cached stat (or is racily clean) is hashed again or removed, and each untracked file not ignored, and every
-    /// untracked file inside `uploads` (an absolute path in the work tree), is added. `Err` is a null diff's reason.
+    /// untracked file inside `uploads` (an absolute path in the work tree), is added. Only a captured file is in the
+    /// tree (H12): one over [`DIFF_CAP`] is listed in [`Entered::big`] with its size and sha256 (from `hashes`), and a
+    /// FIFO, a socket, a device, an unreadable file and an untracked file whose name looks like a secret are listed in
+    /// [`Entered::not_captured`]; a tracked one of either kind leaves the tree. `Err` is a null diff's reason, which
+    /// includes a work tree of more than [`WALK_CAP`] files, tracked and untracked.
     pub fn enter_changes(&self, git: &Git, repo: &RepoConfig, uploads: Option<&Path>) -> Result<Entered, String> {
+        self.enter_changes_with(git, repo, uploads, &mut BigHashes::default())
+    }
+
+    /// [`Scratch::enter_changes`] with the big files' hashes kept in `hashes`, so a call's second snapshot reads no
+    /// big file whose stat is unchanged since its first.
+    pub fn enter_changes_with(
+        &self,
+        git: &Git,
+        repo: &RepoConfig,
+        uploads: Option<&Path>,
+        hashes: &mut BigHashes,
+    ) -> Result<Entered, String> {
+        hashes.start();
         let root = &repo.root;
         let listing = |extra: &[(String, String)], cwd: Option<&Path>, args: &[&str]| -> Result<Vec<u8>, String> {
             match git.query_capped(repo, extra, cwd, args, None, LIST_MAX) {
@@ -152,6 +183,25 @@ impl Scratch {
         let index_mtime =
             std::fs::symlink_metadata(self.dir.join("index")).map(|m| (m.mtime(), m.mtime_nsec())).unwrap_or((0, 0));
         let null_oid = "0".repeat(entries.first().map_or(40, |e| e.oid.len()));
+        // Untracked: what git does not ignore, then everything untracked in the uploads folder. Run against the
+        // scratch index in the real work tree (no hook or filter runs for a listing).
+        let index_only = [self.env[0].clone()];
+        let mut untracked = listing(&index_only, None, &["ls-files", "-z", "--others", "--exclude-standard"])?;
+        if let Some(rel) = uploads.and_then(|u| u.strip_prefix(root).ok()).filter(|r| !r.as_os_str().is_empty()) {
+            let spec = [b":(literal)".as_slice(), rel.as_os_str().as_bytes()].concat();
+            let spec = String::from_utf8(spec).map_err(|_| "the uploads folder's path is not UTF-8")?;
+            untracked.extend(listing(&index_only, None, &["ls-files", "-z", "--others", "--", &spec])?);
+        }
+        let uploads_rel = uploads.and_then(|u| u.strip_prefix(root).ok()).map(|r| r.as_os_str().as_bytes().to_vec());
+        // The walk's bound (H12), before any path is looked at: a conflicted path's stages count once.
+        let tracked_count =
+            entries.iter().enumerate().filter(|(i, e)| *i == 0 || entries[i - 1].path != e.path).count();
+        let untracked_count = untracked.split(|b| *b == 0).filter(|p| !p.is_empty()).count();
+        if tracked_count + untracked_count > WALK_CAP {
+            return Err(format!("the work tree has more than {WALK_CAP} files, so no diff is made"));
+        }
+        let mut not_captured: Vec<NotCaptured> = vec![];
+        let mut bigs: Vec<(Vec<u8>, std::fs::Metadata)> = vec![];
         let mut parents = ParentCheck::default();
         let mut removals: Vec<Vec<u8>> = vec![];
         let mut files: Vec<(Vec<u8>, std::fs::Metadata)> = vec![];
@@ -171,6 +221,14 @@ impl Scratch {
             }
             let conflicted = conflicts.contains(e.path.as_slice());
             match now(root, &e.path, &mut parents) {
+                Now::File(md) if md.size() > DIFF_CAP => {
+                    removals.push(e.path.clone());
+                    bigs.push((e.path.clone(), md));
+                }
+                Now::Special => {
+                    removals.push(e.path.clone());
+                    not_captured.push(NotCaptured { path: e.path.clone(), reason: NOT_A_FILE });
+                }
                 Now::File(md) => {
                     let regular = e.mode == 0o100644 || e.mode == 0o100755;
                     let exec_same = (e.mode == 0o100755) == (md.mode() & 0o111 != 0);
@@ -192,30 +250,77 @@ impl Scratch {
                 Now::Gone => removals.push(e.path.clone()),
             }
         }
-        // Untracked: what git does not ignore, then everything untracked in the uploads folder. Run against the
-        // scratch index in the real work tree (no hook or filter runs for a listing).
-        let index_only = [self.env[0].clone()];
-        let mut untracked = listing(&index_only, None, &["ls-files", "-z", "--others", "--exclude-standard"])?;
-        if let Some(rel) = uploads.and_then(|u| u.strip_prefix(root).ok()).filter(|r| !r.as_os_str().is_empty()) {
-            let spec = [b":(literal)".as_slice(), rel.as_os_str().as_bytes()].concat();
-            let spec = String::from_utf8(spec).map_err(|_| "the uploads folder's path is not UTF-8")?;
-            untracked.extend(listing(&index_only, None, &["ls-files", "-z", "--others", "--", &spec])?);
-        }
+        let tracked: std::collections::HashSet<Vec<u8>> = seen.clone();
         for p in untracked.split(|b| *b == 0).filter(|p| !p.is_empty() && !p.ends_with(b"/")) {
             if !seen.insert(p.to_vec()) {
                 continue;
             }
             // A secret-looking path never enters either tree, so the diff draws nothing for it (FILE_ATTACHMENTS.md
             // H11, amended 2026-11-19); a tracked one is withheld by the report (H13).
+            // It is listed as not captured, since the name rule also matches ordinary files (`id_utils.py`).
             if looks_secret(Path::new(std::ffi::OsStr::from_bytes(p))) {
+                not_captured.push(NotCaptured { path: p.to_vec(), reason: WITHHELD_NAME });
                 continue;
             }
             match now(root, p, &mut parents) {
+                Now::File(md) if md.size() > DIFF_CAP => bigs.push((p.to_vec(), md)),
                 Now::File(md) => files.push((p.to_vec(), md)),
                 Now::Link(_, target) => links.push((p.to_vec(), target)),
+                Now::Special => not_captured.push(NotCaptured { path: p.to_vec(), reason: NOT_A_FILE }),
                 Now::Gone => {}
             }
         }
+        // A file the host cannot open for reading is not captured, and a tracked one leaves the tree; one that turns
+        // unreadable after this check fails the snapshot at the hash.
+        files.retain(|(p, _)| {
+            let ok = open_nofollow(&root.join(std::ffi::OsStr::from_bytes(p))).is_ok();
+            if !ok {
+                not_captured.push(NotCaptured { path: p.clone(), reason: UNREADABLE });
+                if tracked.contains(p.as_slice()) {
+                    removals.push(p.clone());
+                }
+            }
+            ok
+        });
+        let mut big = vec![];
+        for (p, md) in bigs {
+            match hashes.sha256(&root.join(std::ffi::OsStr::from_bytes(&p)), &md) {
+                Hashed::Sha(sha256) => {
+                    big.push(Big { path: p, size: md.size(), executable: md.mode() & 0o111 != 0, sha256 })
+                }
+                Hashed::Unreadable => not_captured.push(NotCaptured { path: p, reason: UNREADABLE }),
+            }
+        }
+        // A FIFO, a socket or a device git lists no file for: found by type in the directories the listings reached
+        // (every one checked to be a real directory), never opened; an ignored one is left out, as git leaves out an
+        // ignored file, except in the uploads folder.
+        let mut dirs: Vec<Vec<u8>> = vec![vec![]];
+        dirs.extend(parents.0.iter().filter(|(_, real)| **real).map(|(d, _)| d.clone()));
+        let listed: std::collections::HashSet<Vec<u8>> = not_captured.iter().map(|n| n.path.clone()).collect();
+        let special: Vec<Vec<u8>> =
+            special_files(root, &dirs).into_iter().filter(|p| !listed.contains(p) && !seen.contains(p)).collect();
+        let in_uploads = |p: &[u8]| {
+            uploads_rel.as_deref().is_some_and(|u| !u.is_empty() && p.starts_with(u) && p.get(u.len()) == Some(&b'/'))
+        };
+        let ask: Vec<&Vec<u8>> = special.iter().filter(|p| !in_uploads(p)).collect();
+        let ignored: std::collections::HashSet<Vec<u8>> = if ask.is_empty() {
+            Default::default()
+        } else {
+            let input: Vec<u8> = ask.iter().flat_map(|p| p.iter().copied().chain([0])).collect();
+            let args = ["check-ignore", "-z", "--stdin"];
+            match git.query_capped(repo, &index_only, None, &args, Some(&mut input.as_slice()), LIST_MAX) {
+                Some((0 | 1, out)) => out.split(|b| *b == 0).filter(|p| !p.is_empty()).map(<[u8]>::to_vec).collect(),
+                Some((code, _)) => return Err(format!("git check-ignore exited {code}")),
+                None => return Err("git could not be run".into()),
+            }
+        };
+        for p in special.into_iter().filter(|p| !ignored.contains(p)) {
+            not_captured.push(NotCaptured { path: p, reason: NOT_A_FILE });
+        }
+        not_captured.sort_by(|a, b| a.path.cmp(&b.path));
+        big.sort_by(|a, b| a.path.cmp(&b.path));
+        removals.sort();
+        removals.dedup();
         let mut info: Vec<u8> = vec![];
         for p in &removals {
             info.extend_from_slice(format!("0 {null_oid} 0\t").as_bytes());
@@ -242,7 +347,7 @@ impl Scratch {
                 None => return Err("git could not be run".into()),
             }
         }
-        Ok(Entered { hashed: files.len() + links.len(), removed: removals.len() })
+        Ok(Entered { hashed: files.len() + links.len(), removed: removals.len(), big, not_captured })
     }
 
     /// Hashes `files` (work-tree paths with the `lstat` taken before) into the private objects, in order. A file whose
@@ -346,11 +451,16 @@ impl Drop for Scratch {
     }
 }
 
-/// What [`Scratch::enter_changes`] did: how many paths it hashed and how many entries it removed.
+/// What [`Scratch::enter_changes`] did: how many paths it hashed and how many entries it removed, and what it left out
+/// of the tree (H12).
 #[derive(Debug, PartialEq)]
 pub struct Entered {
     pub hashed: usize,
     pub removed: usize,
+    /// The regular files over [`DIFF_CAP`], by size and sha256, in path order.
+    pub big: Vec<Big>,
+    /// The paths not captured, with the reason, in path order.
+    pub not_captured: Vec<NotCaptured>,
 }
 
 /// The most bytes of a listing (`ls-files`) read; a longer one fails the snapshot rather than leave paths out.
@@ -444,7 +554,9 @@ fn parse_debug_entries(out: &[u8]) -> Result<Vec<DebugEntry>, String> {
 enum Now {
     File(std::fs::Metadata),
     Link(std::fs::Metadata, Vec<u8>),
-    /// Missing, behind a symlinked or missing parent, or neither a regular file nor a link (a directory, a FIFO).
+    /// A FIFO, a socket or a device, which is never opened.
+    Special,
+    /// Missing, behind a symlinked or missing parent, or a directory.
     Gone,
 }
 
@@ -459,6 +571,7 @@ fn now(root: &Path, rel: &[u8], parents: &mut ParentCheck) -> Now {
             Ok(t) => Now::Link(md, t.into_os_string().into_vec()),
             Err(_) => Now::Gone,
         },
+        Ok(md) if !md.is_dir() => Now::Special,
         _ => Now::Gone,
     }
 }
@@ -938,7 +1051,10 @@ mod tests {
         settle(&root, &marks);
         let (g, r) = (git_on_path(), inspect(&root));
         let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
-        assert_eq!(s.enter_changes(&g, &r, None).unwrap(), Entered { hashed: 0, removed: 0 });
+        assert_eq!(
+            s.enter_changes(&g, &r, None).unwrap(),
+            Entered { hashed: 0, removed: 0, big: vec![], not_captured: vec![] }
+        );
         assert_eq!(s.tree(&g, &r).unwrap(), run(&root, &["rev-parse", "HEAD^{tree}"]));
     }
 
@@ -1089,5 +1205,151 @@ mod tests {
             "100644 {} many-files-with-a-long-directory-name-so-each-absolute-path-is-long/file-03999.txt",
             blob_of(&root, b"3999\n")
         )));
+    }
+
+    // --- the bounds (H12): only a captured file is in the tree ---
+
+    fn paths_of(n: &[NotCaptured], reason: &str) -> Vec<String> {
+        n.iter().filter(|n| n.reason == reason).map(|n| String::from_utf8_lossy(&n.path).into_owned()).collect()
+    }
+
+    #[test]
+    fn a_fifo_a_socket_and_an_unreadable_file_are_listed_as_not_captured_and_never_opened() {
+        if !have_git() || rustix::process::geteuid().is_root() {
+            return;
+        }
+        let (t, root, marks) = repo();
+        settle(&root, &marks);
+        let fifo = |p: &Path| assert!(Command::new("mkfifo").arg(p).status().unwrap().success());
+        // An untracked FIFO, one beside a tracked file, a socket, and a tracked file swapped for a FIFO: opening any
+        // FIFO for reading would block the snapshot.
+        fifo(&root.join("pipe"));
+        fifo(&root.join("sub/inner-pipe"));
+        std::fs::remove_file(root.join("a.txt")).unwrap();
+        fifo(&root.join("a.txt"));
+        let _sock = std::os::unix::net::UnixListener::bind(root.join("sock")).unwrap();
+        std::fs::write(root.join("locked.txt"), "secret-ish\n").unwrap();
+        std::fs::set_permissions(root.join("locked.txt"), std::os::unix::fs::PermissionsExt::from_mode(0o000)).unwrap();
+        std::fs::write(root.join("plain.txt"), "plain\n").unwrap();
+        let (g, r) = (git_on_path(), inspect(&root));
+        let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+        let start = std::time::Instant::now();
+        let e = s.enter_changes(&g, &r, None).unwrap();
+        assert!(start.elapsed() < std::time::Duration::from_secs(20), "within budget: {:?}", start.elapsed());
+        assert_eq!(paths_of(&e.not_captured, NOT_A_FILE), ["a.txt", "pipe", "sock", "sub/inner-pipe"]);
+        assert_eq!(paths_of(&e.not_captured, UNREADABLE), ["locked.txt"]);
+        let tree = scratch_tree(&s, &g, &r);
+        for gone in ["a.txt", "pipe", "sock", "sub/inner-pipe", "locked.txt"] {
+            assert!(!tree.iter().any(|l| l.ends_with(&format!(" {gone}"))), "{gone} is in no tree: {tree:?}");
+        }
+        assert!(tree.contains(&format!("100644 {} plain.txt", blob_of(&root, b"plain\n"))), "{tree:?}");
+        std::fs::set_permissions(root.join("locked.txt"), std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
+    }
+
+    #[test]
+    fn an_ignored_fifo_is_not_listed_and_one_in_the_uploads_folder_is() {
+        if !have_git() {
+            return;
+        }
+        let (t, root, marks) = repo();
+        std::fs::write(root.join(".gitignore"), "*.pipe\nup/\n").unwrap();
+        settle(&root, &marks);
+        let fifo = |p: &Path| assert!(Command::new("mkfifo").arg(p).status().unwrap().success());
+        fifo(&root.join("sub/x.pipe"));
+        std::fs::create_dir(root.join("up")).unwrap();
+        std::fs::write(root.join("up/report.csv"), "x,y\n").unwrap();
+        fifo(&root.join("up/y.pipe"));
+        let (g, r) = (git_on_path(), inspect(&root));
+        let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+        let e = s.enter_changes(&g, &r, Some(&root.join("up"))).unwrap();
+        assert_eq!(paths_of(&e.not_captured, NOT_A_FILE), ["up/y.pipe"]);
+    }
+
+    #[test]
+    fn a_file_over_the_cap_is_listed_by_size_and_sha256_and_its_body_enters_no_tree() {
+        if !have_git() {
+            return;
+        }
+        use sha2::Digest;
+        let (t, root, marks) = repo();
+        let body = vec![b'z'; (DIFF_CAP + 1) as usize];
+        settle(&root, &marks);
+        // A tracked file the call grows past the cap, and an untracked one over it.
+        std::fs::write(root.join("sub/b.txt"), &body).unwrap();
+        std::fs::write(root.join("big.bin"), &body).unwrap();
+        let (g, r) = (git_on_path(), inspect(&root));
+        let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+        let mut hashes = BigHashes::default();
+        let e = s.enter_changes_with(&g, &r, None, &mut hashes).unwrap();
+        let sha = hex::encode(sha2::Sha256::digest(&body));
+        let listed: Vec<(String, u64, Option<String>)> =
+            e.big.iter().map(|b| (String::from_utf8_lossy(&b.path).into_owned(), b.size, b.sha256.clone())).collect();
+        assert_eq!(
+            listed,
+            [("big.bin".into(), DIFF_CAP + 1, Some(sha.clone())), ("sub/b.txt".into(), DIFF_CAP + 1, Some(sha))]
+        );
+        let tree = scratch_tree(&s, &g, &r);
+        assert!(!tree.iter().any(|l| l.ends_with(" big.bin") || l.ends_with(" sub/b.txt")), "{tree:?}");
+        let (code, _) = s.git(&g, &r, &["cat-file", "-e", &blob_of(&root, &body)]).unwrap();
+        assert_ne!(code, 0, "the big body is not in the private objects");
+        assert!(e.not_captured.is_empty(), "{:?}", e.not_captured);
+    }
+
+    #[test]
+    fn a_file_under_the_cap_whose_only_change_is_its_mtime_keeps_the_same_tree() {
+        if !have_git() {
+            return;
+        }
+        let (t, root, marks) = repo();
+        settle(&root, &marks);
+        let (g, r) = (git_on_path(), inspect(&root));
+        let tree_now = || {
+            let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+            s.enter_changes(&g, &r, None).unwrap();
+            s.tree(&g, &r).unwrap()
+        };
+        let before = tree_now();
+        std::fs::File::options()
+            .write(true)
+            .open(root.join("a.txt"))
+            .unwrap()
+            .set_modified(std::time::SystemTime::now())
+            .unwrap();
+        assert_eq!(tree_now(), before, "a touched file hashes to the blob it had");
+    }
+
+    #[test]
+    fn an_untracked_name_that_looks_like_a_secret_is_listed_with_the_name_reason() {
+        if !have_git() {
+            return;
+        }
+        let (t, root, marks) = repo();
+        settle(&root, &marks);
+        std::fs::write(root.join("id_utils.py"), "def f(): pass\n").unwrap();
+        std::fs::write(root.join(".env.local"), "TOKEN=hunter2\n").unwrap();
+        let (g, r) = (git_on_path(), inspect(&root));
+        let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+        let e = s.enter_changes(&g, &r, None).unwrap();
+        assert_eq!(paths_of(&e.not_captured, WITHHELD_NAME), [".env.local", "id_utils.py"]);
+        assert_eq!(WITHHELD_NAME, "withheld: the name looks like a secret", "the spec's wording");
+    }
+
+    #[test]
+    fn a_work_tree_past_the_walk_cap_gives_a_null_diff_with_the_reason() {
+        if !have_git() {
+            return;
+        }
+        let (t, root, marks) = repo();
+        settle(&root, &marks);
+        let many = root.join("many");
+        std::fs::create_dir(&many).unwrap();
+        // Two tracked files and .gitattributes, so WALK_CAP untracked files take the count past it.
+        for i in 0..WALK_CAP {
+            std::fs::write(many.join(format!("{i}")), "").unwrap();
+        }
+        let (g, r) = (git_on_path(), inspect(&root));
+        let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+        let err = s.enter_changes(&g, &r, None).unwrap_err();
+        assert!(err.contains(&format!("more than {WALK_CAP} files")), "{err}");
     }
 }
