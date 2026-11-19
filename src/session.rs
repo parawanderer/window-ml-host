@@ -26,6 +26,7 @@ use crate::procs;
 use crate::put::{self, Staged};
 use crate::runner::{self, Limits, Meter, Outcome, Prepared};
 use crate::sandbox::{self, Availability, Envelope, ExecScope, Plan, WriteScope};
+use crate::snapshot_report::CallSnapshot;
 use crate::store::{Live, Lives, MAX_READ, Store};
 use crate::tilde;
 use crate::tripwire::{self, Snapshot};
@@ -140,7 +141,12 @@ struct Pending {
     credential: Option<Grant>,
     /// The config it was judged against (a reconfigure drops pending calls, so this is the current one).
     config: Config,
+    /// The repository the call acts in, which `start` snapshots (H13); `None` outside one.
+    repo: Option<gitconfig::RepoConfig>,
 }
+
+/// A call's first snapshot (H13), shared by a pipe's stages; `Err` is a null diff's reason.
+type CallSnap = Arc<Mutex<Result<CallSnapshot, String>>>;
 
 /// A running call: the owner table's row.
 struct Call {
@@ -379,7 +385,7 @@ impl Session {
             "hello" => Ok(self.hello()),
             "configure" => self.configure(args),
             "spawn" => self.spawn(args),
-            "start" => match self.start(&seq, args) {
+            "start" => match self.start(&seq, args).await {
                 Ok(()) => return,
                 Err(f) => Err(f),
             },
@@ -775,6 +781,7 @@ impl Session {
                 envelope: None,
                 credential,
                 config,
+                repo,
             },
         );
         Ok(facts)
@@ -939,7 +946,7 @@ impl Session {
     }
 
     /// Runs a pending call. Answers `seq` itself, BEFORE the call can end, so `done` never overtakes the answer.
-    fn start(self: &Arc<Self>, seq: &Value, a: &Map<String, Value>) -> Result<(), Fail> {
+    async fn start(self: &Arc<Self>, seq: &Value, a: &Map<String, Value>) -> Result<(), Fail> {
         let id = req_str(a, "id")?;
         let mut p = {
             let mut st = self.state.lock().unwrap();
@@ -953,13 +960,14 @@ impl Session {
         };
         p.envelope = parse_envelope(a.get("envelope"))?;
         p.envelope = applied_envelope(&p);
-        // What the protected names look like before the program runs: `done` reports what changed since.
+        // The work tree before the program runs (H13), then the protected names: `done` reports what changed since.
+        let snap = self.snapshot(&p).await;
         let protected = tripwire::snapshot(&p.config.roots);
         let (running, _) = self.launch(id, &p, Stdio::null(), false)?;
         let pid = running.pid;
         let (cancel, meter, lives) = self.register(id, pid, &p, &protected, false);
         self.send(json!({ "seq": seq, "value": { "id": id, "pid": pid } }));
-        self.supervise(id.to_string(), running, (cancel, meter, lives), &p, protected);
+        self.supervise(id.to_string(), running, (cancel, meter, lives), &p, protected, snap);
         Ok(())
     }
 
@@ -990,6 +998,9 @@ impl Session {
         }
         // One snapshot for every stage, taken before the first starts: each stage's `done` reports the pipe's changes.
         // Every stage has the same roots: `configure` drops every pending call, so no stage predates the current config.
+        // Likewise one snapshot of the work tree (H13): the first stage's repository, each stage's `done` reporting
+        // against it.
+        let snap = self.snapshot(&stages[0]).await;
         let protected = tripwire::snapshot(&stages[0].config.roots);
         let mut started: Vec<runner::Running> = Vec::new();
         let mut failure = None;
@@ -1025,7 +1036,7 @@ impl Session {
             .collect();
         self.send(json!({ "seq": seq, "value": { "ids": ids, "pids": pids } }));
         for (((id, r), handle), p) in ids.into_iter().zip(started).zip(handles).zip(&stages) {
-            self.supervise(id, r, handle, p, protected.clone());
+            self.supervise(id, r, handle, p, protected.clone(), snap.clone());
         }
         Ok(())
     }
@@ -1134,7 +1145,11 @@ impl Session {
             let plan = Plan {
                 roots: p.config.roots.clone(),
                 tmp: tmp.clone(),
-                hidden: vec![store.out_dir().to_path_buf(), store.sock_dir().to_path_buf()],
+                hidden: vec![
+                    store.out_dir().to_path_buf(),
+                    store.sock_dir().to_path_buf(),
+                    store.snap_dir().to_path_buf(),
+                ],
                 allow_read: p.named_secrets.clone(),
                 home: (self.host.host_env)("HOME").map(PathBuf::from),
                 outlives_host: matches!(p.owner_loss, OwnerLoss::Orphan(_)),
@@ -1350,6 +1365,7 @@ impl Session {
             }
             use std::sync::atomic::Ordering::Relaxed;
             s.send(json!({ "event": "done", "id": entry.id, "registered": true,
+                "diff": null, "diffReason": owners::no_diff(true),
                 "code": null, "signal": null, "ok": null,
                 "timedOut": false, "cancelled": cancelled, "durationMs": started.elapsed().as_millis() as u64,
                 "killed": killed, "peakFootprint": meter.peak.load(Relaxed), "memoryBound": entry.memory_bound,
@@ -1386,6 +1402,22 @@ impl Session {
         Ok(json!({ "owner": null }))
     }
 
+    /// The work tree's snapshot before a call starts (H13), off the async threads: a null diff's reason when the call
+    /// acts in no repository or the snapshot fails.
+    async fn snapshot(&self, p: &Pending) -> CallSnap {
+        let taken = match &p.repo {
+            None => Err("not a git repository".to_string()),
+            Some(repo) => {
+                let (git, repo, base) =
+                    (Git::on(&p.config.path), repo.clone(), self.host.store.snap_dir().to_path_buf());
+                tokio::task::spawn_blocking(move || CallSnapshot::take(git, &repo, &base, None))
+                    .await
+                    .unwrap_or_else(|e| Err(format!("the snapshot failed: {e}")))
+            }
+        };
+        Arc::new(Mutex::new(taken))
+    }
+
     /// Sees a started call to its end in the background, then sends its `done`.
     fn supervise(
         self: &Arc<Self>,
@@ -1394,6 +1426,7 @@ impl Session {
         (cancel, meter, lives): (Arc<Notify>, Arc<Meter>, Arc<Lives>),
         p: &Pending,
         protected: Snapshot,
+        snap: CallSnap,
     ) {
         let s = self.clone();
         let store = self.host.store.clone();
@@ -1405,6 +1438,7 @@ impl Session {
         let sandboxed = p.sandboxed;
         let envelope = p.envelope.unwrap_or_else(Envelope::today);
         let hosts = p.credential.as_ref().map(|g| g.hosts.clone());
+        let cap = p.config.output_cap;
         tokio::spawn(async move {
             let o = runner::finish(running, store.clone(), cancel, limits, meter, lives).await;
             {
@@ -1416,6 +1450,11 @@ impl Session {
             }
             store.remove_call_tmp(&id);
             let mut done = done_event(&id, o, sandboxed, envelope, &tripwire::report(&protected), &store);
+            let (diff, reason) = diff_of(snap, cap, &store).await;
+            done["diff"] = diff;
+            if let Some(r) = reason {
+                done["diffReason"] = json!(r);
+            }
             if let Some(h) = hosts {
                 // What the call's proxy admitted, beside its profile.
                 done["envelope"]["hosts"] = json!(h);
@@ -1835,6 +1874,29 @@ fn done_event(
         v["error"] = json!({ "code": "SandboxFailed", "message": "the OS sandbox did not start the program" });
     }
     v
+}
+
+/// A call's `diff` (H13): the second snapshot compared with the first, its body held as output is (cut at `cap`), and
+/// the summary line. `(null, reason)` when either snapshot could not be taken.
+async fn diff_of(snap: CallSnap, cap: u64, store: &Store) -> (Value, Option<String>) {
+    let report = tokio::task::spawn_blocking(move || match &mut *snap.lock().unwrap() {
+        Ok(s) => s.report(usize::try_from(cap).unwrap_or(usize::MAX)),
+        Err(e) => Err(e.clone()),
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("the snapshot failed: {e}")));
+    let r = match report {
+        Ok(r) => r,
+        Err(e) => return (Value::Null, Some(e)),
+    };
+    match store.capture(&r.body[..], cap, None).await {
+        Ok((ptr, h)) => (
+            json!({ "ptr": ptr, "size": h.size, "sha256": h.sha256, "truncated": h.truncated || r.truncated,
+                    "summary": r.summary, "fromHead": r.from_head }),
+            None,
+        ),
+        Err(e) => (Value::Null, Some(format!("the diff could not be held: {e}"))),
+    }
 }
 
 /// What is sent instead of a message past the 1 MiB native limit. An answer becomes a `TooLarge` error for its `seq`

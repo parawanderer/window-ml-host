@@ -726,7 +726,9 @@ An `offset` past the end returns zero bytes with `eof: true`. Bytes, not text: o
   "envelope": { "write": "today", "exec": "any" },           // the scope the host APPLIED ("today" when the worker sent none)
   "protectedChanged": [],                                    // protected names that changed during the call (below)
   "stdout": { "ptr": "out:…", "size": 812, "sha256": "…", "truncated": false },   // { "piped": true } for a non-last `pipe` stage
-  "stderr": { "ptr": "out:…", "size": 0, "sha256": "…", "truncated": false } }
+  "stderr": { "ptr": "out:…", "size": 0, "sha256": "…", "truncated": false },
+  "diff": { "ptr": "out:…", "size": 412, "sha256": "…", "truncated": false,                  // null outside a repository (below)
+            "summary": "edited a.py (+3 −1); deleted old.log", "fromHead": false } }
 ```
 
 A non-last stage of a `pipe` has `"stdout": { "piped": true }`: its output went to the next stage and nothing of it is
@@ -749,6 +751,37 @@ ABSENT means an older host: unknown, never "nothing". It is bounded: at most 256
 past that a new hook is not named, but `.git/hooks` itself is reported `modified`), and the list holds at most 256
 changes and at most 512 KiB of JSON, with `"protectedChangedTruncated": true` when it was cut (absent: complete). The
 bound, not the fallback below, is what keeps a `done` under the native limit (docs/SANDBOX.md).
+
+`diff` is what changed in the call's repository during the call (window-ml's FILE_ATTACHMENTS.md, H13). The
+repository is the cwd's, or the one `repoArg` names. A `pipe` snapshots only its first stage's repository: a later
+stage acting in another repository (its cwd, or its `repoArg`) changes nothing the pipe's diff reports, so a worker that
+needs that stage's changes runs it as a call of its own. Before the call starts, the host
+snapshots its work tree into a scratch store of its own (src/snapshot.rs, H10 to H12): nothing is written into the
+repository, and the sandbox hides the store from the call. At `done` it snapshots again and compares the two trees with
+`git diff-tree`, with no diff driver, textconv or external diff. Each stage of a `pipe` compares with the one snapshot
+taken before the first stage started.
+
+The body is held output, read with `read` like stdout, and cut at the call's `outputCap` (`truncated`). It lists each
+change, then the paths not captured after the call with the reason, then the files over the 1 MiB diff cap with their
+size and sha256, then the patch. `summary` is the changes on one line, at most 20 of them named, then `and N more`, or
+`nothing changed during this call`. A change is something that changed DURING the call, not BY it: another process may
+have written meanwhile. A path whose name looks like a secret never shows a line of its body: it is listed as `changed
+<path> (contents withheld)`, with no size, hash or line count. So is an ordinary name whose blob is a secret-looking
+path's blob in either tree (`cp .env notes.txt`). `fromHead`: a snapshot's index came from HEAD (a split index, or
+none), so every tracked file was hashed; the result is the same. A path that could forge a line or reorder what is
+shown (a control character, `"`, `\`, `;`, U+2028 LINE SEPARATOR, U+2029 PARAGRAPH SEPARATOR, or a bidirectional
+override or isolate, U+202A to U+202E and U+2066 to U+2069) is printed quoted, with C escapes (`\u{2028}` for the
+last kinds). The patch's headers come from git with `core.quotePath=true` set by the scratch's own config, so a
+repository's `core.quotePath=false` cannot put a raw name there.
+
+`diff` is `null`, with `diffReason`, when either snapshot could not be taken: `"not a git repository"`, more than
+20 000 files in the work tree, git missing. ABSENT means an older host. An orphan's diff is not reported yet: its
+`status.orphans` entry and its `ended` record carry `"diff": null` with `"diffReason": "an orphaned call's diff is not
+reported"`, and a registered group's `done` carries `"diff": null` with `"diffReason": "a registered group is not
+snapshotted"`.
+
+If more than 1000 paths would be left out of the patch (withheld, or reconciled with the lists), the patch is left out
+whole, and both the body and `summary` end with `the patch is left out: N paths would be left out of it, more than 1000`.
 
 A message past the 1 MiB native limit is never dropped. An answer becomes `{ "seq", "error": { "code": "TooLarge" } }`.
 A `done` keeps its `event` and `id`: it first loses `protectedChanged` (absent: unknown), and if it is still too large it

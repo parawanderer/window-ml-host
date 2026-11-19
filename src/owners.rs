@@ -344,6 +344,12 @@ pub fn warden_main(args: &[String]) -> i32 {
     }
 }
 
+/// Why an orphan's or an ended record's `diff` is null (H13b): its snapshot is not kept past the connection that took
+/// it, and a registered group was never snapshotted. Null with a reason, never absent, which reads as an older host.
+pub fn no_diff(registered: bool) -> &'static str {
+    if registered { "a registered group is not snapshotted" } else { "an orphaned call's diff is not reported" }
+}
+
 /// An orphan as `status` reports it. `protectedChanged` is computed now, against the snapshot its `start` took: what
 /// changed among the protected names so far, `[]` when nothing; absent when an older host wrote the entry.
 pub fn orphan_json(e: &Entry) -> Value {
@@ -361,6 +367,8 @@ pub fn orphan_json(e: &Entry) -> Value {
             v["protectedChangedTruncated"] = json!(true);
         }
     }
+    v["diff"] = Value::Null;
+    v["diffReason"] = json!(no_diff(e.registered));
     v
 }
 
@@ -557,6 +565,9 @@ fn read_record(p: &Path) -> Option<Value> {
         Some(Value::Bool(true)) => out["protectedChangedTruncated"] = json!(true),
         Some(_) => return None,
     }
+    // Added as it is read, not stored: no host reports an orphan's diff, whichever wrote the record.
+    out["diff"] = Value::Null;
+    out["diffReason"] = json!(no_diff(out.get("kind").is_some()));
     Some(out)
 }
 
@@ -1079,7 +1090,10 @@ mod tests {
         std::fs::write(dir.join("9-9.big.ended"), vec![b' '; ENDED_MAX_BYTES as usize + 1]).unwrap();
         std::fs::write(dir.join("9-9.ok.ended"), ok.to_string()).unwrap();
         let got = take_ended(&dir, usize::MAX);
-        assert_eq!(got.records, vec![ok]);
+        let mut read = ok.clone();
+        read["diff"] = Value::Null;
+        read["diffReason"] = json!(no_diff(false));
+        assert_eq!(got.records, vec![read], "as read, with the null diff and its reason added");
         assert_eq!(got.dropped, 6);
         assert_eq!(take_ended(&dir, usize::MAX).dropped, 0, "the count is reported once");
     }
@@ -1206,7 +1220,10 @@ mod tests {
         }
         let one = take_ended(&dir, 0);
         assert!(one.records.is_empty() && one.more);
-        let n = ended_json(&entry(&c, None), Cause::Exited, false).to_string().len() + 1;
+        let mut read = ended_json(&entry(&c, None), Cause::Exited, false);
+        read["diff"] = Value::Null;
+        read["diffReason"] = json!(no_diff(false));
+        let n = read.to_string().len() + 1;
         let two = take_ended(&dir, n + n / 2);
         assert_eq!((two.records.len(), two.more), (1, true));
         let rest = take_ended(&dir, usize::MAX);

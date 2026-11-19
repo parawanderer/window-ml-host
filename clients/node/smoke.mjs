@@ -31,6 +31,7 @@ try {
   console.log("done", done);
   assert.equal(done.ok, true);
   assert.deepEqual(done.protectedChanged, [], "git status changes no protected name, and the field is present");
+  assert.equal(done.diff?.summary, "nothing changed during this call", "git status changes no file, and the diff says so");
   const out = (await client.readAll(done.stdout.ptr)).toString("utf8");
   console.log("stdout", JSON.stringify(out));
   assert.ok(out.includes("hello-smoke.txt"), "stdout names the file");
