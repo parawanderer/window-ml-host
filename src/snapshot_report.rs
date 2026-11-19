@@ -156,13 +156,11 @@ impl CallSnapshot {
         let mut body = Vec::new();
         list_section(&mut body, &changes, &after);
         let mut truncated = false;
-        let shown = raws.iter().filter(|r| !unshown.contains(&r.path)).count();
+        let left: HashSet<&[u8]> = unshown.iter().map(Vec::as_slice).collect();
+        let shown = raws.iter().filter(|r| !left.contains(r.path.as_slice())).count();
         if shown > 0 {
             if unshown.len() > EXCLUDE_MAX {
-                body.extend_from_slice(
-                    format!("\nthe patch is left out: more than {EXCLUDE_MAX} paths would be withheld from it\n")
-                        .as_bytes(),
-                );
+                body.extend_from_slice(format!("\n{}\n", left_out(unshown.len())).as_bytes());
             } else {
                 let room = cap.saturating_sub(body.len()).saturating_add(1);
                 let mut args: Vec<String> = [
@@ -198,7 +196,11 @@ impl CallSnapshot {
             body.truncate(cap);
             truncated = true;
         }
-        Ok(Report { body, truncated, summary: summary(&changes), from_head })
+        let mut summary = summary(&changes);
+        if shown > 0 && unshown.len() > EXCLUDE_MAX {
+            summary = format!("{summary}; {}", left_out(unshown.len()));
+        }
+        Ok(Report { body, truncated, summary, from_head })
     }
 
     /// A listing from the scratch, whole or an error.
@@ -449,6 +451,11 @@ fn list_section(body: &mut Vec<u8>, changes: &[Change], after: &Side) {
     }
 }
 
+/// What the body and the summary say when the patch is left out whole: how many paths, over [`EXCLUDE_MAX`].
+fn left_out(n: usize) -> String {
+    format!("the patch is left out: {n} paths are withheld from it, more than {EXCLUDE_MAX}")
+}
+
 /// The summary line: the changes joined by `; `, at most [`SUMMARY_MAX`] named.
 fn summary(changes: &[Change]) -> String {
     if changes.is_empty() {
@@ -633,6 +640,9 @@ mod tests {
         let mut s = take(&root, &base);
         std::fs::write(root.join("e.txt"), "").unwrap();
         assert_eq!(s.report(1 << 20).unwrap().summary, "added e.txt (+0 \u{2212}0)");
+        // The other side: an empty file whose own name looks like a secret is withheld by the name.
+        std::fs::remove_file(root.join(".env")).unwrap();
+        assert_eq!(s.report(1 << 20).unwrap().summary, "changed .env (contents withheld); added e.txt (+0 \u{2212}0)");
     }
 
     #[test]
@@ -659,6 +669,27 @@ mod tests {
         let r = s.report(1 << 20).unwrap();
         assert_eq!(r.summary, "changed .ssh/config (contents withheld)");
         assert_no_secret(&r);
+    }
+
+    #[test]
+    fn past_the_exclude_bound_the_patch_is_left_out_and_both_the_body_and_the_summary_say_so() {
+        let pems: Vec<(String, Vec<u8>)> =
+            (0..=EXCLUDE_MAX).map(|i| (format!("k/{i}.pem"), b"key\n".to_vec())).collect();
+        let mut files: Vec<(&str, &[u8])> = pems.iter().map(|(n, b)| (n.as_str(), b.as_slice())).collect();
+        files.push(("a.txt", b"one\n"));
+        let (_t, root, base) = repo(&files);
+        let mut s = take(&root, &base);
+        for (n, _) in &pems {
+            std::fs::write(root.join(n), "rotated\n").unwrap();
+        }
+        std::fs::write(root.join("a.txt"), "two\n").unwrap();
+        let r = s.report(4 << 20).unwrap();
+        let said =
+            format!("the patch is left out: {} paths are withheld from it, more than {EXCLUDE_MAX}", EXCLUDE_MAX + 1);
+        assert!(r.summary.ends_with(&format!("; and {} more; {said}", EXCLUDE_MAX + 2 - SUMMARY_MAX)), "{}", r.summary);
+        let body = text(&r);
+        assert!(body.contains(&format!("\n{said}\n")) && !body.contains("diff --git"), "{}", &body[body.len() - 300..]);
+        assert!(body.contains("edited a.txt (+1 \u{2212}1)\n"), "the change list stays");
     }
 
     // --- reconciled with H12's lists ---

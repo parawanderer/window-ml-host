@@ -753,7 +753,9 @@ changes and at most 512 KiB of JSON, with `"protectedChangedTruncated": true` wh
 bound, not the fallback below, is what keeps a `done` under the native limit (docs/SANDBOX.md).
 
 `diff` is what changed in the call's repository during the call (window-ml's FILE_ATTACHMENTS.md, H13). The
-repository is the cwd's, or the one `repoArg` names; a `pipe` takes the first stage's. Before the call starts, the host
+repository is the cwd's, or the one `repoArg` names. A `pipe` snapshots only its first stage's repository: a later
+stage acting in another repository (its cwd, or its `repoArg`) changes nothing the pipe's diff reports, so a worker that
+needs that stage's changes runs it as a call of its own. Before the call starts, the host
 snapshots its work tree into a scratch store of its own (src/snapshot.rs, H10 to H12): nothing is written into the
 repository, and the sandbox hides the store from the call. At `done` it snapshots again and compares the two trees with
 `git diff-tree`, with no diff driver, textconv or external diff. Each stage of a `pipe` compares with the one snapshot
@@ -771,7 +773,12 @@ none), so every tracked file was hashed; the result is the same. A path that cou
 
 `diff` is `null`, with `diffReason`, when either snapshot could not be taken: `"not a git repository"`, more than
 20 000 files in the work tree, git missing. ABSENT means an older host. An orphan's diff is not reported yet: its
-`status` and `ended` records carry none.
+`status.orphans` entry and its `ended` record carry `"diff": null` with `"diffReason": "an orphaned call's diff is not
+reported"`, and a registered group's `done` carries `"diff": null` with `"diffReason": "a registered group is not
+snapshotted"`.
+
+If more than 1000 paths would be left out of the patch (withheld, or reconciled with the lists), the patch is left out
+whole, and both the body and `summary` end with `the patch is left out: N paths are withheld from it, more than 1000`.
 
 A message past the 1 MiB native limit is never dropped. An answer becomes `{ "seq", "error": { "code": "TooLarge" } }`.
 A `done` keeps its `event` and `id`: it first loses `protectedChanged` (absent: unknown), and if it is still too large it

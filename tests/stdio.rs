@@ -2404,6 +2404,11 @@ fn a_live_orphan_in_status_reports_what_changed_so_far() {
     let st = next.ok("status", json!({}));
     let o = &st["orphans"][0];
     assert_eq!(changes(&o["protectedChanged"]), vec![(".vscode".into(), "created".into())], "{st}");
+    // H13b: null with the reason, never absent (absent reads as an older host).
+    assert_eq!(
+        (o.get("diff"), o["diffReason"].as_str()),
+        (Some(&Value::Null), Some("an orphaned call's diff is not reported"))
+    );
     next.close();
 }
 
@@ -2433,6 +2438,10 @@ fn an_orphan_killed_at_its_deadline_is_reported_once_to_the_next_session() {
     assert_eq!(e["owner"], owner);
     assert!(e["deadlineMs"].as_u64().unwrap() <= e["endedMs"].as_u64().unwrap(), "{e}");
     assert_eq!(changes(&e["protectedChanged"]), vec![(".vscode".into(), "created".into())], "{e}");
+    assert_eq!(
+        (e.get("diff"), e["diffReason"].as_str()),
+        (Some(&Value::Null), Some("an orphaned call's diff is not reported"))
+    );
     let again = next.ok("status", json!({}));
     assert_eq!(again["ended"], json!([]), "returned once: {again}");
     next.close();
@@ -4552,5 +4561,30 @@ fn a_sandboxed_call_cannot_read_the_scratch_its_report_is_compared_with() {
     let err = text(&h.read_all(&d["stderr"]));
     assert!(err.contains("not permitted"), "{err}");
     assert_eq!(d["diff"]["summary"], "nothing changed during this call");
+    h.close();
+}
+
+#[test]
+fn a_pipe_snapshots_only_its_first_stages_repository() {
+    let (_d, r) = root();
+    let (first, other) = (r.join("first"), r.join("other"));
+    for (dir, file) in [(&first, "a.txt"), (&other, "b.txt")] {
+        std::fs::create_dir(dir).unwrap();
+        committed(dir, &[(file, "one\n")]);
+    }
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r], "sandbox": false }));
+    let a = h.ok("spawn", json!({ "argv": ["echo", "x"], "cwd": first }))["id"].as_str().unwrap().to_string();
+    let b = h.ok("spawn", json!({ "argv": ["sh", "-c", "cat > /dev/null; echo two > b.txt"], "cwd": other }))["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    h.ok("pipe", json!({ "ids": [a, b] }));
+    for id in [&a, &b] {
+        let d = h.done(id);
+        // The second stage's edit is in another repository, which the pipe's one snapshot does not cover.
+        assert_eq!(d["diff"]["summary"], "nothing changed during this call", "{id}: {d}");
+    }
+    assert_eq!(std::fs::read_to_string(other.join("b.txt")).unwrap(), "two\n");
     h.close();
 }

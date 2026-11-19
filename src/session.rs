@@ -1365,6 +1365,7 @@ impl Session {
             }
             use std::sync::atomic::Ordering::Relaxed;
             s.send(json!({ "event": "done", "id": entry.id, "registered": true,
+                "diff": null, "diffReason": owners::no_diff(true),
                 "code": null, "signal": null, "ok": null,
                 "timedOut": false, "cancelled": cancelled, "durationMs": started.elapsed().as_millis() as u64,
                 "killed": killed, "peakFootprint": meter.peak.load(Relaxed), "memoryBound": entry.memory_bound,
