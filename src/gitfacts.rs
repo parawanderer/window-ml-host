@@ -35,7 +35,7 @@ impl Git {
 
     /// Runs one query in the repository: `(exit code, stdout)`, `None` when git is missing, failed to start, or ran past
     /// the timeout (killed). `stdin` is written whole and closed.
-    fn query(&self, repo: &RepoConfig, args: &[&str], stdin: Option<&mut dyn Read>) -> Option<(i32, Vec<u8>)> {
+    fn query(&self, repo: &RepoConfig, args: &[&str], stdin: Option<&mut (dyn Read + Send)>) -> Option<(i32, Vec<u8>)> {
         self.query_env(repo, &[], None, args, stdin)
     }
 
@@ -47,7 +47,21 @@ impl Git {
         extra: &[(String, String)],
         cwd: Option<&Path>,
         args: &[&str],
-        stdin: Option<&mut dyn Read>,
+        stdin: Option<&mut (dyn Read + Send)>,
+    ) -> Option<(i32, Vec<u8>)> {
+        self.query_capped(repo, extra, cwd, args, stdin, MAX_STDOUT)
+    }
+
+    /// [`Git::query_env`] keeping at most `cap` bytes of stdout. A caller that must not act on a cut listing checks
+    /// for `stdout.len() == cap`: the rest is drained unread.
+    pub(crate) fn query_capped(
+        &self,
+        repo: &RepoConfig,
+        extra: &[(String, String)],
+        cwd: Option<&Path>,
+        args: &[&str],
+        stdin: Option<&mut (dyn Read + Send)>,
+        cap: usize,
     ) -> Option<(i32, Vec<u8>)> {
         let program = self.program.as_ref()?;
         let git_dir = repo.git_dir.as_ref()?;
@@ -61,34 +75,42 @@ impl Git {
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
         let mut child = c.spawn().ok()?;
-        if let Some(input) = stdin {
-            let mut w = child.stdin.take()?;
-            // A write error (git exited early) shows in the exit status below.
-            let _ = std::io::copy(input, &mut w);
-            let _ = w.flush();
-        }
+        let mut w = if stdin.is_some() { Some(child.stdin.take()?) } else { None };
         let mut out = child.stdout.take()?;
-        let reader = std::thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = out.by_ref().take(MAX_STDOUT as u64).read_to_end(&mut buf);
-            // Drain the rest so git is never blocked on a full pipe.
-            let _ = std::io::copy(&mut out, &mut std::io::sink());
-            buf
-        });
-        let started = Instant::now();
-        let status = loop {
-            match child.try_wait() {
-                Ok(Some(s)) => break s,
-                Ok(None) if started.elapsed() < GIT_TIMEOUT => std::thread::sleep(Duration::from_millis(2)),
-                _ => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return None;
-                }
+        // The writer, the reader and the timeout run at once: git stops reading stdin while its stdout is full, so a
+        // copy that finished before the reader started would block for ever on a large input, with no timeout.
+        std::thread::scope(|scope| {
+            let reader = scope.spawn(move || {
+                let mut buf = Vec::new();
+                let _ = out.by_ref().take(cap as u64).read_to_end(&mut buf);
+                // Drain the rest so git is never blocked on a full pipe.
+                let _ = std::io::copy(&mut out, &mut std::io::sink());
+                buf
+            });
+            if let (Some(input), Some(mut w)) = (stdin, w.take()) {
+                scope.spawn(move || {
+                    // A write error (git exited early, or was killed) shows in the exit status below.
+                    let _ = std::io::copy(input, &mut w);
+                    let _ = w.flush();
+                    // Dropping `w` closes git's stdin.
+                });
             }
-        };
-        let stdout = reader.join().ok()?;
-        Some((status.code()?, stdout))
+            let started = Instant::now();
+            let status = loop {
+                match child.try_wait() {
+                    Ok(Some(s)) => break s,
+                    Ok(None) if started.elapsed() < GIT_TIMEOUT => std::thread::sleep(Duration::from_millis(2)),
+                    _ => {
+                        // Killing git closes both pipes, so the writer and the reader return and the scope ends.
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return None;
+                    }
+                }
+            };
+            let stdout = reader.join().ok()?;
+            Some((status.code()?, stdout))
+        })
     }
 
     /// Whether git ignores `rel` (relative to the work tree): `None` when git cannot be asked.
@@ -104,7 +126,7 @@ impl Git {
     /// carries no assume-unchanged or skip-worktree bit (either hides a change from git), and its blob is the index's
     /// and HEAD's. `None` when the repository's config runs code (the undo itself would run it) or git cannot be asked;
     /// `false` for an untracked, modified or ignored file, one over [`MAX_HASHED`], or a repository with no commit.
-    pub fn undoable(&self, repo: &RepoConfig, rel: &str, size: u64, content: &mut dyn Read) -> Option<bool> {
+    pub fn undoable(&self, repo: &RepoConfig, rel: &str, size: u64, content: &mut (dyn Read + Send)) -> Option<bool> {
         if repo.runs_code || repo.git_dir.is_none() {
             return None;
         }
@@ -134,8 +156,12 @@ impl Git {
     }
 }
 
+/// How many `GIT_CONFIG_KEY_<n>` entries [`belt`] sets: a caller adding its own starts numbering here.
+pub const BELT_CONFIG: usize = 4;
+
 /// The environment of every host git query: nothing of the host's but `HOME`'s absence, the person's global and system
-/// config off, the repository named, no optional locks, no prompt, no pager, no fsmonitor.
+/// config off, the repository named, no optional locks, no prompt, no pager, no fsmonitor, and no automatic
+/// maintenance or gc (either would write into the repository's object store, or start a detached process that does).
 pub fn belt(git_dir: &Path, work_tree: &Path) -> Vec<(String, String)> {
     let p = |p: &Path| p.to_string_lossy().into_owned();
     [
@@ -145,11 +171,15 @@ pub fn belt(git_dir: &Path, work_tree: &Path) -> Vec<(String, String)> {
         ("GIT_CONFIG_NOSYSTEM", "1".into()),
         ("GIT_OPTIONAL_LOCKS", "0".into()),
         ("GIT_TERMINAL_PROMPT", "0".into()),
-        ("GIT_CONFIG_COUNT", "2".into()),
+        ("GIT_CONFIG_COUNT", BELT_CONFIG.to_string()),
         ("GIT_CONFIG_KEY_0", "core.fsmonitor".into()),
         ("GIT_CONFIG_VALUE_0", "false".into()),
         ("GIT_CONFIG_KEY_1", "core.pager".into()),
         ("GIT_CONFIG_VALUE_1", "cat".into()),
+        ("GIT_CONFIG_KEY_2", "maintenance.auto".into()),
+        ("GIT_CONFIG_VALUE_2", "false".into()),
+        ("GIT_CONFIG_KEY_3", "gc.auto".into()),
+        ("GIT_CONFIG_VALUE_3", "0".into()),
         ("LC_ALL", "C".into()),
     ]
     .into_iter()
@@ -213,5 +243,22 @@ mod tests {
         assert_eq!(parse_ls_tree(b"100644 blob abc\ta.txt\0", "a.txt").as_deref(), Some("abc"));
         assert_eq!(parse_ls_tree(b"040000 tree abc\ta.txt\0", "a.txt"), None);
         assert_eq!(parse_ls_tree(b"100644 blob abc\tsub/a.txt\0", "a.txt"), None);
+    }
+
+    // --- the belt ---
+
+    #[test]
+    fn the_belt_turns_off_automatic_maintenance_and_gc_and_numbers_its_keys_from_zero() {
+        let b: std::collections::HashMap<_, _> = belt(Path::new("/g"), Path::new("/w")).into_iter().collect();
+        assert_eq!(b["GIT_CONFIG_COUNT"], BELT_CONFIG.to_string());
+        let pairs: Vec<(String, String)> = (0..BELT_CONFIG)
+            .map(|i| (b[&format!("GIT_CONFIG_KEY_{i}")].clone(), b[&format!("GIT_CONFIG_VALUE_{i}")].clone()))
+            .collect();
+        for want in
+            [("maintenance.auto", "false"), ("gc.auto", "0"), ("core.fsmonitor", "false"), ("core.pager", "cat")]
+        {
+            assert!(pairs.contains(&(want.0.into(), want.1.into())), "{want:?} in {pairs:?}");
+        }
+        assert!(!b.contains_key(&format!("GIT_CONFIG_KEY_{BELT_CONFIG}")), "a caller's first key is free");
     }
 }
