@@ -161,6 +161,9 @@ export class HostClient {
    * `done.protectedChanged` lists what changed among the roots' protected names during the call
    * (`[{ root, name, change: "created"|"modified"|"removed" }]`, `[]` when nothing; absent from an older host, or
    * dropped from a `done` past the 1 MiB limit: unknown). `protectedChangedTruncated: true` when cut at 256.
+   * `done.diff` is what changed in the call's repository during the call: `{ ptr, size, sha256, truncated, summary,
+   * fromHead }`, its body held output (`readAll(diff.ptr)`) and `summary` one line; `null` with `diffReason` when
+   * no snapshot could be taken (`"not a git repository"`); absent from an older host.
    * @param {string} id
    * @param {{ write: "roots"|"none", exec: "any"|"program-only" }} [envelope]
    */

@@ -4440,3 +4440,117 @@ fn tls_reaches_a_listed_host_through_the_proxy_and_an_unlisted_one_is_refused() 
     );
     h.close();
 }
+
+// --- the diff of a call (H13): the work tree before and after, the body held, the summary in done ---
+
+/// Makes `r` a repository with `files` committed.
+fn committed(r: &Path, files: &[(&str, &str)]) {
+    for (name, body) in files {
+        std::fs::write(r.join(name), body).unwrap();
+    }
+    for args in [&["init", "-q"][..], &["add", "-f", "."], &["commit", "-q", "-m", "c"]] {
+        let ok = Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
+            .args(args)
+            .current_dir(r)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "git {args:?}");
+    }
+}
+
+#[test]
+fn a_call_in_a_repository_reports_what_changed_during_it_with_the_body_held() {
+    let (_d, r) = root();
+    committed(&r, &[("a.txt", "one\n"), ("old.log", "x\n")]);
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let (_, d) = h.run(json!({ "argv": ["sh", "-c", "echo uno > a.txt; rm old.log; echo n > n.txt"], "cwd": r }));
+    assert_eq!(d["ok"], true, "{d}");
+    assert!(d.get("diffReason").is_none(), "{d}");
+    assert_eq!(d["diff"]["summary"], "edited a.txt (+1 \u{2212}1); added n.txt (+1 \u{2212}0); deleted old.log", "{d}");
+    assert_eq!(d["diff"]["fromHead"], false);
+    assert!(d["diff"]["ptr"].as_str().unwrap().starts_with("out:"), "{d}");
+    let body = text(&h.read_all(&d["diff"]));
+    assert!(body.starts_with("changed during this call (by this call or any other process):\n"), "{body}");
+    assert!(body.contains("-one\n+uno\n"), "{body}");
+    assert_eq!(body.len() as u64, d["diff"]["size"].as_u64().unwrap());
+    // Nothing of the call's snapshot is left in the repository.
+    let st = Command::new("git").args(["status", "--porcelain"]).current_dir(&r).output().unwrap();
+    assert_eq!(text(&st.stdout), " M a.txt\n D old.log\n?? n.txt\n");
+    h.close();
+}
+
+#[test]
+fn a_tracked_secret_the_call_changes_is_listed_with_its_contents_withheld() {
+    let (_d, r) = root();
+    committed(&r, &[(".env", "API_KEY=sk-live-0123\n"), ("a.txt", "one\n")]);
+    let mut h = Host::start();
+    // Unsandboxed: the sandbox never lets a call write a held name, and the row is about a call that did.
+    h.ok("configure", json!({ "roots": [r], "sandbox": false }));
+    let (_, d) = h.run(json!({ "argv": ["sh", "-c", "echo API_KEY=rotated > .env; cp .env notes.txt"], "cwd": r }));
+    assert_eq!(d["diff"]["summary"], "changed .env (contents withheld); changed notes.txt (contents withheld)", "{d}");
+    let body = text(&h.read_all(&d["diff"]));
+    assert!(!body.contains("sk-live") && !body.contains("rotated"), "{body}");
+    h.close();
+}
+
+#[test]
+fn a_call_outside_a_repository_has_a_null_diff_with_the_reason() {
+    let (_d, r) = root();
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let (_, d) = h.run(json!({ "argv": ["true"], "cwd": r }));
+    assert_eq!(d["diff"], Value::Null, "{d}");
+    assert_eq!(d["diffReason"], "not a git repository");
+    h.close();
+}
+
+#[test]
+fn every_stage_of_a_pipe_reports_the_pipes_diff() {
+    let (_d, r) = root();
+    committed(&r, &[("a.txt", "one\n")]);
+    let mut h = Host::start();
+    h.ok("configure", json!({ "roots": [r] }));
+    let a = h.ok("spawn", json!({ "argv": ["sh", "-c", "echo two > a.txt; echo a"], "cwd": r }))["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let b =
+        h.ok("spawn", json!({ "argv": ["sh", "-c", "cat; sleep 1"], "cwd": r }))["id"].as_str().unwrap().to_string();
+    h.ok("pipe", json!({ "ids": [a, b] }));
+    for id in [&a, &b] {
+        let d = h.done(id);
+        assert_eq!(d["diff"]["summary"], "edited a.txt (+1 \u{2212}1)", "{id}: {d}");
+    }
+    h.close();
+}
+
+#[test]
+fn a_sandboxed_call_cannot_read_the_scratch_its_report_is_compared_with() {
+    let (_d, r) = root();
+    committed(&r, &[("a.txt", "one\n")]);
+    let tmp = tempfile::tempdir().unwrap();
+    let tmp_path = tmp.path().canonicalize().unwrap();
+    let mut h = Host::start_with_env(&[("TMPDIR", tmp_path.to_str().unwrap())]);
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let store = std::fs::read_dir(&tmp_path)
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.file_name().unwrap().to_string_lossy().starts_with("wmlhost-"))
+        .expect("the session's store");
+    let snap = store.join("snap");
+    let (_, d) = h.run(json!({ "argv": ["sh", "-c", "ls \"$1\"", "_", snap], "cwd": r }));
+    assert_eq!(d["ok"], false, "the call listed its own scratch: {d}");
+    let err = text(&h.read_all(&d["stderr"]));
+    assert!(err.contains("not permitted"), "{err}");
+    assert_eq!(d["diff"]["summary"], "nothing changed during this call");
+    h.close();
+}

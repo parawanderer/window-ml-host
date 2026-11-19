@@ -1,6 +1,7 @@
 //! store.rs — output held at the host: each stream of each call is a file in a per-session directory, named by an
 //! opaque pointer, hashed and size-capped as it is written, read back by byte range. The directory is private (0700),
-//! hidden from every child by the sandbox, and deleted when the session ends.
+//! hidden from every child by the sandbox, and deleted when the session ends. Its `snap/` holds the calls' snapshot
+//! scratch stores (H13).
 
 use std::collections::HashMap;
 use std::io::{self, Read, Seek, SeekFrom};
@@ -63,6 +64,7 @@ pub struct Store {
     out: PathBuf,
     tmp: PathBuf,
     sock: PathBuf,
+    snap: PathBuf,
     held: Mutex<HashMap<String, Held>>,
 }
 
@@ -84,10 +86,12 @@ impl Store {
         b.create(dir.join("out"))?;
         b.create(dir.join("tmp"))?;
         b.create(dir.join("sock"))?;
+        b.create(dir.join("snap"))?;
         Ok(Store {
             out: dir.join("out"),
             tmp: dir.join("tmp"),
             sock: dir.join("sock"),
+            snap: dir.join("snap"),
             dir,
             held: Mutex::new(HashMap::new()),
         })
@@ -108,6 +112,12 @@ impl Store {
     pub fn remove_call_tmp(&self, id: &str) {
         let _ = std::fs::remove_dir_all(self.tmp.join(id));
         let _ = std::fs::remove_dir_all(self.sock.join(id));
+    }
+
+    /// Where the calls' snapshots keep their scratch stores (src/snapshot.rs); the sandbox hides it, so a call
+    /// cannot rewrite the tree its own report is compared with.
+    pub fn snap_dir(&self) -> &Path {
+        &self.snap
     }
 
     /// Where every call's proxy socket lives; the sandbox hides it, then binds back the call's own directory.

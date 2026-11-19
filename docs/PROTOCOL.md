@@ -726,7 +726,9 @@ An `offset` past the end returns zero bytes with `eof: true`. Bytes, not text: o
   "envelope": { "write": "today", "exec": "any" },           // the scope the host APPLIED ("today" when the worker sent none)
   "protectedChanged": [],                                    // protected names that changed during the call (below)
   "stdout": { "ptr": "out:…", "size": 812, "sha256": "…", "truncated": false },   // { "piped": true } for a non-last `pipe` stage
-  "stderr": { "ptr": "out:…", "size": 0, "sha256": "…", "truncated": false } }
+  "stderr": { "ptr": "out:…", "size": 0, "sha256": "…", "truncated": false },
+  "diff": { "ptr": "out:…", "size": 412, "sha256": "…", "truncated": false,                  // null outside a repository (below)
+            "summary": "edited a.py (+3 −1); deleted old.log", "fromHead": false } }
 ```
 
 A non-last stage of a `pipe` has `"stdout": { "piped": true }`: its output went to the next stage and nothing of it is
@@ -749,6 +751,27 @@ ABSENT means an older host: unknown, never "nothing". It is bounded: at most 256
 past that a new hook is not named, but `.git/hooks` itself is reported `modified`), and the list holds at most 256
 changes and at most 512 KiB of JSON, with `"protectedChangedTruncated": true` when it was cut (absent: complete). The
 bound, not the fallback below, is what keeps a `done` under the native limit (docs/SANDBOX.md).
+
+`diff` is what changed in the call's repository during the call (window-ml's FILE_ATTACHMENTS.md, H13). The
+repository is the cwd's, or the one `repoArg` names; a `pipe` takes the first stage's. Before the call starts, the host
+snapshots its work tree into a scratch store of its own (src/snapshot.rs, H10 to H12): nothing is written into the
+repository, and the sandbox hides the store from the call. At `done` it snapshots again and compares the two trees with
+`git diff-tree`, with no diff driver, textconv or external diff. Each stage of a `pipe` compares with the one snapshot
+taken before the first stage started.
+
+The body is held output, read with `read` like stdout, and cut at the call's `outputCap` (`truncated`). It lists each
+change, then the paths not captured after the call with the reason, then the files over the 1 MiB diff cap with their
+size and sha256, then the patch. `summary` is the changes on one line, at most 20 of them named, then `and N more`, or
+`nothing changed during this call`. A change is something that changed DURING the call, not BY it: another process may
+have written meanwhile. A path whose name looks like a secret never shows a line of its body: it is listed as `changed
+<path> (contents withheld)`, with no size, hash or line count. So is an ordinary name whose blob is a secret-looking
+path's blob in either tree (`cp .env notes.txt`). `fromHead`: a snapshot's index came from HEAD (a split index, or
+none), so every tracked file was hashed; the result is the same. A path that could forge a line (a control character,
+`"`, `\` or `;`) is printed quoted, with C escapes.
+
+`diff` is `null`, with `diffReason`, when either snapshot could not be taken: `"not a git repository"`, more than
+20 000 files in the work tree, git missing. ABSENT means an older host. An orphan's diff is not reported yet: its
+`status` and `ended` records carry none.
 
 A message past the 1 MiB native limit is never dropped. An answer becomes `{ "seq", "error": { "code": "TooLarge" } }`.
 A `done` keeps its `event` and `id`: it first loses `protectedChanged` (absent: unknown), and if it is still too large it

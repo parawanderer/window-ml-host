@@ -8,7 +8,8 @@
 //! `GIT_OBJECT_DIRECTORY`, under the host's git belt (src/gitfacts.rs), so a tree or a blob it writes lands there and the
 //! person's index, HEAD, stash list and object store are unchanged; the two `rev-parse --git-path` queries that find the
 //! repository's object directory and index run before the scratch exists and name neither.
-//! The private directory goes when the `Scratch` is dropped, which is when the diff has been made. The person's index
+//! The private directory goes when the `Scratch` is dropped, which is when the diff has been made (the report, H13:
+//! src/snapshot_report.rs). The person's index
 //! is opened without following a link and copied only when it is a regular file of at most 256 MiB (a link, a larger
 //! one or a missing one leaves the tree to come from HEAD, and a link's target is never opened). A split index (git's `rev-parse
 //! --shared-index-path` names a shared half) is not copied either, since its shared half would be read from, and could
