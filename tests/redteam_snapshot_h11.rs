@@ -281,9 +281,9 @@ fn a_link_is_skipped_by_its_own_path_and_entered_as_its_target_text_never_follow
     std::fs::create_dir_all(root.join("up/.aws")).unwrap();
     symlink(&outside, root.join("up/.ssh")).unwrap();
     symlink(root.join(".env"), root.join("up/.env")).unwrap();
-    symlink(&outside.join("id_ed25519"), root.join("up/.netrc")).unwrap();
+    symlink(outside.join("id_ed25519"), root.join("up/.netrc")).unwrap();
     // A link whose path is ordinary: entered as the target TEXT, mode 120000, and the target is never read.
-    symlink(&outside.join("id_ed25519"), root.join("up/notes.txt")).unwrap();
+    symlink(outside.join("id_ed25519"), root.join("up/notes.txt")).unwrap();
     let (g, r, s, tree) = snapshot(&root, &t);
     for path in ["up/.ssh", "up/.env", "up/.netrc"] {
         assert!(looks_secret(Path::new(path)), "{path} must be a shape the matcher catches");
