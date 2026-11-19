@@ -14,14 +14,30 @@
 //! --shared-index-path` names a shared half) is not copied either, since its shared half would be read from, and could
 //! be rewritten in, the repository's git directory: the tree is built from HEAD instead, so the stat cache is lost but
 //! nothing is written. The scratch index is never written split (`core.splitIndex=false`).
-//! Entering the changed files is H11; this module only holds the store and writes the tree.
+//!
+//! Entering the work tree's changes (H11, [`Scratch::enter_changes`]): the changed set is the host's own comparison of
+//! each entry's cached stat with an `lstat` of its path, never a `git status` or `update-index --refresh` (either reads
+//! a racily clean file through the clean filter). A changed file is hashed with `git hash-object -w --no-filters
+//! --stdin-paths` into the private objects and entered with `git update-index -z --index-info`, which takes the id as
+//! given and runs no filter. Untracked files come from `ls-files --others --exclude-standard`, so an ignored file
+//! (an ignored `.env`) never enters a tree, except inside the uploads folder, whose untracked files all do. A path with
+//! a symlink among its parents is treated as deleted, as git treats it, so nothing outside the work tree is hashed;
+//! a symlink itself is entered as a link (its target text), never followed. An entry git keeps out of `status`
+//! (assume-unchanged, skip-worktree) and a submodule's gitlink are left as they are.
+//! A file swapped for a link between the `lstat` and git's open of it would be hashed through the link, so every file
+//! is `lstat`ed again after hashing and one that changed is hashed again from a descriptor the host opened without
+//! following links; a swap and a swap back inside that window is the residue.
+//! A git too old for `rev-parse --shared-index-path` echoes the option back, which reads as a split index: every
+//! repository's tree then comes from HEAD, so the stat cache is lost and every tracked file is hashed, and nothing is
+//! written into the repository.
 
-use std::os::unix::ffi::OsStrExt;
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::DirBuilderExt;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use crate::gitconfig::RepoConfig;
-use crate::gitfacts::Git;
+use crate::gitfacts::{BELT_CONFIG, Git};
 
 /// A call's scratch index and private object directory. Removed on drop.
 pub struct Scratch {
@@ -74,13 +90,13 @@ impl Scratch {
             // through the clean filter, at its path from the process's directory (write-tree never enters the work
             // tree): no hook resolves, and the spawn runs in, and names as its work tree, an empty directory.
             ("GIT_WORK_TREE".into(), p(&s.dir.join("empty"))),
-            ("GIT_CONFIG_COUNT".into(), "4".into()),
-            ("GIT_CONFIG_KEY_2".into(), "core.hooksPath".into()),
-            ("GIT_CONFIG_VALUE_2".into(), "/dev/null".into()),
+            ("GIT_CONFIG_COUNT".into(), (BELT_CONFIG + 2).to_string()),
+            (format!("GIT_CONFIG_KEY_{BELT_CONFIG}"), "core.hooksPath".into()),
+            (format!("GIT_CONFIG_VALUE_{BELT_CONFIG}"), "/dev/null".into()),
             // The scratch index is never written split, whatever the repository's config says: a split write puts
             // its shared half beside the index.
-            ("GIT_CONFIG_KEY_3".into(), "core.splitIndex".into()),
-            ("GIT_CONFIG_VALUE_3".into(), "false".into()),
+            (format!("GIT_CONFIG_KEY_{}", BELT_CONFIG + 1), "core.splitIndex".into()),
+            (format!("GIT_CONFIG_VALUE_{}", BELT_CONFIG + 1), "false".into()),
         ];
         // The person's index is opened without following a link and must be a regular file, before git reads it:
         // a symlink to a FIFO would block the copy (and git), one to /dev/zero would fill the scratch. A link is
@@ -114,6 +130,194 @@ impl Scratch {
         }
     }
 
+    /// Enters the work tree's changes into the scratch index (H11): each tracked path whose `lstat` differs from its
+    /// cached stat (or is racily clean) is hashed again or removed, and each untracked file not ignored, and every
+    /// untracked file inside `uploads` (an absolute path in the work tree), is added. `Err` is a null diff's reason.
+    pub fn enter_changes(&self, git: &Git, repo: &RepoConfig, uploads: Option<&Path>) -> Result<Entered, String> {
+        let root = &repo.root;
+        let listing = |extra: &[(String, String)], cwd: Option<&Path>, args: &[&str]| -> Result<Vec<u8>, String> {
+            match git.query_capped(repo, extra, cwd, args, None, LIST_MAX) {
+                Some((0, out)) if out.len() < LIST_MAX => Ok(out),
+                Some((0, _)) => Err(format!("git {} listed more than {LIST_MAX} bytes", args[0])),
+                Some((code, _)) => Err(format!("git {} exited {code}", args[0])),
+                None => Err("git could not be run".into()),
+            }
+        };
+        let empty = self.dir.join("empty");
+        let entries =
+            parse_debug_entries(&listing(&self.env, Some(&empty), &["ls-files", "-s", "-v", "--debug", "-z"])?)?;
+        let index_mtime =
+            std::fs::symlink_metadata(self.dir.join("index")).map(|m| (m.mtime(), m.mtime_nsec())).unwrap_or((0, 0));
+        let null_oid = "0".repeat(entries.first().map_or(40, |e| e.oid.len()));
+        let mut parents = ParentCheck::default();
+        let mut removals: Vec<Vec<u8>> = vec![];
+        let mut files: Vec<(Vec<u8>, std::fs::Metadata)> = vec![];
+        let mut links: Vec<(Vec<u8>, Vec<u8>)> = vec![];
+        let mut seen: std::collections::HashSet<Vec<u8>> = std::collections::HashSet::new();
+        for e in &entries {
+            // A conflicted path's stages come as consecutive entries: the first decides for all of them.
+            if !seen.insert(e.path.clone()) {
+                continue;
+            }
+            let kept_by_git = e.tag == b'S' || e.tag.is_ascii_lowercase() || e.mode == 0o160000;
+            if kept_by_git && e.stage == 0 {
+                continue;
+            }
+            let conflicted = entries.iter().any(|o| o.path == e.path && o.stage != 0);
+            match now(root, &e.path, &mut parents) {
+                Now::File(md) => {
+                    let regular = e.mode == 0o100644 || e.mode == 0o100755;
+                    let exec_same = (e.mode == 0o100755) == (md.mode() & 0o111 != 0);
+                    if conflicted || !regular || !exec_same || !e.matches(&md) || e.racy(index_mtime) {
+                        if conflicted {
+                            removals.push(e.path.clone());
+                        }
+                        files.push((e.path.clone(), md));
+                    }
+                }
+                Now::Link(md, target) => {
+                    if conflicted || e.mode != 0o120000 || !e.matches(&md) || e.racy(index_mtime) {
+                        if conflicted {
+                            removals.push(e.path.clone());
+                        }
+                        links.push((e.path.clone(), target));
+                    }
+                }
+                Now::Gone => removals.push(e.path.clone()),
+            }
+        }
+        // Untracked: what git does not ignore, then everything untracked in the uploads folder. Run against the
+        // scratch index in the real work tree (no hook or filter runs for a listing).
+        let index_only = [self.env[0].clone()];
+        let mut untracked = listing(&index_only, None, &["ls-files", "-z", "--others", "--exclude-standard"])?;
+        if let Some(rel) = uploads.and_then(|u| u.strip_prefix(root).ok()).filter(|r| !r.as_os_str().is_empty()) {
+            let spec = [b":(literal)".as_slice(), rel.as_os_str().as_bytes()].concat();
+            let spec = String::from_utf8(spec).map_err(|_| "the uploads folder's path is not UTF-8")?;
+            untracked.extend(listing(&index_only, None, &["ls-files", "-z", "--others", "--", &spec])?);
+        }
+        for p in untracked.split(|b| *b == 0).filter(|p| !p.is_empty() && !p.ends_with(b"/")) {
+            if !seen.insert(p.to_vec()) {
+                continue;
+            }
+            match now(root, p, &mut parents) {
+                Now::File(md) => files.push((p.to_vec(), md)),
+                Now::Link(_, target) => links.push((p.to_vec(), target)),
+                Now::Gone => {}
+            }
+        }
+        let mut info: Vec<u8> = vec![];
+        for p in &removals {
+            info.extend_from_slice(format!("0 {null_oid} 0\t").as_bytes());
+            info.extend_from_slice(p);
+            info.push(0);
+        }
+        let oids = self.hash_files(git, repo, root, &files)?;
+        for ((p, md), oid) in files.iter().zip(&oids) {
+            let mode = if md.mode() & 0o111 != 0 { "100755" } else { "100644" };
+            info.extend_from_slice(format!("{mode} {oid} 0\t").as_bytes());
+            info.extend_from_slice(p);
+            info.push(0);
+        }
+        for (p, target) in &links {
+            let oid = self.hash_stdin(git, repo, &mut target.as_slice())?;
+            info.extend_from_slice(format!("120000 {oid} 0\t").as_bytes());
+            info.extend_from_slice(p);
+            info.push(0);
+        }
+        if !info.is_empty() {
+            match self.git_stdin(git, repo, &["update-index", "-z", "--index-info"], &mut info.as_slice()) {
+                Some((0, _)) => {}
+                Some((code, _)) => return Err(format!("git update-index --index-info exited {code}")),
+                None => return Err("git could not be run".into()),
+            }
+        }
+        Ok(Entered { hashed: files.len() + links.len(), removed: removals.len() })
+    }
+
+    /// Hashes `files` (work-tree paths with the `lstat` taken before) into the private objects, in order. A file whose
+    /// `lstat` afterwards differs from the one before is hashed again from a descriptor opened without following links.
+    fn hash_files(
+        &self,
+        git: &Git,
+        repo: &RepoConfig,
+        root: &Path,
+        files: &[(Vec<u8>, std::fs::Metadata)],
+    ) -> Result<Vec<String>, String> {
+        let abs = |p: &[u8]| root.join(std::ffi::OsStr::from_bytes(p));
+        // `--stdin-paths` reads a line per path and unquotes one that starts with `"`: those, and a name with a
+        // newline, go through a descriptor instead.
+        let batch: Vec<usize> = (0..files.len())
+            .filter(|&i| {
+                let a = abs(&files[i].0);
+                let b = a.as_os_str().as_bytes();
+                !b.contains(&b'\n') && !b.starts_with(b"\"")
+            })
+            .collect();
+        let mut oids: Vec<Option<String>> = vec![None; files.len()];
+        if !batch.is_empty() {
+            let mut input: Vec<u8> = vec![];
+            for &i in &batch {
+                input.extend_from_slice(abs(&files[i].0).as_os_str().as_bytes());
+                input.push(b'\n');
+            }
+            let args = ["hash-object", "-w", "--no-filters", "--stdin-paths"];
+            let out = match self.git_stdin(git, repo, &args, &mut input.as_slice()) {
+                Some((0, out)) => out,
+                Some((code, _)) => return Err(format!("git hash-object exited {code}")),
+                None => return Err("git could not be run".into()),
+            };
+            let got: Vec<&[u8]> = out.split(|b| *b == b'\n').filter(|l| !l.is_empty()).collect();
+            if got.len() != batch.len() {
+                return Err("git hash-object answered a different number of ids".into());
+            }
+            for (&i, oid) in batch.iter().zip(got) {
+                oids[i] = Some(String::from_utf8_lossy(oid).into_owned());
+            }
+        }
+        for (i, (p, before)) in files.iter().enumerate() {
+            let same = std::fs::symlink_metadata(abs(p)).is_ok_and(|after| same_file(before, &after));
+            if oids[i].is_none() || !same {
+                oids[i] = Some(self.hash_fd(git, repo, &abs(p))?);
+            }
+        }
+        Ok(oids.into_iter().map(|o| o.unwrap_or_default()).collect())
+    }
+
+    /// Hashes one file read from a descriptor opened with `O_NOFOLLOW | O_NONBLOCK`, refusing anything but a regular
+    /// file.
+    fn hash_fd(&self, git: &Git, repo: &RepoConfig, path: &Path) -> Result<String, String> {
+        use std::os::unix::fs::OpenOptionsExt;
+        let flags = (rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32;
+        let mut f = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(flags)
+            .open(path)
+            .map_err(|e| format!("a changed file could not be opened: {e}"))?;
+        if !f.metadata().is_ok_and(|m| m.is_file()) {
+            return Err("a changed file stopped being a regular file while it was hashed".into());
+        }
+        self.hash_stdin(git, repo, &mut f)
+    }
+
+    /// Hashes the bytes of `input` as a blob into the private objects.
+    fn hash_stdin(&self, git: &Git, repo: &RepoConfig, input: &mut dyn std::io::Read) -> Result<String, String> {
+        match self.git_stdin(git, repo, &["hash-object", "-w", "--no-filters", "--stdin"], input) {
+            Some((0, out)) => Ok(String::from_utf8_lossy(&out).trim().to_string()),
+            Some((code, _)) => Err(format!("git hash-object exited {code}")),
+            None => Err("git could not be run".into()),
+        }
+    }
+
+    fn git_stdin(
+        &self,
+        git: &Git,
+        repo: &RepoConfig,
+        args: &[&str],
+        input: &mut dyn std::io::Read,
+    ) -> Option<(i32, Vec<u8>)> {
+        git.query_env(repo, &self.env, Some(&self.dir.join("empty")), args, Some(input))
+    }
+
     /// The scratch directory: the index and the private objects.
     pub fn dir(&self) -> &Path {
         &self.dir
@@ -124,6 +328,152 @@ impl Drop for Scratch {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.dir);
     }
+}
+
+/// What [`Scratch::enter_changes`] did: how many paths it hashed and how many entries it removed.
+#[derive(Debug, PartialEq)]
+pub struct Entered {
+    pub hashed: usize,
+    pub removed: usize,
+}
+
+/// The most bytes of a listing (`ls-files`) read; a longer one fails the snapshot rather than leave paths out.
+const LIST_MAX: usize = 64 << 20;
+
+/// One entry of `git ls-files -s -v --debug -z`, with the stat git cached for it (each field as git keeps it, 32 bits).
+#[derive(Debug)]
+struct DebugEntry {
+    tag: u8,
+    mode: u32,
+    oid: String,
+    stage: u8,
+    path: Vec<u8>,
+    ctime: (u64, u64),
+    mtime: (u64, u64),
+    ino: u64,
+    uid: u64,
+    gid: u64,
+    size: u64,
+}
+
+impl DebugEntry {
+    /// Whether `md` (an `lstat`) is the stat git cached: times, inode, owner and size, each cut to 32 bits as git cuts it.
+    fn matches(&self, md: &std::fs::Metadata) -> bool {
+        let w = |v: u64| v & 0xffff_ffff;
+        self.mtime == (w(md.mtime() as u64), w(md.mtime_nsec() as u64))
+            && self.ctime == (w(md.ctime() as u64), w(md.ctime_nsec() as u64))
+            && self.ino == w(md.ino())
+            && self.uid == w(md.uid() as u64)
+            && self.gid == w(md.gid() as u64)
+            && self.size == w(md.size())
+    }
+
+    /// Whether the entry is racily clean: modified no earlier than the index was written, so an equal stat says nothing.
+    fn racy(&self, index_mtime: (i64, i64)) -> bool {
+        let (s, n) = (index_mtime.0 as u64 & 0xffff_ffff, index_mtime.1 as u64);
+        self.mtime.0 > s || (self.mtime.0 == s && self.mtime.1 >= n)
+    }
+}
+
+/// Reads `<tag> <mode> <oid> <stage>\t<path>\0` records, each followed by git's five `--debug` lines (`ctime: s:n`,
+/// `mtime: s:n`, `dev: d\tino: i`, `uid: u\tgid: g`, `size: z\tflags: f`).
+fn parse_debug_entries(out: &[u8]) -> Result<Vec<DebugEntry>, String> {
+    let bad = || "git ls-files --debug printed a record this host cannot read".to_string();
+    let mut v = vec![];
+    let mut rest = out;
+    while !rest.is_empty() {
+        let nul = rest.iter().position(|b| *b == 0).ok_or_else(bad)?;
+        let (head, tail) = rest.split_at(nul);
+        rest = &tail[1..];
+        let tab = head.iter().position(|b| *b == b'\t').ok_or_else(bad)?;
+        let meta = std::str::from_utf8(&head[..tab]).map_err(|_| bad())?;
+        let mut m = meta.split(' ');
+        let tag = *m.next().and_then(|t| t.as_bytes().first()).ok_or_else(bad)?;
+        let mode = u32::from_str_radix(m.next().ok_or_else(bad)?, 8).map_err(|_| bad())?;
+        let oid = m.next().ok_or_else(bad)?.to_string();
+        let stage: u8 = m.next().ok_or_else(bad)?.parse().map_err(|_| bad())?;
+        let mut fields: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+        for _ in 0..5 {
+            let nl = rest.iter().position(|b| *b == b'\n').ok_or_else(bad)?;
+            let line = std::str::from_utf8(&rest[..nl]).map_err(|_| bad())?;
+            rest = &rest[nl + 1..];
+            for kv in line.trim().split('\t') {
+                let (k, val) = kv.split_once(": ").ok_or_else(bad)?;
+                fields.insert(k, val);
+            }
+        }
+        let num = |k: &str| -> Result<u64, String> { fields.get(k).ok_or_else(bad)?.parse().map_err(|_| bad()) };
+        let pair = |k: &str| -> Result<(u64, u64), String> {
+            let (a, b) = fields.get(k).ok_or_else(bad)?.split_once(':').ok_or_else(bad)?;
+            Ok((a.parse().map_err(|_| bad())?, b.parse().map_err(|_| bad())?))
+        };
+        v.push(DebugEntry {
+            tag,
+            mode,
+            oid,
+            stage,
+            path: head[tab + 1..].to_vec(),
+            ctime: pair("ctime")?,
+            mtime: pair("mtime")?,
+            ino: num("ino")?,
+            uid: num("uid")?,
+            gid: num("gid")?,
+            size: num("size")?,
+        });
+    }
+    Ok(v)
+}
+
+/// What a work-tree path is now, by `lstat`, with every parent a real directory.
+enum Now {
+    File(std::fs::Metadata),
+    Link(std::fs::Metadata, Vec<u8>),
+    /// Missing, behind a symlinked or missing parent, or neither a regular file nor a link (a directory, a FIFO).
+    Gone,
+}
+
+fn now(root: &Path, rel: &[u8], parents: &mut ParentCheck) -> Now {
+    if !parents.real(root, rel) {
+        return Now::Gone;
+    }
+    let p = root.join(std::ffi::OsStr::from_bytes(rel));
+    match std::fs::symlink_metadata(&p) {
+        Ok(md) if md.is_file() => Now::File(md),
+        Ok(md) if md.file_type().is_symlink() => match std::fs::read_link(&p) {
+            Ok(t) => Now::Link(md, t.into_os_string().into_vec()),
+            Err(_) => Now::Gone,
+        },
+        _ => Now::Gone,
+    }
+}
+
+/// Whether every parent directory of a work-tree path is a real directory (not a link), each answered once.
+#[derive(Default)]
+struct ParentCheck(std::collections::HashMap<Vec<u8>, bool>);
+
+impl ParentCheck {
+    fn real(&mut self, root: &Path, rel: &[u8]) -> bool {
+        let mut end = 0;
+        while let Some(i) = rel[end..].iter().position(|b| *b == b'/') {
+            end += i;
+            let dir = &rel[..end];
+            let ok = *self.0.entry(dir.to_vec()).or_insert_with(|| {
+                std::fs::symlink_metadata(root.join(std::ffi::OsStr::from_bytes(dir))).is_ok_and(|m| m.is_dir())
+            });
+            if !ok {
+                return false;
+            }
+            end += 1;
+        }
+        true
+    }
+}
+
+/// Whether two `lstat`s are of the same unchanged regular file.
+fn same_file(a: &std::fs::Metadata, b: &std::fs::Metadata) -> bool {
+    b.is_file()
+        && (a.dev(), a.ino(), a.size(), a.mtime(), a.mtime_nsec(), a.ctime(), a.ctime_nsec())
+            == (b.dev(), b.ino(), b.size(), b.mtime(), b.mtime_nsec(), b.ctime(), b.ctime_nsec())
 }
 
 /// The most bytes of the person's index copied; a larger one is not copied and the tree comes from HEAD.
@@ -483,5 +833,190 @@ mod tests {
         assert_eq!(s.tree(&g, &r).unwrap(), run(&wt, &["rev-parse", "HEAD^{tree}"]));
         drop(s);
         assert_eq!(dot_git(&root), before);
+    }
+    // --- entering the work tree's changes (H11) ---
+
+    /// The scratch tree's entries as `mode oid path` lines, read through the scratch's own objects.
+    fn scratch_tree(s: &Scratch, g: &Git, r: &RepoConfig) -> Vec<String> {
+        let tree = s.tree(g, r).unwrap();
+        let (code, out) = s.git(g, r, &["ls-tree", "-r", "-z", &tree]).unwrap();
+        assert_eq!(code, 0);
+        out.split(|b| *b == 0)
+            .filter(|l| !l.is_empty())
+            .map(|l| {
+                let l = String::from_utf8_lossy(l);
+                let (meta, path) = l.split_once('\t').unwrap();
+                let mut m = meta.split(' ');
+                let (mode, _, oid) = (m.next().unwrap(), m.next(), m.next().unwrap());
+                format!("{mode} {oid} {path}")
+            })
+            .collect()
+    }
+
+    /// The blob id git gives `bytes`, written nowhere.
+    fn blob_of(root: &Path, bytes: &[u8]) -> String {
+        let mut c = Command::new("git")
+            .args(["hash-object", "--no-filters", "--stdin"])
+            .current_dir(root)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        std::io::Write::write_all(&mut c.stdin.take().unwrap(), bytes).unwrap();
+        String::from_utf8(c.wait_with_output().unwrap().stdout).unwrap().trim().to_string()
+    }
+
+    /// Records the work tree's stat in the person's index with every mtime a minute back, so no entry is racily clean.
+    fn settle(root: &Path, marks: &Path) {
+        let past = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+        for p in ["a.txt", "sub/b.txt"] {
+            std::fs::File::options().write(true).open(root.join(p)).unwrap().set_modified(past).unwrap();
+        }
+        // The test's own refresh, through a pass-through filter: the configured one prints nothing.
+        run(root, &["-c", "filter.f.clean=cat", "-c", "core.fsmonitor=false", "update-index", "--refresh"]);
+        clear(marks);
+    }
+
+    #[test]
+    fn the_changes_enter_the_tree_and_nothing_enters_the_repository() {
+        if !have_git() {
+            return;
+        }
+        let (t, root, marks) = repo();
+        std::fs::write(root.join(".gitignore"), ".env\nup/\n").unwrap();
+        settle(&root, &marks);
+        std::fs::write(root.join("a.txt"), "one, edited\n").unwrap();
+        std::fs::remove_file(root.join("sub/b.txt")).unwrap();
+        std::fs::write(root.join("new.txt"), "made by the call\n").unwrap();
+        std::fs::write(root.join(".env"), "TOKEN=hunter2\n").unwrap();
+        std::fs::create_dir(root.join("up")).unwrap();
+        std::fs::write(root.join("up/report.csv"), "x,y\n").unwrap();
+        clear(&marks);
+        let before = dot_git(&root);
+        let (g, r) = (git_on_path(), inspect(&root));
+        let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+        let entered = s.enter_changes(&g, &r, Some(&root.join("up"))).unwrap();
+        let tree = scratch_tree(&s, &g, &r);
+        let has = |path: &str, body: &[u8]| tree.contains(&format!("100644 {} {path}", blob_of(&root, body)));
+        assert!(has("a.txt", b"one, edited\n"), "{tree:?}");
+        assert!(has("new.txt", b"made by the call\n"), "an untracked file the call made is in the tree: {tree:?}");
+        assert!(has("up/report.csv", b"x,y\n"), "an ignored file in the uploads folder is in the tree: {tree:?}");
+        assert!(!tree.iter().any(|l| l.ends_with(" sub/b.txt")), "a deleted file leaves the tree: {tree:?}");
+        assert!(!tree.iter().any(|l| l.ends_with(" .env")), "an ignored .env never enters a tree: {tree:?}");
+        assert_eq!(entered.removed, 1);
+        let env_blob = blob_of(&root, b"TOKEN=hunter2\n");
+        let (code, _) = s.git(&g, &r, &["cat-file", "-e", &env_blob]).unwrap();
+        assert_ne!(code, 0, "the ignored .env's body is not in the private objects either");
+        drop(s);
+        assert_eq!(dot_git(&root), before, "index, HEAD, refs, stash and objects are byte-identical");
+        assert_eq!(std::fs::read_dir(&marks).unwrap().count(), 0, "no filter, fsmonitor or hook ran");
+    }
+
+    #[test]
+    fn an_unchanged_settled_file_keeps_the_index_blob_and_is_not_hashed() {
+        if !have_git() {
+            return;
+        }
+        let (t, root, marks) = repo();
+        std::fs::write(root.join(".gitignore"), ".gitattributes\n.gitignore\n").unwrap();
+        settle(&root, &marks);
+        let (g, r) = (git_on_path(), inspect(&root));
+        let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+        assert_eq!(s.enter_changes(&g, &r, None).unwrap(), Entered { hashed: 0, removed: 0 });
+        assert_eq!(s.tree(&g, &r).unwrap(), run(&root, &["rev-parse", "HEAD^{tree}"]));
+    }
+
+    #[test]
+    fn an_entry_modified_no_earlier_than_the_index_is_racily_clean() {
+        // A file rewritten within the timestamp's granularity of the index write keeps a cached stat that matches; on a
+        // filesystem with nanosecond times the write's ctime gives it away, so the predicate is what this row reads.
+        let e = |mtime| DebugEntry {
+            tag: b'H',
+            mode: 0o100644,
+            oid: String::new(),
+            stage: 0,
+            path: vec![],
+            ctime: mtime,
+            mtime,
+            ino: 0,
+            uid: 0,
+            gid: 0,
+            size: 0,
+        };
+        assert!(e((100, 5)).racy((100, 5)), "the same instant");
+        assert!(e((100, 6)).racy((100, 5)), "later in the same second");
+        assert!(e((101, 0)).racy((100, 5)), "a later second");
+        assert!(!e((100, 4)).racy((100, 5)), "earlier in the same second");
+        assert!(!e((99, 9)).racy((100, 5)), "an earlier second");
+        assert!(e((0, 0)).racy((0, 0)), "an index with no mtime (read from HEAD) makes every entry racy");
+    }
+
+    #[test]
+    fn a_symlinked_parent_hashes_nothing_outside_and_a_link_is_entered_as_a_link() {
+        if !have_git() {
+            return;
+        }
+        let (t, root, marks) = repo();
+        settle(&root, &marks);
+        let outside = t.path().join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("b.txt"), "outside secret\n").unwrap();
+        std::fs::remove_dir_all(root.join("sub")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("sub")).unwrap();
+        std::os::unix::fs::symlink("/etc/passwd", root.join("pw")).unwrap();
+        let (g, r) = (git_on_path(), inspect(&root));
+        let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+        s.enter_changes(&g, &r, None).unwrap();
+        let tree = scratch_tree(&s, &g, &r);
+        assert!(!tree.iter().any(|l| l.ends_with(" sub/b.txt")), "behind a linked parent is deleted: {tree:?}");
+        let link = |target: &[u8], path: &str| format!("120000 {} {path}", blob_of(&root, target));
+        assert!(tree.contains(&link(outside.as_os_str().as_bytes(), "sub")), "{tree:?}");
+        assert!(tree.contains(&link(b"/etc/passwd", "pw")), "a link is its target's text: {tree:?}");
+        for body in [b"outside secret\n".as_slice(), &std::fs::read("/etc/passwd").unwrap()] {
+            let (code, _) = s.git(&g, &r, &["cat-file", "-e", &blob_of(&root, body)]).unwrap();
+            assert_ne!(code, 0, "no file behind a link was hashed");
+        }
+    }
+
+    #[test]
+    fn a_name_with_a_newline_or_a_leading_quote_is_hashed_from_a_descriptor() {
+        if !have_git() {
+            return;
+        }
+        let (t, root, marks) = repo();
+        settle(&root, &marks);
+        std::fs::write(root.join("two\nlines"), "n\n").unwrap();
+        std::fs::write(root.join("\"quoted"), "q\n").unwrap();
+        let (g, r) = (git_on_path(), inspect(&root));
+        let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+        s.enter_changes(&g, &r, None).unwrap();
+        let tree = scratch_tree(&s, &g, &r);
+        assert!(tree.contains(&format!("100644 {} two\nlines", blob_of(&root, b"n\n"))), "{tree:?}");
+        assert!(tree.contains(&format!("100644 {} \"quoted", blob_of(&root, b"q\n"))), "{tree:?}");
+    }
+
+    #[test]
+    fn a_conflicted_path_enters_once_at_stage_zero() {
+        if !have_git() {
+            return;
+        }
+        let (t, root, marks) = repo();
+        run(&root, &["config", "--unset", "filter.f.clean"]);
+        std::fs::remove_file(root.join(".gitattributes")).unwrap();
+        run(&root, &["checkout", "-q", "-b", "other"]);
+        std::fs::write(root.join("a.txt"), "theirs\n").unwrap();
+        run(&root, &["commit", "-q", "-am", "theirs"]);
+        run(&root, &["checkout", "-q", "-"]);
+        std::fs::write(root.join("a.txt"), "ours\n").unwrap();
+        run(&root, &["commit", "-q", "-am", "ours"]);
+        let _ = Command::new("git").args(["merge", "-q", "other"]).current_dir(&root).output();
+        std::fs::write(root.join("a.txt"), "resolved\n").unwrap();
+        clear(&marks);
+        let (g, r) = (git_on_path(), inspect(&root));
+        let s = Scratch::new(&g, &r, &scratch_base(&t)).unwrap();
+        s.enter_changes(&g, &r, None).unwrap();
+        let tree = scratch_tree(&s, &g, &r);
+        let a: Vec<_> = tree.iter().filter(|l| l.ends_with(" a.txt")).collect();
+        assert_eq!(a, [&format!("100644 {} a.txt", blob_of(&root, b"resolved\n"))], "{tree:?}");
     }
 }

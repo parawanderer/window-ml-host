@@ -49,6 +49,20 @@ impl Git {
         args: &[&str],
         stdin: Option<&mut dyn Read>,
     ) -> Option<(i32, Vec<u8>)> {
+        self.query_capped(repo, extra, cwd, args, stdin, MAX_STDOUT)
+    }
+
+    /// [`Git::query_env`] keeping at most `cap` bytes of stdout. A caller that must not act on a cut listing checks
+    /// for `stdout.len() == cap`: the rest is drained unread.
+    pub(crate) fn query_capped(
+        &self,
+        repo: &RepoConfig,
+        extra: &[(String, String)],
+        cwd: Option<&Path>,
+        args: &[&str],
+        stdin: Option<&mut dyn Read>,
+        cap: usize,
+    ) -> Option<(i32, Vec<u8>)> {
         let program = self.program.as_ref()?;
         let git_dir = repo.git_dir.as_ref()?;
         let mut c = Command::new(program);
@@ -70,7 +84,7 @@ impl Git {
         let mut out = child.stdout.take()?;
         let reader = std::thread::spawn(move || {
             let mut buf = Vec::new();
-            let _ = out.by_ref().take(MAX_STDOUT as u64).read_to_end(&mut buf);
+            let _ = out.by_ref().take(cap as u64).read_to_end(&mut buf);
             // Drain the rest so git is never blocked on a full pipe.
             let _ = std::io::copy(&mut out, &mut std::io::sink());
             buf
@@ -134,8 +148,12 @@ impl Git {
     }
 }
 
+/// How many `GIT_CONFIG_KEY_<n>` entries [`belt`] sets: a caller adding its own starts numbering here.
+pub const BELT_CONFIG: usize = 4;
+
 /// The environment of every host git query: nothing of the host's but `HOME`'s absence, the person's global and system
-/// config off, the repository named, no optional locks, no prompt, no pager, no fsmonitor.
+/// config off, the repository named, no optional locks, no prompt, no pager, no fsmonitor, and no automatic
+/// maintenance or gc (either would write into the repository's object store, or start a detached process that does).
 pub fn belt(git_dir: &Path, work_tree: &Path) -> Vec<(String, String)> {
     let p = |p: &Path| p.to_string_lossy().into_owned();
     [
@@ -145,11 +163,15 @@ pub fn belt(git_dir: &Path, work_tree: &Path) -> Vec<(String, String)> {
         ("GIT_CONFIG_NOSYSTEM", "1".into()),
         ("GIT_OPTIONAL_LOCKS", "0".into()),
         ("GIT_TERMINAL_PROMPT", "0".into()),
-        ("GIT_CONFIG_COUNT", "2".into()),
+        ("GIT_CONFIG_COUNT", BELT_CONFIG.to_string()),
         ("GIT_CONFIG_KEY_0", "core.fsmonitor".into()),
         ("GIT_CONFIG_VALUE_0", "false".into()),
         ("GIT_CONFIG_KEY_1", "core.pager".into()),
         ("GIT_CONFIG_VALUE_1", "cat".into()),
+        ("GIT_CONFIG_KEY_2", "maintenance.auto".into()),
+        ("GIT_CONFIG_VALUE_2", "false".into()),
+        ("GIT_CONFIG_KEY_3", "gc.auto".into()),
+        ("GIT_CONFIG_VALUE_3", "0".into()),
         ("LC_ALL", "C".into()),
     ]
     .into_iter()
@@ -213,5 +235,22 @@ mod tests {
         assert_eq!(parse_ls_tree(b"100644 blob abc\ta.txt\0", "a.txt").as_deref(), Some("abc"));
         assert_eq!(parse_ls_tree(b"040000 tree abc\ta.txt\0", "a.txt"), None);
         assert_eq!(parse_ls_tree(b"100644 blob abc\tsub/a.txt\0", "a.txt"), None);
+    }
+
+    // --- the belt ---
+
+    #[test]
+    fn the_belt_turns_off_automatic_maintenance_and_gc_and_numbers_its_keys_from_zero() {
+        let b: std::collections::HashMap<_, _> = belt(Path::new("/g"), Path::new("/w")).into_iter().collect();
+        assert_eq!(b["GIT_CONFIG_COUNT"], BELT_CONFIG.to_string());
+        let pairs: Vec<(String, String)> = (0..BELT_CONFIG)
+            .map(|i| (b[&format!("GIT_CONFIG_KEY_{i}")].clone(), b[&format!("GIT_CONFIG_VALUE_{i}")].clone()))
+            .collect();
+        for want in
+            [("maintenance.auto", "false"), ("gc.auto", "0"), ("core.fsmonitor", "false"), ("core.pager", "cat")]
+        {
+            assert!(pairs.contains(&(want.0.into(), want.1.into())), "{want:?} in {pairs:?}");
+        }
+        assert!(!b.contains_key(&format!("GIT_CONFIG_KEY_{BELT_CONFIG}")), "a caller's first key is free");
     }
 }
