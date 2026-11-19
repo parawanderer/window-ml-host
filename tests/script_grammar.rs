@@ -286,6 +286,9 @@ fn a_word_or_a_redirection_split_by_a_backslash_newline_is_refused_as_the_splice
         ("{pr\\\nintf \"x\" >> \"out\"}", "> after a print"),
         // The raw text is checked too, so a | that only splices into || still asks.
         ("a |\\\n| b {print}", "a | that is not ||"),
+        // A CR-LF line end splices too.
+        ("BEGIN{sys\\\r\ntem(\"id\")}", "\"system\""),
+        ("{prin\\\r\nt \"x\" > \"out\"}", "> after a print"),
     ] {
         refused_with(awk_program_refusal(p), why, p);
     }

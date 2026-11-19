@@ -519,12 +519,13 @@ pub fn is_awk_assignment(arg: &str) -> bool {
 /// no string, regular expression or comment can hide what is beneath it: it holds none of AWK_REFUSED, no `|` that is not
 /// part of `||` (a pipe to or from a command), and no `>` after its first `print` (an output redirection needs a `print`
 /// or `printf` before its `>`). A program that compares with `>` after a print is refused too; that only asks. Each test
-/// runs on the raw text and again with every backslash-newline removed, since an awk that splices lines inside a word
-/// (`sys\<newline>tem`) would otherwise run a word no substring names.
+/// runs on the raw text and again with every backslash-newline removed (backslash-CR-LF first, then backslash-LF, as
+/// window-ml's port does), since an awk that splices lines inside a word (`sys\<newline>tem`) would otherwise run a
+/// word no substring names.
 ///
 /// `text` is the program: the first operand.
 pub fn awk_program_refusal(text: &str) -> Option<String> {
-    let spliced = text.replace("\\\n", "");
+    let spliced = text.replace("\\\r\n", "").replace("\\\n", "");
     for t in [text, spliced.as_str()] {
         if let Some(word) = AWK_REFUSED.iter().find(|w| t.contains(**w)) {
             return Some(format!(
