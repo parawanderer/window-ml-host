@@ -1,0 +1,267 @@
+{
+  "program": "awk",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "awk",
+        "{print $1}",
+        "a.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "awk",
+        "-F:",
+        "{print $1}",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "awk",
+        "-F",
+        ":",
+        "{print $1}",
+        "a.txt",
+        "b.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "5": {
+          "kind": "fs",
+          "path": "/w/b.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "a.txt"
+            },
+            {
+              "arg": 5,
+              "given": "b.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false",
+        "read:fs:/w/b.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "awk",
+        "-v",
+        "n=1",
+        "{print n}",
+        "a.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "awk",
+        "{print n}",
+        "n=1",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "awk",
+        "{print}",
+        "-"
+      ],
+      "resolve": {},
+      "pre": [
+        {
+          "term": "read",
+          "targets": []
+        }
+      ],
+      "effects": []
+    },
+    {
+      "argv": [
+        "awk",
+        "--",
+        "{print}",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "awk",
+        "NR>1 {print}",
+        "a.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    }
+  ]
+}

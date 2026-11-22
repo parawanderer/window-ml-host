@@ -1,0 +1,209 @@
+{
+  "program": "rmdir",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "rmdir",
+        "d"
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w/d",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "d"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/d:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rmdir",
+        "d",
+        "e"
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w/d",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "2": {
+          "kind": "fs",
+          "path": "/w/e",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "d"
+            },
+            {
+              "arg": 2,
+              "given": "e"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/d:true:false:true:true:false",
+        "write-names:fs:/w/e:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rmdir",
+        "-v",
+        "d"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/d",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "d"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/d:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rmdir",
+        "--",
+        "-d"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/-d",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "-d"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/-d:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rmdir",
+        "-"
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w/-",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "-"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/-:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rmdir",
+        "."
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    }
+  ]
+}

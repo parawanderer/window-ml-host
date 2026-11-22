@@ -71,7 +71,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for OrderedMap<T> {
 }
 
 /// Which way a `network` effect moves data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Direction {
     /// Reads the remote resource (`git fetch`, whatever its transport sends).
@@ -83,7 +83,7 @@ pub enum Direction {
 }
 
 /// An effect term in the program-manifest vocabulary.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ProgramEffect {
     /// Reads the command's path targets.
     #[serde(rename = "read")]
@@ -169,10 +169,11 @@ impl ProgramEffect {
 }
 
 /// The body of a `{ "network": ... }` term.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Network {
     /// The direction, both when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub direction: Option<Direction>,
 }
 
@@ -479,23 +480,99 @@ pub struct VersionSpec {
     pub pattern: String,
 }
 
-/// A program manifest: the program, its versions and its command tree.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+/// An interpreted script tool's pin: the script's path (relative to a workspace root) and its SHA-256.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct Entrypoint {
+    /// The script, `argv[1]` of every call this manifest describes.
+    pub path: String,
+    /// The script's SHA-256, 64 lowercase hex digits.
+    pub sha256: String,
+}
+
+/// What a program shows about other processes: the only value of a manifest's `reveals`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum Reveals {
+    /// It lists other processes (`ps`, `top`), so the extension gates it.
+    #[serde(rename = "processes")]
+    Processes,
+}
+
+/// A program manifest as the JSON has it, before the exactly-one rule of `version` and `entrypoint` is checked.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawManifest {
+    #[serde(rename = "$schema")]
+    #[allow(dead_code)]
+    schema: Option<String>,
+    program: String,
+    version: Option<VersionSpec>,
+    entrypoint: Option<Entrypoint>,
+    #[serde(rename = "okCodes")]
+    ok_codes: Option<Vec<u8>>,
+    #[serde(default)]
+    echoes: bool,
+    #[serde(default)]
+    env: Vec<String>,
+    reveals: Option<Reveals>,
+    credential: Option<ManifestCredential>,
+    network: Option<ManifestNetwork>,
+    flavours: Option<Flavours>,
+    command: CommandSpec,
+}
+
+impl TryFrom<RawManifest> for Manifest {
+    type Error = String;
+
+    fn try_from(r: RawManifest) -> Result<Self, String> {
+        match (&r.version, &r.entrypoint) {
+            (Some(_), Some(_)) => {
+                return Err(
+                    "a manifest has exactly one of `version` and `entrypoint`, and this one has both: a script \
+                            is pinned by its entrypoint's sha256, so it has no version"
+                        .into(),
+                );
+            }
+            (None, None) => {
+                return Err("a manifest has exactly one of `version` and `entrypoint`, and this one has neither".into());
+            }
+            _ => {}
+        }
+        Ok(Manifest {
+            program: r.program,
+            version: r.version,
+            entrypoint: r.entrypoint,
+            ok_codes: r.ok_codes,
+            echoes: r.echoes,
+            env: r.env,
+            reveals: r.reveals,
+            credential: r.credential,
+            network: r.network,
+            flavours: r.flavours,
+            command: r.command,
+        })
+    }
+}
+
+/// A program manifest: the program, its versions (or, for an interpreted script, its entrypoint) and its command tree.
+/// Every deserialisation checks that exactly one of `version` and `entrypoint` is present.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "RawManifest")]
 pub struct Manifest {
     /// The program's name, which `argv[0]`'s basename must equal.
     pub program: String,
-    /// The versions the manifest was written against.
-    pub version: VersionSpec,
+    /// The versions the manifest was written against; `None` exactly when `entrypoint` is set.
+    pub version: Option<VersionSpec>,
+    /// An interpreted script tool's pin (`argv[1]` is the script); `None` exactly when `version` is set.
+    pub entrypoint: Option<Entrypoint>,
     /// Exit codes that are answers (`[0]` when absent).
-    #[serde(rename = "okCodes")]
     pub ok_codes: Option<Vec<u8>>,
     /// Prints its inputs back.
-    #[serde(default)]
     pub echoes: bool,
     /// Environment variables that change what the program does.
-    #[serde(default)]
     pub env: Vec<String>,
+    /// The program shows other processes, so the extension gates it.
+    pub reveals: Option<Reveals>,
     /// A credential the host holds and injects, named by provider ([`crate::credential`]).
     pub credential: Option<ManifestCredential>,
     /// What the credentialed profile may connect to.
@@ -605,6 +682,47 @@ pub struct CallDescription {
     pub ok_codes: Vec<u8>,
 }
 
+/// Which argument a [`Placeholder`] stands for: an argv index, the directory the call acts in when no flag named one
+/// (`cwd`), or the repository's root (`repo`). JSON: a number, `"cwd"` or `"repo"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaceArg {
+    /// The argv index.
+    Index(usize),
+    /// The current directory.
+    Cwd,
+    /// The repository root.
+    Repo,
+}
+
+impl Serialize for PlaceArg {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            PlaceArg::Index(i) => s.serialize_u64(*i as u64),
+            PlaceArg::Cwd => s.serialize_str("cwd"),
+            PlaceArg::Repo => s.serialize_str("repo"),
+        }
+    }
+}
+
+/// A path the describer names but does not resolve: which argument it is and the text as given (`{"arg": 3, "given":
+/// "a"}`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Placeholder {
+    /// Which argument.
+    pub arg: PlaceArg,
+    /// The path as the call wrote it (after the separator of an attached value), `"."` for `cwd` and `repo`.
+    pub given: String,
+}
+
+/// One effect term of a call and what it falls on, before any path is resolved (`{"term": "read", "targets": [...]}`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PreTerm {
+    /// The term as a manifest writes it.
+    pub term: ProgramEffect,
+    /// What it falls on, in the order the keys are built; unused by `runs-code`, `unknown` and `network`.
+    pub targets: Vec<Placeholder>,
+}
+
 /// Where a term applies: the command's targets, or one argument (after a separator, if any).
 enum Targets {
     Command,
@@ -687,6 +805,20 @@ pub fn describe_call_as(
     env_set: &[String],
     flavour: Option<Flavour>,
 ) -> CallDescription {
+    describe_pre(argv, m, version, env_set, flavour).0
+}
+
+/// [`describe_call_as`] with the effect terms before any path is resolved: the description (its `effects` are the
+/// unresolved ones, every path as given with `:?:?`) and, for each term of the call, what it falls on as
+/// [`Placeholder`]s. A caller that resolves paths itself builds its keys from the terms. Empty when the call is not
+/// described.
+pub fn describe_pre(
+    argv: &[String],
+    m: &Manifest,
+    version: Option<&str>,
+    env_set: &[String],
+    flavour: Option<Flavour>,
+) -> (CallDescription, Vec<PreTerm>) {
     let mut d = CallDescription {
         described: true,
         why: Vec::new(),
@@ -709,12 +841,11 @@ pub fn describe_call_as(
     if base != m.program {
         unknown(&mut d, format!("argv[0] {first:?} is not {}", m.program));
     }
-    if m.version.range != "*" {
+    // An entrypoint is pinned by its hash, and a "*" range is written for every implementation: neither reads a version.
+    if let Some(range) = m.version.as_ref().map(|v| v.range.as_str()).filter(|r| *r != "*") {
         match version {
             None => unknown(&mut d, "the program's version was not reported".into()),
-            Some(v) if !in_range(v, &m.version.range) => {
-                unknown(&mut d, format!("version {v} is outside {}", m.version.range))
-            }
+            Some(v) if !in_range(v, range) => unknown(&mut d, format!("version {v} is outside {range}")),
             Some(_) => {}
         }
     }
@@ -724,16 +855,25 @@ pub fn describe_call_as(
         }
     }
 
+    // An interpreted script: argv[1] is the script itself. Any interpreter flag before it (`-u`, `-X dev`, `--import`,
+    // even `--`) changes what runs, so the call is not this manifest's.
+    let ep = m.entrypoint.as_ref();
+    if let Some(ep) = ep {
+        if argv.len() < 2 || argv[1].starts_with('-') {
+            let p = &m.program;
+            unknown(&mut d, format!("{p} is described only as {p} {}, with no interpreter flag before it", ep.path));
+        }
+    }
     if m.flavours.is_some() && flavour == Some(Flavour::Other) {
         unknown(&mut d, format!("this {} is an implementation its manifest does not describe", m.program));
     }
 
     let mut terms: Terms = Vec::new();
     let mut cmd = flavoured(&m.command, m, flavour);
-    let mut i = 1;
+    let mut i = if ep.is_some() { 2 } else { 1 };
     let mut operand_paths: Vec<usize> = Vec::new();
     if let Some(h) = cmd.harden.as_ref().filter(|h| !h.is_empty()) {
-        d.harden.push(Harden { at: 0, args: h.clone() });
+        d.harden.push(Harden { at: i - 1, args: h.clone() });
     }
     // Descend through subcommands: options before a subcommand belong to the level above it.
     loop {
@@ -798,7 +938,7 @@ pub fn describe_call_as(
 
     if !d.described {
         d.effects = Effects::Unknown;
-        return d;
+        return (d, Vec::new());
     }
     let given = |i: usize, split: Option<&str>| -> String {
         match split.filter(|s| !s.is_empty()) {
@@ -807,24 +947,32 @@ pub fn describe_call_as(
         }
     };
     let repo_wide = cmd.repo_wide;
-    let mut around: Vec<String> = Vec::new();
+    let dir_place = || match d.dir_arg {
+        Some(a) => Placeholder { arg: PlaceArg::Index(a), given: argv[a].clone() },
+        None => Placeholder { arg: PlaceArg::Cwd, given: ".".into() },
+    };
+    let mut around: Vec<Placeholder> = Vec::new();
     if d.acts_on_dir {
-        around.push(d.dir_arg.map_or(".".to_string(), |a| argv[a].clone()));
+        around.push(dir_place());
     }
     if repo_wide {
-        around.push(d.dir_arg.map_or(".".to_string(), |a| argv[a].clone()));
-        around.push(".".to_string());
+        around.push(dir_place());
+        around.push(Placeholder { arg: PlaceArg::Repo, given: ".".into() });
     }
-    let operand_res = |keep: &dyn Fn(usize) -> bool| -> Vec<String> {
-        operand_paths.iter().filter(|i| keep(**i)).map(|i| argv[*i].clone()).collect()
+    let operand_res = |keep: &dyn Fn(usize) -> bool| -> Vec<Placeholder> {
+        operand_paths
+            .iter()
+            .filter(|i| keep(**i))
+            .map(|i| Placeholder { arg: PlaceArg::Index(*i), given: argv[*i].clone() })
+            .collect()
     };
-    let with_around = |mut v: Vec<String>| -> Vec<String> {
+    let with_around = |mut v: Vec<Placeholder>| -> Vec<Placeholder> {
         v.extend(around.iter().cloned());
         v
     };
     let command_targets = with_around(operand_res(&|_| true));
     // With `writtenOperands: "last"` a write falls on the destination and a read on the sources; any other term on all.
-    let targets_of = |term: &ProgramEffect| -> Vec<String> {
+    let targets_of = |term: &ProgramEffect| -> Vec<Placeholder> {
         if !last_only {
             command_targets.clone()
         } else if writes_path(term) {
@@ -835,23 +983,35 @@ pub fn describe_call_as(
             command_targets.clone()
         }
     };
+    let pre: Vec<PreTerm> = terms
+        .iter()
+        .map(|(term, targets)| PreTerm {
+            term: term.clone(),
+            targets: match targets {
+                Targets::Command => targets_of(term),
+                Targets::Arg(i, split) => {
+                    vec![Placeholder { arg: PlaceArg::Index(*i), given: given(*i, split.as_deref()) }]
+                }
+            },
+        })
+        .collect();
+    d.effects = unresolved_effects(&pre);
+    (d, pre)
+}
+
+/// The effect keys of a call whose paths stay as given (`:?:?`): window-ml's `unresolved` resolver. Any `unknown` term
+/// makes the whole `Unknown`.
+fn unresolved_effects(pre: &[PreTerm]) -> Effects {
     let mut keys: Vec<String> = Vec::new();
-    for (term, targets) in &terms {
-        let paths: Vec<String> = match targets {
-            Targets::Command => targets_of(term),
-            Targets::Arg(i, split) => vec![given(*i, split.as_deref())],
-        };
+    for PreTerm { term, targets } in pre {
         match term {
-            ProgramEffect::Unknown => {
-                d.effects = Effects::Unknown;
-                return d;
-            }
+            ProgramEffect::Unknown => return Effects::Unknown,
             ProgramEffect::RunsCode => keys.push("exec:process".into()),
             ProgramEffect::Read | ProgramEffect::Write => {
                 let op = if *term == ProgramEffect::Read { "read" } else { "write" };
-                keys.extend(paths.iter().map(|p| format!("{op}:fs:{p}:?:?")));
+                keys.extend(targets.iter().map(|p| format!("{op}:fs:{}:?:?", p.given)));
             }
-            ProgramEffect::WriteNames => keys.extend(paths.iter().map(|p| format!("write-names:fs:{p}:?:?"))),
+            ProgramEffect::WriteNames => keys.extend(targets.iter().map(|p| format!("write-names:fs:{}:?:?", p.given))),
             ProgramEffect::Network(n) => match n.direction.unwrap_or(Direction::Both) {
                 Direction::Both => keys.extend(["read:net:*".to_string(), "write:net:*".to_string()]),
                 Direction::Read => keys.push("read:net:*".into()),
@@ -862,8 +1022,7 @@ pub fn describe_call_as(
     // JS `Array.sort` compares UTF-16 code units, which is not Rust's byte order for characters above U+FFFF.
     keys.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
     keys.dedup();
-    d.effects = Effects::Keys(keys);
-    d
+    Effects::Keys(keys)
 }
 
 /// Whether a term writes a path: bytes in place, or its entry.
@@ -1396,5 +1555,188 @@ mod tests {
         for v in [json!("first"), json!("Last"), json!(true), json!(["last"])] {
             assert!(manifest(json!(["write"]), json!({ "writtenOperands": v.clone() })).is_err(), "{v}");
         }
+    }
+
+    // --- entrypoint, reveals, $schema ---
+
+    fn raw(extra: serde_json::Value) -> Result<Manifest, serde_json::Error> {
+        let mut m = json!({
+            "program": "python3",
+            "command": { "effects": ["read"], "paths": "operands", "flags": { "-v": {} } }
+        });
+        for (k, v) in extra.as_object().unwrap() {
+            m[k] = v.clone();
+        }
+        serde_json::from_value(m)
+    }
+
+    fn entry() -> serde_json::Value {
+        json!({ "entrypoint": { "path": "tools/t.py", "sha256": "0".repeat(64) } })
+    }
+
+    #[test]
+    fn an_entrypoint_manifest_is_described_and_refused_when_a_flag_precedes_the_script() {
+        let m = raw(entry()).unwrap();
+        assert!(m.version.is_none());
+        let d = describe_call(&argv(&["python3", "tools/t.py", "a", "b"]), &m, None, &[]);
+        assert!(d.described, "{:?}", d.why);
+        assert_eq!(d.effects.to_json(), json!(["read:fs:a:?:?", "read:fs:b:?:?"]));
+        let why = "python3 is described only as python3 tools/t.py, with no interpreter flag before it";
+        for a in [&["python3"][..], &["python3", "-u", "t.py"], &["python3", "--", "t.py"]] {
+            let d = describe_call(&argv(a), &m, None, &[]);
+            assert!(!d.described);
+            assert_eq!(d.why, [why], "{a:?}");
+        }
+        // the script's own flags are the command's flags, parsed from index 2
+        let d = describe_call(&argv(&["python3", "t.py", "-v", "a"]), &m, None, &[]);
+        assert!(d.described, "{:?}", d.why);
+        assert_eq!(d.effects.to_json(), json!(["read:fs:a:?:?"]));
+    }
+
+    #[test]
+    fn an_entrypoint_manifests_harden_goes_after_the_script() {
+        let mut m = raw(entry()).unwrap();
+        m.command.harden = Some(vec!["--safe".into()]);
+        let a = argv(&["python3", "t.py", "a"]);
+        let d = describe_call(&a, &m, None, &[]);
+        assert_eq!(d.harden, [Harden { at: 1, args: vec!["--safe".into()] }]);
+        assert_eq!(harden_argv(&a, &d), argv(&["python3", "t.py", "--safe", "a"]));
+    }
+
+    #[test]
+    fn exactly_one_of_version_and_entrypoint() {
+        let v = json!({ "version": { "range": "*", "args": [], "pattern": "" } });
+        assert!(raw(v.clone()).is_ok());
+        let mut both = entry();
+        both["version"] = v["version"].clone();
+        let e = raw(both).unwrap_err().to_string();
+        assert!(e.contains("exactly one of `version` and `entrypoint`") && e.contains("has both"), "{e}");
+        let e = raw(json!({})).unwrap_err().to_string();
+        assert!(e.contains("exactly one of `version` and `entrypoint`") && e.contains("has neither"), "{e}");
+        let e =
+            serde_json::from_str::<Manifest>(r#"{"program":"x","command":{"effects":[],"paths":"none","flags":{}}}"#);
+        assert!(e.is_err());
+        let mut extra = entry();
+        extra["entrypoint"]["extra"] = json!(1);
+        assert!(raw(extra).is_err());
+    }
+
+    #[test]
+    fn reveals_and_schema_parse() {
+        let mut j = entry();
+        j["$schema"] = json!("https://example.test/x.json");
+        j["reveals"] = json!("processes");
+        assert_eq!(raw(j).unwrap().reveals, Some(Reveals::Processes));
+        let mut bad = entry();
+        bad["reveals"] = json!("files");
+        assert!(raw(bad).is_err());
+        let mut bad = entry();
+        bad["$schema"] = json!(3);
+        assert!(raw(bad).is_err());
+    }
+
+    // --- describe_pre ---
+
+    fn pre_json(m: &Manifest, a: &[&str]) -> serde_json::Value {
+        serde_json::to_value(describe_pre(&argv(a), m, None, &[], None).1).unwrap()
+    }
+
+    #[test]
+    fn pre_of_a_written_operands_last_command_splits_sources_and_destination() {
+        let m = manifest(json!(["read", "write"]), json!({ "writtenOperands": "last" })).unwrap();
+        assert_eq!(
+            pre_json(&m, &["cp", "a", "b", "dir"]),
+            json!([
+                { "term": "read", "targets": [{ "arg": 1, "given": "a" }, { "arg": 2, "given": "b" }] },
+                { "term": "write", "targets": [{ "arg": 3, "given": "dir" }] },
+            ])
+        );
+    }
+
+    fn with_flags(command: serde_json::Value) -> Manifest {
+        serde_json::from_value(json!({
+            "program": "tool", "version": { "range": "*", "args": [], "pattern": "" }, "command": command
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn pre_of_an_attached_path_value_is_the_text_after_the_separator() {
+        let m = with_flags(json!({ "effects": ["read"], "paths": "operands", "flags": {
+            "--out": { "value": true, "valueIsPath": "write" } } }));
+        assert_eq!(
+            pre_json(&m, &["tool", "--out=o.txt", "in"]),
+            json!([
+                { "term": "write", "targets": [{ "arg": 1, "given": "o.txt" }] },
+                { "term": "read", "targets": [{ "arg": 2, "given": "in" }] },
+            ])
+        );
+        // a separate value has no separator to split on
+        assert_eq!(pre_json(&m, &["tool", "--out", "o.txt"])[0]["targets"], json!([{ "arg": 2, "given": "o.txt" }]));
+    }
+
+    #[test]
+    fn pre_of_a_dir_flag_and_a_repo_wide_command_names_the_directory_and_the_repo() {
+        let flags = json!({ "-C": { "value": true, "valueIsDir": true } });
+        // acts on the repository: the directory (twice, once as acts-on-dir and once as repo-wide), then the repo
+        let m = with_flags(json!({ "effects": ["write"], "paths": "repo", "repoWide": true, "flags": flags }));
+        assert_eq!(
+            pre_json(&m, &["tool"]),
+            json!([{ "term": "write", "targets": [
+                { "arg": "cwd", "given": "." }, { "arg": "cwd", "given": "." }, { "arg": "repo", "given": "." },
+            ] }])
+        );
+        assert_eq!(
+            pre_json(&m, &["tool", "-C", "sub"])[0]["targets"],
+            json!([
+                { "arg": 2, "given": "sub" }, { "arg": 2, "given": "sub" }, { "arg": "repo", "given": "." },
+            ])
+        );
+        // operands come first, then what is around them
+        let m = with_flags(json!({ "effects": ["write"], "paths": "operands", "repoWide": true, "flags": {} }));
+        assert_eq!(
+            pre_json(&m, &["tool", "f"])[0]["targets"],
+            json!([{ "arg": 1, "given": "f" }, { "arg": "cwd", "given": "." }, { "arg": "repo", "given": "." }])
+        );
+    }
+
+    #[test]
+    fn pre_keeps_network_terms_and_is_empty_when_not_described() {
+        let m =
+            with_flags(json!({ "effects": [{ "network": {} }, { "network": { "direction": "read" } }, "runs-code"],
+            "paths": "none", "flags": {} }));
+        assert_eq!(
+            pre_json(&m, &["tool"]),
+            json!([
+                { "term": { "network": {} }, "targets": [] },
+                { "term": { "network": { "direction": "read" } }, "targets": [] },
+                { "term": "runs-code", "targets": [] },
+            ])
+        );
+        // an `unknown` term (a command's or a flag's) makes the call undescribed, so no term list reaches a caller
+        let u = with_flags(json!({ "effects": ["read", "unknown"], "paths": "operands", "flags": {} }));
+        let (d, pre) = describe_pre(&argv(&["tool", "a"]), &u, None, &[], None);
+        assert!(!d.described && pre.is_empty());
+        assert_eq!(d.effects, Effects::Unknown);
+        let (d, pre) = describe_pre(&argv(&["other"]), &m, None, &[], None);
+        assert!(!d.described && pre.is_empty());
+    }
+
+    #[test]
+    fn program_effects_serialise_as_a_manifest_writes_them() {
+        for t in ProgramEffect::ALL {
+            let j = serde_json::to_value(&t).unwrap();
+            assert_eq!(serde_json::from_value::<ProgramEffect>(j).unwrap(), t);
+        }
+        assert_eq!(serde_json::to_value(ProgramEffect::WriteNames).unwrap(), json!("write-names"));
+        assert_eq!(serde_json::to_value(ProgramEffect::RunsCode).unwrap(), json!("runs-code"));
+        assert_eq!(
+            serde_json::to_value(ProgramEffect::Network(Network { direction: None })).unwrap(),
+            json!({ "network": {} })
+        );
+        assert_eq!(
+            serde_json::to_value(Placeholder { arg: PlaceArg::Repo, given: ".".into() }).unwrap(),
+            json!({ "arg": "repo", "given": "." })
+        );
     }
 }

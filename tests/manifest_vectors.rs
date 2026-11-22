@@ -6,7 +6,8 @@ use std::path::Path;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use window_ml_host::manifest::{
-    Direction, Flavour, Manifest, Network, ProgramEffect, describe_call, describe_call_as, harden_argv, in_range,
+    Direction, Flavour, Manifest, Network, ProgramEffect, describe_call, describe_call_as, describe_pre, harden_argv,
+    in_range,
 };
 
 // --- program manifest vectors ---
@@ -107,13 +108,13 @@ fn all_seventeen_programs_have_a_manifest_and_a_calls_file() {
 
 /// The copy's hash, held by window-ml's `tests/program-manifest.test.mjs` too: a change to a manifest or call fixture
 /// on either side fails both suites until the copy and both pins move together.
-const VECTOR_PIN: &str = "597122c31a364b90cd17d6cc5f2b629ff19d9263ccbc0242b361b27af65d52c7";
+const VECTOR_PIN: &str = "638c08748c5299f8b4a5b47bed8dd1d81a06826232a203fd4e7d47a7c90e712b";
 
-/// The agreed input (lanes 10 and 11, 2026-10-21): every `calls/*.json`, `flavoured/*.json`, `manifests/*.json` and
-/// `scanners/*.json` by that name, sorted bytewise, one `<sha256 of the raw bytes>  <name>\n` line each (shasum's format), and the sha256 of
+/// The agreed input (lanes 10 and 11, 2026-10-21): every `calls/*.json`, `flavoured/*.json`, `manifests/*.json`,
+/// `resolved/*.json` and `scanners/*.json` by that name, sorted bytewise, one `<sha256 of the raw bytes>  <name>\n` line each (shasum's format), and the sha256 of
 /// those lines.
 fn vector_hash() -> String {
-    let mut names: Vec<String> = ["calls", "flavoured", "manifests", "scanners"]
+    let mut names: Vec<String> = ["calls", "flavoured", "manifests", "resolved", "scanners"]
         .iter()
         .flat_map(|kind| {
             fs::read_dir(dir().join(kind))
@@ -128,6 +129,51 @@ fn vector_hash() -> String {
         .map(|n| format!("{}  {n}\n", hex::encode(Sha256::digest(fs::read(dir().join(n)).unwrap()))))
         .collect();
     hex::encode(Sha256::digest(lines.as_bytes()))
+}
+
+// --- the description before resolution (resolved/) ---
+
+fn argv_of(c: &Value) -> Vec<String> {
+    c["argv"].as_array().unwrap().iter().map(|a| a.as_str().unwrap().to_string()).collect()
+}
+
+/// window-ml resolves the paths itself (ONE_DESCRIBER_BUILD.md, section 1), so what the host must match byte for byte is
+/// `pre`: each term with its targets as placeholders, in the order window-ml resolves them. The row's `resolve` and
+/// resolved `effects` are window-ml's to check.
+#[test]
+fn every_resolved_row_has_the_recorded_description_before_resolution() {
+    let mut total = 0;
+    for program in PROGRAMS {
+        let manifest: Manifest = serde_json::from_value(load("manifests", program)).unwrap();
+        let fx = load("resolved", program);
+        assert_eq!(fx["program"], program);
+        let version = fx["version"].as_str().unwrap();
+        for c in fx["calls"].as_array().unwrap() {
+            total += 1;
+            let argv = argv_of(c);
+            let (d, terms) = describe_pre(&argv, &manifest, Some(version), &[], None);
+            assert!(d.described, "{program}: {argv:?}: {:?}", d.why);
+            assert_eq!(serde_json::to_value(&terms).unwrap(), c["pre"], "pre: {program}: {argv:?}");
+        }
+    }
+    assert_eq!(total, 324);
+}
+
+/// The manifest shapes window-ml's validator accepts beyond the shipped ones: an entrypoint script tool (no version),
+/// `reveals`, `$schema`. Each parses, and each call is described, or not, as recorded.
+#[test]
+fn every_manifest_shape_parses_and_describes_as_recorded() {
+    let fx = load("resolved", "shapes");
+    let rows = fx["calls"].as_array().unwrap();
+    for c in rows {
+        let who = format!("{}: {:?}", c["shape"].as_str().unwrap(), argv_of(c));
+        let manifest: Manifest = serde_json::from_value(c["manifest"].clone()).unwrap_or_else(|e| panic!("{who}: {e}"));
+        let (d, terms) = describe_pre(&argv_of(c), &manifest, c["version"].as_str(), &[], None);
+        assert_eq!(json!(d.described), c["described"], "described: {who}");
+        assert_eq!(json!(d.why), c["why"], "why: {who}");
+        assert_eq!(serde_json::to_value(&terms).unwrap(), c["pre"], "pre: {who}");
+    }
+    assert_eq!(rows.len(), 8);
 }
 
 #[test]

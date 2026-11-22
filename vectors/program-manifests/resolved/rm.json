@@ -1,0 +1,495 @@
+{
+  "program": "rm",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "rm",
+        "a.txt"
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rm",
+        "a.txt",
+        "b.txt"
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "2": {
+          "kind": "fs",
+          "path": "/w/b.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "a.txt"
+            },
+            {
+              "arg": 2,
+              "given": "b.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a.txt:true:false:true:true:false",
+        "write-names:fs:/w/b.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rm",
+        "-f",
+        "a.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rm",
+        "-i",
+        "a.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rm",
+        "-v",
+        "a.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rm",
+        "-d",
+        "dir"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/dir",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "dir"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/dir:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rm",
+        "-r",
+        "dir"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/dir",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "dir"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/dir:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rm",
+        "-R",
+        "dir"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/dir",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "dir"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/dir:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rm",
+        "-rf",
+        "dir"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/dir",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "dir"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/dir:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rm",
+        "-fr",
+        "dir"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/dir",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "dir"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/dir:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rm",
+        "--",
+        "-rf"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/-rf",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "-rf"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/-rf:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rm",
+        "-f",
+        "--",
+        "-r",
+        "x"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/-r",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "4": {
+          "kind": "fs",
+          "path": "/w/x",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "-r"
+            },
+            {
+              "arg": 4,
+              "given": "x"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/-r:true:false:true:true:false",
+        "write-names:fs:/w/x:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rm",
+        "-"
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w/-",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "-"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/-:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rm",
+        ""
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w/",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 1,
+              "given": ""
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/:true:false:true:false:false"
+      ]
+    },
+    {
+      "argv": [
+        "rm",
+        "-r"
+      ],
+      "resolve": {},
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": []
+        }
+      ],
+      "effects": []
+    }
+  ]
+}

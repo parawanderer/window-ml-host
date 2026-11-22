@@ -1,0 +1,488 @@
+{
+  "program": "jq",
+  "version": "1.7.1",
+  "calls": [
+    {
+      "argv": [
+        "jq",
+        ".",
+        "data.json"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/data.json",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "data.json"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/data.json:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "jq",
+        ".a.b",
+        "x.json",
+        "y.json"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/x.json",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/y.json",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "x.json"
+            },
+            {
+              "arg": 3,
+              "given": "y.json"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/x.json:true:false:true:true:false",
+        "read:fs:/w/y.json:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "jq",
+        "-n",
+        "1+1"
+      ],
+      "resolve": {},
+      "pre": [
+        {
+          "term": "read",
+          "targets": []
+        }
+      ],
+      "effects": []
+    },
+    {
+      "argv": [
+        "jq",
+        "-nr",
+        "\"x\""
+      ],
+      "resolve": {},
+      "pre": [
+        {
+          "term": "read",
+          "targets": []
+        }
+      ],
+      "effects": []
+    },
+    {
+      "argv": [
+        "jq",
+        "-r",
+        "-c",
+        ".[]",
+        "data.json"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/data.json",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "data.json"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/data.json:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "jq",
+        "--indent",
+        "4",
+        ".",
+        "data.json"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/data.json",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "data.json"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/data.json:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "jq",
+        "--tab",
+        ".",
+        "data.json"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/data.json",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "data.json"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/data.json:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "jq",
+        "-e",
+        ".a",
+        "data.json"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/data.json",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "data.json"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/data.json:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "jq",
+        "--exit-status",
+        ".a",
+        "data.json"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/data.json",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "data.json"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/data.json:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "jq",
+        "-f",
+        "prog.jq",
+        "data.json"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/prog.jq",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/data.json",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "prog.jq"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "data.json"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/data.json:true:false:true:true:false",
+        "read:fs:/w/prog.jq:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "jq",
+        "--from-file",
+        "prog.jq",
+        "data.json"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/prog.jq",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/data.json",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "prog.jq"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "data.json"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/data.json:true:false:true:true:false",
+        "read:fs:/w/prog.jq:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "jq",
+        "-L",
+        "mods",
+        "-n",
+        "1"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/mods",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "mods"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": []
+        }
+      ],
+      "effects": [
+        "read:fs:/w/mods:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "jq",
+        "-n",
+        "env"
+      ],
+      "resolve": {},
+      "pre": [
+        {
+          "term": "read",
+          "targets": []
+        }
+      ],
+      "effects": []
+    },
+    {
+      "argv": [
+        "jq",
+        "--",
+        "-x",
+        "data.json"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/data.json",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "data.json"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/data.json:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "jq",
+        "-n",
+        "--",
+        "1"
+      ],
+      "resolve": {},
+      "pre": [
+        {
+          "term": "read",
+          "targets": []
+        }
+      ],
+      "effects": []
+    }
+  ]
+}

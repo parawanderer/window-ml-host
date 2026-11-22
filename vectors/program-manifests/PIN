@@ -1,2 +1,2 @@
-window-ml manifests/sed-awk (unmerged; sed and awk, the scanner vectors): src/shell/manifests/*.json -> manifests/, tests/fixtures/program-calls/*.json -> calls/, tests/fixtures/program-calls-flavoured/*.json -> flavoured/, tests/fixtures/sed-scanners/*.json -> scanners/
-sha256 597122c31a364b90cd17d6cc5f2b629ff19d9263ccbc0242b361b27af65d52c7 (tests/manifest_vectors.rs VECTOR_PIN; window-ml holds the same pin)
+window-ml manifest/resolved-rows (unmerged; the description before resolution): src/shell/manifests/*.json -> manifests/, tests/fixtures/program-calls/*.json -> calls/, tests/fixtures/program-calls-flavoured/*.json -> flavoured/, tests/fixtures/program-calls-resolved/*.json -> resolved/, tests/fixtures/sed-scanners/*.json -> scanners/
+sha256 638c08748c5299f8b4a5b47bed8dd1d81a06826232a203fd4e7d47a7c90e712b (tests/manifest_vectors.rs VECTOR_PIN; window-ml holds the same pin)
