@@ -335,6 +335,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
 
 [[package]]
+name = "describe-wasm"
+version = "0.10.0"
+dependencies = [
+ "serde_json",
+ "wmlhost-describe",
+]
+
+[[package]]
 name = "digest"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1404,6 +1412,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "tokio",
+ "wmlhost-describe",
  "wmlhub-client",
  "wmlhub-connector",
  "wmlhub-keys",
@@ -1424,6 +1433,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
  "windows-link",
+]
+
+[[package]]
+name = "wmlhost-describe"
+version = "0.10.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

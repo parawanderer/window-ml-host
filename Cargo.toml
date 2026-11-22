@@ -10,8 +10,8 @@ publish = false
 
 [workspace]
 # The hub transport's end-to-end tests, in their own crate: `cargo test -p wmlhost-hub-tests`.
-members = [".", "hub-tests"]
-default-members = ["."]
+members = [".", "describe", "describe-wasm", "hub-tests"]
+default-members = [".", "describe"]
 
 [[bin]]
 name = "wmlhost"
@@ -26,6 +26,7 @@ native = []
 hub = ["dep:wmlhub-client", "dep:wmlhub-seal", "dep:wmlhub-keys", "dep:wmlhub-proto", "dep:wmlhub-connector"]
 
 [dependencies]
+wmlhost-describe = { path = "describe" }
 wmlhub-client = { git = "https://github.com/parawanderer/window-ml-hub", tag = "v0.4.3", optional = true }
 wmlhub-proto = { git = "https://github.com/parawanderer/window-ml-hub", tag = "v0.4.3", optional = true }
 wmlhub-seal = { git = "https://github.com/parawanderer/window-ml-hub", tag = "v0.4.3", optional = true }
@@ -58,3 +59,13 @@ unsafe_code = "forbid"
 [lints.clippy]
 dbg_macro = "warn"
 todo = "warn"
+
+# The describer's wasm (`cargo build -p describe-wasm --profile wasm --target wasm32-unknown-unknown --locked`). A
+# member's own [profile] is ignored by cargo, so it is here; `wmlhost`'s release build does not read it.
+[profile.wasm]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

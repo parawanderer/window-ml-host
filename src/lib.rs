@@ -14,7 +14,6 @@ pub mod glob;
 #[cfg(feature = "hub")]
 pub mod hub;
 pub mod install;
-pub mod manifest;
 pub mod mounts;
 pub mod owners;
 pub mod procs;
@@ -23,7 +22,6 @@ pub mod put;
 pub mod register;
 pub mod runner;
 pub mod sandbox;
-pub mod script_grammar;
 pub mod session;
 pub mod snapshot;
 pub mod snapshot_bounds;
@@ -32,3 +30,6 @@ pub mod store;
 pub mod tilde;
 pub mod tripwire;
 pub mod walk;
+
+// The describer lives in its own crate so the extension's wasm builds it without the host; these keep the old paths.
+pub use wmlhost_describe::{manifest, script_grammar};

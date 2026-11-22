@@ -11,6 +11,10 @@
 #   gets a new tag.
 # - Nothing is published that has not run. Each target unpacks its own archive and runs `--version` and the Node
 #   client's smoke test before upload.
+#
+# The release also carries the describer, compiled to wasm for window.ml's service worker: `describe.wasm`, its
+# `describe.wasm.sha256` and `describe.json` ({commit, vectorPin, sha256}). The `describer` job builds it from the tag
+# and replays every shared vector through the built module; if that fails nothing is published.
 name: release
 
 on:
@@ -140,8 +144,49 @@ jobs:
             dist/*.sha256
           if-no-files-found: error
 
+  # The describer for window.ml's worker. One script (tools/build-describer.sh) builds, replays the vectors through the
+  # module and writes the three files, the same one ci.yml runs.
+  describer:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-describer
+      - name: Build, replay the vectors, write the assets
+        run: tools/build-describer.sh dist
+      - name: The assets agree with each other
+        run: |
+          cd dist
+          shasum -a 256 -c describe.wasm.sha256
+          test "$(node -p 'require("./describe.json").sha256')" = "$(cut -d' ' -f1 describe.wasm.sha256)"
+          test "$(node -p 'require("./describe.json").commit')" = "$(git rev-parse HEAD)"
+          cat describe.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/attest-build-provenance@v4
+        if: github.event_name != 'pull_request'
+        with:
+          subject-path: dist/describe.wasm
+      - uses: actions/upload-artifact@v7
+        with:
+          name: describer
+          path: |
+            dist/describe.wasm
+            dist/describe.wasm.sha256
+            dist/describe.json
+          if-no-files-found: error
+
   publish:
-    needs: build
+    needs: [build, describer]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
@@ -161,6 +206,8 @@ jobs:
           shasum -a 256 *.tar.gz | LC_ALL=C sort -k2 > SHA256SUMS
           shasum -a 256 -c SHA256SUMS
           cat SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
+          for f in describe.wasm describe.wasm.sha256 describe.json; do test -s "$f" || { echo "::error::missing $f"; exit 1; }; done
+          shasum -a 256 -c describe.wasm.sha256
       # The installer for THIS tag: tools/install.sh.in with these archives' sha256 written in (docs/INSTALL.md). It is
       # an asset of the release, so its hashes and the bytes they name are fixed together.
       - name: install.sh with this release's hashes
@@ -177,7 +224,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ inputs.tag || github.ref_name }}"
-          files=(dist/*.tar.gz dist/*.sha256 dist/SHA256SUMS dist/install.sh)
+          files=(dist/*.tar.gz dist/*.tar.gz.sha256 dist/SHA256SUMS dist/install.sh dist/describe.wasm dist/describe.wasm.sha256 dist/describe.json)
           if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
             if [ "$draft" != true ]; then
               echo "::error::$tag is already published, and a published release never changes. Cut a new tag."
