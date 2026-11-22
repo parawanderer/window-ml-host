@@ -1,0 +1,3427 @@
+{
+  "program": "gh",
+  "version": "2.103.0",
+  "calls": [
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--header",
+        "v"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "-H",
+        "v"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--input",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--method",
+        "v"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "-X",
+        "v"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--raw-field",
+        "v"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "-f",
+        "v"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r",
+        "--verbose"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "create",
+        "--body-file",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:fs:/w:true:false:true:false:true",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "create",
+        "-F",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:fs:/w:true:false:true:false:true",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "merge",
+        "--body-file",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:fs:/w:true:false:true:false:true",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "merge",
+        "-F",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:fs:/w:true:false:true:false:true",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "edit",
+        "--body-file",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "edit",
+        "-F",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "comment",
+        "--body-file",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "comment",
+        "-F",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "review",
+        "--body-file",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "review",
+        "-F",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "create",
+        "--body-file",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "create",
+        "-F",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "edit",
+        "--body-file",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "edit",
+        "-F",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "comment",
+        "--body-file",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "comment",
+        "-F",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "run",
+        "download",
+        "--dir",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:net:*",
+        "write:fs:/w/f.txt:true:false:true:true:false",
+        "write:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "run",
+        "download",
+        "-D",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:net:*",
+        "write:fs:/w/f.txt:true:false:true:true:false",
+        "write:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "release",
+        "create",
+        "v1",
+        "--notes-file",
+        "f.txt"
+      ],
+      "resolve": {
+        "5": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 5,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": []
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": []
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "release",
+        "create",
+        "v1",
+        "-F",
+        "f.txt"
+      ],
+      "resolve": {
+        "5": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 5,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": []
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": []
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "release",
+        "download",
+        "--dir",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:net:*",
+        "write:fs:/w/f.txt:true:false:true:true:false",
+        "write:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "release",
+        "download",
+        "-D",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:net:*",
+        "write:fs:/w/f.txt:true:false:true:true:false",
+        "write:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "release",
+        "download",
+        "--output",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:net:*",
+        "write:fs:/w/f.txt:true:false:true:true:false",
+        "write:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "release",
+        "download",
+        "-O",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:net:*",
+        "write:fs:/w/f.txt:true:false:true:true:false",
+        "write:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "gist",
+        "edit",
+        "--add",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": []
+        },
+        {
+          "term": "runs-code",
+          "targets": []
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": []
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "gist",
+        "edit",
+        "-a",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": []
+        },
+        {
+          "term": "runs-code",
+          "targets": []
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": []
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "secret",
+        "set",
+        "--env-file",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": []
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "secret",
+        "set",
+        "-f",
+        "f.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/f.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "f.txt"
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": []
+        }
+      ],
+      "effects": [
+        "read:fs:/w/f.txt:true:false:true:true:false",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "--version"
+      ],
+      "resolve": {},
+      "pre": [],
+      "effects": []
+    },
+    {
+      "argv": [
+        "gh",
+        "help",
+        "environment"
+      ],
+      "resolve": {},
+      "pre": [],
+      "effects": []
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "view",
+        "12",
+        "--json",
+        "title",
+        "--jq",
+        ".title"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "list",
+        "--state",
+        "open",
+        "--limit",
+        "5"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "diff",
+        "12"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "checks",
+        "12"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "view",
+        "7"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "run",
+        "view",
+        "99",
+        "--log"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "release",
+        "view",
+        "v1"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "repo",
+        "view",
+        "cli/cli"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "label",
+        "list"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "search",
+        "prs",
+        "fix",
+        "--repo",
+        "cli/cli"
+      ],
+      "resolve": {},
+      "pre": [
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": []
+        }
+      ],
+      "effects": [
+        "read:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/cli/cli/pulls",
+        "--paginate",
+        "--jq",
+        ".[].number"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "auth",
+        "status"
+      ],
+      "resolve": {},
+      "pre": [
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": []
+        }
+      ],
+      "effects": [
+        "read:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "merge",
+        "12"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:fs:/w:true:false:true:false:true",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "pr",
+        "comment",
+        "12",
+        "--body",
+        "hi"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "issue",
+        "close",
+        "7"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "-X",
+        "DELETE",
+        "repos/o/r"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "repos/o/r/issues",
+        "-f",
+        "title=t"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "repo",
+        "clone",
+        "o/r"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:net:*",
+        "write:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "run",
+        "download",
+        "99"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:net:*",
+        "write:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "-XDELETE",
+        "repos/o/r"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "gh",
+        "api",
+        "--method=DELETE",
+        "repos/o/r"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": {
+            "network": {
+              "direction": "both"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    }
+  ]
+}

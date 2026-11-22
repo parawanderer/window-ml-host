@@ -1,0 +1,975 @@
+{
+  "program": "rg",
+  "version": "14.1.1",
+  "calls": [
+    {
+      "argv": [
+        "rg",
+        "TODO"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "TODO",
+        "src",
+        "docs"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/docs",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "src"
+            },
+            {
+              "arg": 3,
+              "given": "docs"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/docs:true:false:true:true:false",
+        "read:fs:/w/src:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-n",
+        "-i",
+        "foo",
+        "src"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "src"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/src:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-in",
+        "foo",
+        "src"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "src"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/src:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-A",
+        "3",
+        "foo",
+        "src"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "src"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/src:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-A3",
+        "foo",
+        "src"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "src"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/src:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--glob=*.ts",
+        "foo",
+        "src"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "src"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/src:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-e",
+        "foo",
+        "-e",
+        "bar",
+        "src",
+        "docs"
+      ],
+      "resolve": {
+        "5": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "6": {
+          "kind": "fs",
+          "path": "/w/docs",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 5,
+              "given": "src"
+            },
+            {
+              "arg": 6,
+              "given": "docs"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/docs:true:false:true:true:false",
+        "read:fs:/w/src:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--regexp=foo",
+        "src"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "src"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/src:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-f",
+        "patterns.txt",
+        "src"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/patterns.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "patterns.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "src"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/patterns.txt:true:false:true:true:false",
+        "read:fs:/w/src:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--file",
+        "patterns.txt",
+        "src"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/patterns.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "patterns.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "src"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/patterns.txt:true:false:true:true:false",
+        "read:fs:/w/src:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--ignore-file",
+        ".myignore",
+        "foo"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/.myignore",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": ".myignore"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/.myignore:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--files",
+        "src"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "src"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/src:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--files"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--pre",
+        "cat",
+        "foo",
+        "src"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "src"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "src"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w/src:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--pre=./filter.sh",
+        "foo"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--pre-glob",
+        "*.pdf",
+        "foo"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-z",
+        "foo",
+        "archive.gz"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/archive.gz",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "archive.gz"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "archive.gz"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w/archive.gz:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-iz",
+        "foo",
+        "archive.gz"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/archive.gz",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "archive.gz"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "archive.gz"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w/archive.gz:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--search-zip",
+        "foo"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--hostname-bin",
+        "hostname",
+        "--hyperlink-format",
+        "default",
+        "foo"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-e",
+        "foo",
+        "--",
+        "-weird-file"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/-weird-file",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "-weird-file"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/-weird-file:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--",
+        "-pattern",
+        "src"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "src"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/src:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "-q",
+        "foo",
+        "-"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "rg",
+        "--version"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    }
+  ]
+}

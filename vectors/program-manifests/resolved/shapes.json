@@ -1,0 +1,408 @@
+{
+  "calls": [
+    {
+      "shape": "entrypoint script tool",
+      "manifest": {
+        "program": "node",
+        "entrypoint": {
+          "path": "scripts/tool.mjs",
+          "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        },
+        "okCodes": [
+          0
+        ],
+        "echoes": false,
+        "command": {
+          "effects": [
+            "read"
+          ],
+          "paths": "operands",
+          "flags": {
+            "-v": {}
+          }
+        }
+      },
+      "argv": [
+        "node",
+        "scripts/tool.mjs",
+        "a"
+      ],
+      "described": true,
+      "why": [],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a:true:false:true:true:false"
+      ]
+    },
+    {
+      "shape": "entrypoint script tool",
+      "manifest": {
+        "program": "node",
+        "entrypoint": {
+          "path": "scripts/tool.mjs",
+          "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        },
+        "okCodes": [
+          0
+        ],
+        "echoes": false,
+        "command": {
+          "effects": [
+            "read"
+          ],
+          "paths": "operands",
+          "flags": {
+            "-v": {}
+          }
+        }
+      },
+      "argv": [
+        "node",
+        "scripts/tool.mjs",
+        "-v",
+        "./a",
+        "new2"
+      ],
+      "described": true,
+      "why": [],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "4": {
+          "kind": "fs",
+          "path": "/w/new2",
+          "inRoot": true,
+          "secret": false,
+          "exists": false,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "./a"
+            },
+            {
+              "arg": 4,
+              "given": "new2"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a:true:false:true:true:false",
+        "read:fs:/w/new2:true:false:false:true:false"
+      ]
+    },
+    {
+      "shape": "entrypoint script tool",
+      "manifest": {
+        "program": "node",
+        "entrypoint": {
+          "path": "scripts/tool.mjs",
+          "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        },
+        "okCodes": [
+          0
+        ],
+        "echoes": false,
+        "command": {
+          "effects": [
+            "read"
+          ],
+          "paths": "operands",
+          "flags": {
+            "-v": {}
+          }
+        }
+      },
+      "argv": [
+        "node",
+        "--import",
+        "./x.mjs",
+        "scripts/tool.mjs",
+        "a"
+      ],
+      "described": false,
+      "why": [
+        "node is described only as node scripts/tool.mjs, with no interpreter flag before it"
+      ],
+      "resolve": {},
+      "pre": [],
+      "effects": "unknown"
+    },
+    {
+      "shape": "entrypoint script tool",
+      "manifest": {
+        "program": "node",
+        "entrypoint": {
+          "path": "scripts/tool.mjs",
+          "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        },
+        "okCodes": [
+          0
+        ],
+        "echoes": false,
+        "command": {
+          "effects": [
+            "read"
+          ],
+          "paths": "operands",
+          "flags": {
+            "-v": {}
+          }
+        }
+      },
+      "argv": [
+        "node",
+        "-u",
+        "scripts/tool.mjs",
+        "a"
+      ],
+      "described": false,
+      "why": [
+        "node is described only as node scripts/tool.mjs, with no interpreter flag before it"
+      ],
+      "resolve": {},
+      "pre": [],
+      "effects": "unknown"
+    },
+    {
+      "shape": "entrypoint script tool",
+      "manifest": {
+        "program": "node",
+        "entrypoint": {
+          "path": "scripts/tool.mjs",
+          "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        },
+        "okCodes": [
+          0
+        ],
+        "echoes": false,
+        "command": {
+          "effects": [
+            "read"
+          ],
+          "paths": "operands",
+          "flags": {
+            "-v": {}
+          }
+        }
+      },
+      "argv": [
+        "node",
+        "scripts/tool.mjs",
+        "-z"
+      ],
+      "described": false,
+      "why": [
+        "flag -z is not in the manifest"
+      ],
+      "resolve": {},
+      "pre": [],
+      "effects": "unknown"
+    },
+    {
+      "shape": "reveals processes",
+      "manifest": {
+        "program": "ps",
+        "version": {
+          "range": "*",
+          "args": [],
+          "pattern": ""
+        },
+        "reveals": "processes",
+        "okCodes": [
+          0
+        ],
+        "echoes": false,
+        "command": {
+          "effects": [
+            "read"
+          ],
+          "paths": "operands",
+          "flags": {
+            "-e": {}
+          }
+        }
+      },
+      "version": "*",
+      "argv": [
+        "ps",
+        "-e"
+      ],
+      "described": true,
+      "why": [],
+      "resolve": {},
+      "pre": [
+        {
+          "term": "read",
+          "targets": []
+        }
+      ],
+      "effects": []
+    },
+    {
+      "shape": "reveals processes",
+      "manifest": {
+        "program": "ps",
+        "version": {
+          "range": "*",
+          "args": [],
+          "pattern": ""
+        },
+        "reveals": "processes",
+        "okCodes": [
+          0
+        ],
+        "echoes": false,
+        "command": {
+          "effects": [
+            "read"
+          ],
+          "paths": "operands",
+          "flags": {
+            "-e": {}
+          }
+        }
+      },
+      "version": "*",
+      "argv": [
+        "ps",
+        "x"
+      ],
+      "described": true,
+      "why": [],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w/x",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "x"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/x:true:false:true:true:false"
+      ]
+    },
+    {
+      "shape": "$schema",
+      "manifest": {
+        "$schema": "../../../docs/program-manifest.schema.json",
+        "program": "wc",
+        "version": {
+          "range": "*",
+          "args": [],
+          "pattern": ""
+        },
+        "okCodes": [
+          0
+        ],
+        "echoes": false,
+        "command": {
+          "effects": [
+            "read"
+          ],
+          "paths": "operands",
+          "flags": {
+            "-l": {}
+          }
+        }
+      },
+      "version": "*",
+      "argv": [
+        "wc",
+        "-l",
+        "a",
+        "/w/b"
+      ],
+      "described": true,
+      "why": [],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a"
+            },
+            {
+              "arg": 3,
+              "given": "/w/b"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a:true:false:true:true:false",
+        "read:fs:/w/b:true:false:true:true:false"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,4085 @@
+{
+  "program": "git",
+  "version": "2.55.0",
+  "calls": [
+    {
+      "argv": [
+        "git",
+        "status",
+        "--short"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "status",
+        "--porcelain=v2",
+        "-b"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--stat",
+        "HEAD~1"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--output=out.patch",
+        "HEAD"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/out.patch",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "out.patch"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "write:fs:/w/out.patch:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--output",
+        "out.patch"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/out.patch",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "out.patch"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "write:fs:/w/out.patch:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--ext-diff"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--textconv"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "-O",
+        "order.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/order.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "order.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/order.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--exit-code"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--quiet"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--",
+        "a.txt"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "--oneline",
+        "-20"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "-n",
+        "5",
+        "--format=%H"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "--show-signature"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "--output=log.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/log.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "log.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "write:fs:/w/log.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "HEAD",
+        "--stat"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "--ext-diff",
+        "HEAD"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "blame",
+        "-L",
+        "1,10",
+        "src/a.ts"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "blame",
+        "--contents",
+        "/etc/passwd",
+        "a.ts"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/etc/passwd",
+          "inRoot": false,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "/etc/passwd"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/etc/passwd:false:false:true:false:false",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "blame",
+        "--ignore-revs-file",
+        ".git-blame-ignore-revs",
+        "a.ts"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/.git-blame-ignore-revs",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": ".git-blame-ignore-revs"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/.git-blame-ignore-revs:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "ls-files",
+        "-z",
+        "--others",
+        "--exclude-standard"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "ls-files",
+        "--exclude-from=ignore.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/ignore.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "ignore.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/ignore.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--show-toplevel"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "branch",
+        "-vv"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "-C",
+        "sub",
+        "status"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/sub",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "sub"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/sub:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "--no-pager",
+        "log"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "fetch",
+        "origin"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:net:*",
+        "write:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "fetch",
+        "--upload-pack=sh",
+        "origin"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {
+              "direction": "read"
+            }
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:net:*",
+        "write:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "push",
+        "origin",
+        "main"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {}
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "push",
+        "--receive-pack",
+        "x",
+        "origin"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {}
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "push",
+        "-u",
+        "origin",
+        "main"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {}
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:fs:/w:true:false:true:false:true",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "status",
+        "--end-of-options",
+        "-weird"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "status",
+        "--",
+        "-weird"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "--exit-code"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "--quiet"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "-O",
+        "p.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/p.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "p.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/p.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "--ext-diff"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "log",
+        "--textconv"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "--exit-code"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "--quiet"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "--output",
+        "p.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/p.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "p.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true",
+        "write:fs:/w/p.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "-O",
+        "p.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/p.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "p.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/p.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "--textconv"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "show",
+        "--show-signature"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "blame",
+        "-S",
+        "p.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/p.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "p.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/p.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "ls-files",
+        "-X",
+        "p.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/p.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "p.txt"
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/p.txt:true:false:true:true:false",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "push",
+        "--set-upstream"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {}
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:fs:/w:true:false:true:false:true",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "push",
+        "--exec",
+        "x"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": {
+            "network": {}
+          },
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true",
+        "read:net:*",
+        "write:net:*"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "blame",
+        "--textconv",
+        "a.ts"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "runs-code",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        },
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "exec:process",
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "blame",
+        "--no-textconv",
+        "a.ts"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "a.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a.txt"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a.txt:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "-f",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a.txt:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--force",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a.txt:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "-n",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a.txt:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--dry-run",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a.txt:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "-q",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a.txt:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--quiet",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a.txt:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--cached",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a.txt:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--ignore-unmatch",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a.txt:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "-r",
+        "dir"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/dir",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "dir"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/dir:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "-rf",
+        "dir"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/dir",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "dir"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/dir:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--",
+        "-x"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/-x",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "-x"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/-x:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "--end-of-options",
+        "-x"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/-x",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "-x"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/-x:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "a",
+        "b"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a"
+            },
+            {
+              "arg": 3,
+              "given": "b"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "-f",
+        "a",
+        "b"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "4": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a"
+            },
+            {
+              "arg": 4,
+              "given": "b"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "--force",
+        "a",
+        "b"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "4": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a"
+            },
+            {
+              "arg": 4,
+              "given": "b"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "-k",
+        "a",
+        "b"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "4": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a"
+            },
+            {
+              "arg": 4,
+              "given": "b"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "-n",
+        "a",
+        "b"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "4": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a"
+            },
+            {
+              "arg": 4,
+              "given": "b"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "--dry-run",
+        "a",
+        "b"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "4": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a"
+            },
+            {
+              "arg": 4,
+              "given": "b"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "-v",
+        "a",
+        "b"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "4": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a"
+            },
+            {
+              "arg": 4,
+              "given": "b"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "--verbose",
+        "a",
+        "b"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "4": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a"
+            },
+            {
+              "arg": 4,
+              "given": "b"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "a",
+        "b",
+        "dir"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "4": {
+          "kind": "fs",
+          "path": "/w/dir",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a"
+            },
+            {
+              "arg": 3,
+              "given": "b"
+            },
+            {
+              "arg": 4,
+              "given": "dir"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write-names:fs:/w/dir:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "sub"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/sub",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "sub"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/sub:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "a",
+        "-r"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "a",
+        "-f"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "a",
+        "--",
+        "b"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "4": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a"
+            },
+            {
+              "arg": 4,
+              "given": "b"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "-"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/-",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "-"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/-:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "mv",
+        "-",
+        "b"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/-",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "-"
+            },
+            {
+              "arg": 3,
+              "given": "b"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/-:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "git",
+        "rm",
+        "-r",
+        "--",
+        "-x"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/-x",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        },
+        "repo": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "-x"
+            },
+            {
+              "arg": "cwd",
+              "given": "."
+            },
+            {
+              "arg": "repo",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/-x:true:false:true:true:false",
+        "write-names:fs:/w:true:false:true:false:true"
+      ]
+    }
+  ]
+}

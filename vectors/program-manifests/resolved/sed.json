@@ -1,0 +1,364 @@
+{
+  "program": "sed",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "sed",
+        "-n",
+        "p",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "s/a/b/g",
+        "a.txt",
+        "b.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/b.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a.txt"
+            },
+            {
+              "arg": 3,
+              "given": "b.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false",
+        "read:fs:/w/b.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-e",
+        "p",
+        "-e",
+        "d",
+        "a.txt"
+      ],
+      "resolve": {
+        "5": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 5,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-ne",
+        "p",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-es/a/b/",
+        "a.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-E",
+        "s/(a)b/\\1/",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "-r",
+        "-u",
+        "1d",
+        "a.txt"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "p",
+        "-"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/-",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "-"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/-:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "--",
+        "p",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "/x/{s/a/b/;p;}",
+        "a.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "sed",
+        "p"
+      ],
+      "resolve": {},
+      "pre": [
+        {
+          "term": "read",
+          "targets": []
+        }
+      ],
+      "effects": []
+    }
+  ]
+}

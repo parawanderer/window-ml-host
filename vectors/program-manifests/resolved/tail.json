@@ -1,0 +1,519 @@
+{
+  "program": "tail",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "tail",
+        "a.txt"
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-n",
+        "5",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-n5",
+        "a.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-c",
+        "100",
+        "a.txt",
+        "b.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "4": {
+          "kind": "fs",
+          "path": "/w/b.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            },
+            {
+              "arg": 4,
+              "given": "b.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false",
+        "read:fs:/w/b.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "--lines=3",
+        "a.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "--bytes",
+        "20",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-5",
+        "a.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "tail"
+      ],
+      "resolve": {},
+      "pre": [
+        {
+          "term": "read",
+          "targets": []
+        }
+      ],
+      "effects": []
+    },
+    {
+      "argv": [
+        "tail",
+        "-"
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w/-",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "-"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/-:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-n",
+        "-5",
+        "a.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "--",
+        "-weird"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/-weird",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "-weird"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/-weird:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-n",
+        "2",
+        "--",
+        "-n"
+      ],
+      "resolve": {
+        "4": {
+          "kind": "fs",
+          "path": "/w/-n",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 4,
+              "given": "-n"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/-n:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-f",
+        "log.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/log.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "log.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/log.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-F",
+        "log.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/log.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "log.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/log.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-fn",
+        "5",
+        "log.txt"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/log.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "log.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/log.txt:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "tail",
+        "-qv",
+        "a.txt"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a.txt",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a.txt"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a.txt:true:false:true:true:false"
+      ]
+    }
+  ]
+}

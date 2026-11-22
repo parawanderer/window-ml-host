@@ -1,0 +1,929 @@
+{
+  "program": "cp",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "cp",
+        "a",
+        "b"
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "2": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "a"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "b"
+            }
+          ]
+        },
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "b"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write:fs:/w/b:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "a",
+        "b",
+        "dir"
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "2": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/dir",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "a"
+            },
+            {
+              "arg": 2,
+              "given": "b"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "dir"
+            }
+          ]
+        },
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "dir"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a:true:false:true:true:false",
+        "read:fs:/w/b:true:false:true:true:false",
+        "write-names:fs:/w/dir:true:false:true:true:false",
+        "write:fs:/w/dir:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "/files/attached/3fa91c2/data.csv",
+        "/files/data.csv"
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/files/attached/3fa91c2/data.csv",
+          "inRoot": false,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": false
+        },
+        "2": {
+          "kind": "fs",
+          "path": "/files/data.csv",
+          "inRoot": false,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "/files/attached/3fa91c2/data.csv"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "/files/data.csv"
+            }
+          ]
+        },
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "/files/data.csv"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/files/attached/3fa91c2/data.csv:false:false:true:false:false",
+        "write-names:fs:/files/data.csv:false:false:true:false:false",
+        "write:fs:/files/data.csv:false:false:true:false:false"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-f",
+        "a",
+        "b"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "b"
+            }
+          ]
+        },
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "b"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write:fs:/w/b:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-i",
+        "a",
+        "b"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "b"
+            }
+          ]
+        },
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "b"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write:fs:/w/b:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-n",
+        "a",
+        "b"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "b"
+            }
+          ]
+        },
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "b"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write:fs:/w/b:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-p",
+        "a",
+        "b"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "b"
+            }
+          ]
+        },
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "b"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write:fs:/w/b:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-v",
+        "a",
+        "b"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "a"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "b"
+            }
+          ]
+        },
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "b"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write:fs:/w/b:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-R",
+        "src",
+        "dst"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/dst",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "src"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "dst"
+            }
+          ]
+        },
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "dst"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/src:true:false:true:true:false",
+        "write-names:fs:/w/dst:true:false:true:true:false",
+        "write:fs:/w/dst:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-r",
+        "src",
+        "dst"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/dst",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "src"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "dst"
+            }
+          ]
+        },
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "dst"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/src:true:false:true:true:false",
+        "write-names:fs:/w/dst:true:false:true:true:false",
+        "write:fs:/w/dst:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-rf",
+        "src",
+        "dst"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/dst",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "src"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "dst"
+            }
+          ]
+        },
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "dst"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/src:true:false:true:true:false",
+        "write-names:fs:/w/dst:true:false:true:true:false",
+        "write:fs:/w/dst:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "--",
+        "-a",
+        "b"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/-a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "-a"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "b"
+            }
+          ]
+        },
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "b"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/-a:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write:fs:/w/b:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "-",
+        "b"
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w/-",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "2": {
+          "kind": "fs",
+          "path": "/w/b",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "-"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "b"
+            }
+          ]
+        },
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "b"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/-:true:false:true:true:false",
+        "write-names:fs:/w/b:true:false:true:true:false",
+        "write:fs:/w/b:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "a"
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": []
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "a"
+            }
+          ]
+        },
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "a"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "write-names:fs:/w/a:true:false:true:true:false",
+        "write:fs:/w/a:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "cp",
+        "a",
+        "new1"
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w/a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "2": {
+          "kind": "fs",
+          "path": "/w/new1",
+          "inRoot": true,
+          "secret": false,
+          "exists": false,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "a"
+            }
+          ]
+        },
+        {
+          "term": "write",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "new1"
+            }
+          ]
+        },
+        {
+          "term": "write-names",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "new1"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/a:true:false:true:true:false",
+        "write-names:fs:/w/new1:true:false:false:true:false",
+        "write:fs:/w/new1:true:false:false:true:false"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,307 @@
+{
+  "program": "ls",
+  "version": "*",
+  "calls": [
+    {
+      "argv": [
+        "ls"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "src"
+      ],
+      "resolve": {
+        "1": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 1,
+              "given": "src"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/src:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "-l",
+        "src",
+        "docs"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        },
+        "3": {
+          "kind": "fs",
+          "path": "/w/docs",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "src"
+            },
+            {
+              "arg": 3,
+              "given": "docs"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/docs:true:false:true:true:false",
+        "read:fs:/w/src:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "-la"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "-lahR",
+        "src"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/src",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "src"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/src:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "-1",
+        "-t",
+        "-r"
+      ],
+      "resolve": {
+        "cwd": {
+          "kind": "fs",
+          "path": "/w",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": false,
+          "isRoot": true
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": "cwd",
+              "given": "."
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w:true:false:true:false:true"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "-d",
+        "*.md"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/*.md",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "*.md"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/*.md:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "--",
+        "-weird"
+      ],
+      "resolve": {
+        "2": {
+          "kind": "fs",
+          "path": "/w/-weird",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 2,
+              "given": "-weird"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/-weird:true:false:true:true:false"
+      ]
+    },
+    {
+      "argv": [
+        "ls",
+        "-l",
+        "--",
+        "-a"
+      ],
+      "resolve": {
+        "3": {
+          "kind": "fs",
+          "path": "/w/-a",
+          "inRoot": true,
+          "secret": false,
+          "exists": true,
+          "topLevel": true,
+          "isRoot": false
+        }
+      },
+      "pre": [
+        {
+          "term": "read",
+          "targets": [
+            {
+              "arg": 3,
+              "given": "-a"
+            }
+          ]
+        }
+      ],
+      "effects": [
+        "read:fs:/w/-a:true:false:true:true:false"
+      ]
+    }
+  ]
+}
