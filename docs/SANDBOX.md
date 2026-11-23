@@ -306,8 +306,11 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
     the scan is masked: a held-name link made or retargeted then reads its target, and so does the target by its path.
   - Naming a secret path in `pathArgs` unmasks it for the WHOLE call, every process in it, not only the program that
     was given the argument: the approval of the call that names it is the control.
-- **A hiding rule is a snapshot on Linux, and its walk does not enter a symlinked directory on either.** A file
-  that comes to match a `hide` after the spawn is masked from the next call's. A path reached THROUGH a symlinked
+- **A hiding rule is a snapshot on Linux, and its walk does not enter a symlinked directory on either.** The hides
+  are walked at `spawn` and again at `start`, so a file made between the two is masked; a file the CALL makes that
+  matches a `hide` is readable to that call and held from the next call's `start` (on macOS the call cannot create it).
+  A hard link that already existed under a name no pattern matches reads the held file on both platforms; a call
+  cannot make one (`tests/hide_list.rs`, `a_link_outside_the_pattern_to_a_hidden_file`). A path reached THROUGH a symlinked
   directory below the pattern's literal prefix is not found by the walk, and on macOS the regex is matched against the
   real path, so `hide /r/*/key` does not hold `/r/link/key` when `link` points out of the tree. The host's own match
   (for `hiddenBy` and `hiddenSecrets`) is case-sensitive while macOS's rules are not, so a path argument spelled in

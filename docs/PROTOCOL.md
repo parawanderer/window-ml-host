@@ -235,7 +235,9 @@ is given, its folder's characters taken literally, and holds nothing when it is 
 it is spelled under a root. A refused pattern (`**`, a `.` or `..` segment, an empty
 segment, an unclosed `[`, not absolute, over the bound, or a `show` that could match a credential directory) fails the
 spawn with `BadRequest` naming the entry's `id`: the host matches the worker's rules exactly, so a list the worker
-accepted is never refused here.
+accepted is never refused here. An entry the host cannot read (an `effect` other than `"hide"` or `"show"`, a missing
+or extra key) fails the spawn with `BadRequest` too: an entry is never skipped, since a skipped `hide` would leave
+readable what the person hid.
 
 - **`hide`** holds what it matches, and everything under a directory it matches, for reading and writing, as a default
   hold does. On macOS it is a read and write deny by pattern after the template allow; on Linux it is resolved against
@@ -251,8 +253,15 @@ accepted is never refused here.
 - **A path argument** whose resolved path a `hide` holds has `"hiddenBy": "<id>"` in its `paths` entry and is
   re-allowed for that call when the call is started, as a named secret is: the worker asks first and names the entry.
 - **An unsandboxed call** (`host-plain`) applies no entry, as it applies no default.
-- A file a call creates that matches a `hide` is held on macOS, whose rules match by pattern, and on Linux from the
-  next call's spawn.
+- A file made after the spawn that matches a `hide`: on macOS it is held, since the rules match by pattern, and a
+  call cannot create one (the write is denied). On Linux the hides are walked again at `start`, so a file made between
+  `spawn` and `start` is masked; a file the call itself makes is READABLE to that call and the processes it starts,
+  and is held from the next call's `start`.
+- A link to a held file: a symlink, whoever made it, is held on both, since macOS matches the real path and a Linux
+  mask lies on the path the link resolves to. A HARD link that already existed under a name the pattern does not match
+  is READABLE on both (another name of the same inode, which neither sandbox sees; the default holds catch one only at
+  a root's top). A call cannot make one: macOS refuses the `link` of a write-denied file, and on Linux the held file is
+  a bind mount, so the link crosses mounts and fails.
 
 `hello.hideList` says the host takes the field. An older host ignores it, so a worker with a `hide` to apply refuses
 the call itself rather than send it there.

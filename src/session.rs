@@ -1201,8 +1201,18 @@ impl Session {
                     "this sandbox cannot hold the requested envelope (Landlock is unavailable)".into(),
                 ));
             }
+            // Linux masks only what exists, so the hides are walked again now: a file made since the spawn is held
+            // too, and only one the call itself makes is not (PROTOCOL.md, "The hide list").
+            let hides = if self.host.sandbox.kind == Some(sandbox::Kind::Bwrap) && !p.hides.list.is_empty() {
+                match sandbox::resolve_hides(p.hides.list.clone(), &p.config.roots, &p.named_secrets, true) {
+                    Ok(h) => h,
+                    Err((_, m)) => return failed(Fail("SandboxFailed", m)),
+                }
+            } else {
+                p.hides.clone()
+            };
             let Some((prog, args)) =
-                sandbox::wrap_with(&self.host.sandbox, &plan, &p.hides, &p.program, &p.argv[1..], &p.cwd)
+                sandbox::wrap_with(&self.host.sandbox, &plan, &hides, &p.program, &p.argv[1..], &p.cwd)
             else {
                 return failed(Fail("SandboxFailed", "the sandbox is not available".into()));
             };

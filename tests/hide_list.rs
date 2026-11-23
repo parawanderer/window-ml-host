@@ -368,6 +368,66 @@ fn a_hide_of_a_symlink_holds_its_target_too() {
     h.close();
 }
 
+/// A link OUTSIDE the hidden pattern that resolves to a hidden file. A symlink, made before the call or by it, is held
+/// on both platforms. A hard link the person made beforehand is another name of the inode, which neither sandbox sees:
+/// readable on both, the stated limit. The call cannot make a hard link to the held file itself.
+#[test]
+fn a_link_outside_the_pattern_to_a_hidden_file() {
+    let (_d, r) = root();
+    std::fs::write(r.join("secret.txt"), "SECRET\n").unwrap();
+    std::os::unix::fs::symlink("secret.txt", r.join("alias")).unwrap();
+    std::fs::hard_link(r.join("secret.txt"), r.join("hl")).unwrap();
+    let Some(mut h) = sandboxed(&r) else { return };
+    let hide = json!([entry("h1", "hide", r.join("secret.txt"))]);
+    let (_f, out) = h.cat_all(&r, hide.clone(), &["alias"]);
+    assert!(!out.contains("SECRET"), "read through a symlink made before the call: {out}");
+    let script =
+        "ln -s secret.txt s2 2>/dev/null; cat s2 2>/dev/null; ln secret.txt hl2 2>/dev/null; cat hl2 2>/dev/null";
+    let (_f, d) = h.run(json!({ "argv": ["sh", "-c", script], "cwd": r, "hideList": hide }));
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(!out.contains("SECRET"), "a symlink or hard link the call made reads the held file: {out}");
+    assert!(
+        !std::fs::read(r.join("hl2")).is_ok_and(|b| b == b"SECRET\n"),
+        "the call made a hard link to the held file"
+    );
+    // The stated limit: a hard link that already existed, under a name the pattern does not match.
+    let (_f, out) = h.cat_all(&r, hide, &["hl"]);
+    assert_eq!(out, "SECRET\n", "the stated limit changed: a prior hard link is now held; update PROTOCOL.md");
+    h.close();
+}
+
+// --- a file made after the spawn ---
+
+/// A hide whose pattern matches nothing at spawn. A file made between `spawn` and `start` is held on both platforms
+/// (macOS by pattern, Linux by the walk again at `start`). A file the call itself makes: macOS refuses to create it;
+/// on Linux the call creates it and reads it back, the stated limit.
+#[test]
+fn a_file_made_after_the_spawn_that_matches_a_hide() {
+    let (_d, r) = root();
+    let Some(mut h) = sandboxed(&r) else { return };
+    let hide = json!([entry("h1", "hide", r.join("late*.txt"))]);
+    let f = h.ok("spawn", json!({ "argv": ["cat", "late1.txt"], "cwd": r, "hideList": hide }));
+    assert_eq!(f["hiddenSecrets"], json!([]), "nothing matches at spawn: {f}");
+    std::fs::write(r.join("late1.txt"), "LATE1\n").unwrap();
+    let id = f["id"].as_str().unwrap().to_string();
+    h.ok("start", json!({ "id": id }));
+    let d = h.done(&id);
+    assert!(!text(&h.read_all(&d["stdout"])).contains("LATE1"), "a file made between spawn and start was read");
+    let script = "echo LATE2 > late2.txt; cat late2.txt";
+    let (_f, d) = h.run(json!({ "argv": ["sh", "-c", script], "cwd": r, "hideList": hide }));
+    let out = text(&h.read_all(&d["stdout"]));
+    if cfg!(target_os = "macos") {
+        assert!(!out.contains("LATE2"), "{out}");
+        assert!(!r.join("late2.txt").exists(), "macOS denies creating a held name");
+    } else {
+        assert_eq!(out, "LATE2\n", "the stated Linux limit changed: update PROTOCOL.md");
+        // Held from the next call's start.
+        let (_f, out) = h.cat_all(&r, hide, &["late2.txt"]);
+        assert!(!out.contains("LATE2"), "{out}");
+    }
+    h.close();
+}
+
 // --- refusals ---
 
 /// A refused pattern fails the spawn with `BadRequest` naming the entry's id.
