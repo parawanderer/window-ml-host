@@ -68,6 +68,8 @@ to four bytes, and a class with non-ASCII members is an alternation of its ASCII
 `show`, `?` and a negated class are one byte, so a multibyte character is never released, and a class keeps the exact
 alternation. Past 256 non-ASCII members a hide's class is `?`'s form and a show's is its ASCII part. A non-ASCII
 letter is not case-folded; an ASCII one is, as every other rule here.
+On Linux the masks come from the host's own matcher, which matches characters, so there `?` holds `a.txt` and not
+`ab.txt`, and a `show` of `.env.?` releases `.env.é`.
 
 ## What the tests show (tests/stdio.rs)
 

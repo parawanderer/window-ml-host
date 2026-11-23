@@ -282,7 +282,7 @@ impl Pattern {
     /// Seatbelt matches BYTES, so a token meaning one character must not be one byte where a name holds a multibyte
     /// one. Each side errs its own safe way. A `hide` holds at least what the extension does: `?` is one to four bytes
     /// (`[^/][^/]?[^/]?[^/]?`), a negated class is its ASCII members or two to four bytes, and a class with non-ASCII
-    /// members is an alternation of its ASCII part and each member's bytes (past [`CLASS_NON_ASCII_MAX`] members, `?`'s
+    /// members is an alternation of its ASCII part and each member's bytes (past `CLASS_NON_ASCII_MAX` members, `?`'s
     /// form). A `show` releases at most what the extension does: `?` and a negated class are one byte, so a multibyte
     /// character is not released, and a class keeps its exact alternation (past the cap, its ASCII part alone).
     pub fn sbpl_regex(&self, effect: Effect) -> String {

@@ -206,7 +206,7 @@ fn a_hide_of_a_directory_holds_its_subtree_and_not_a_prefix_sibling() {
 
 // --- multibyte names: Seatbelt matches bytes, the host's matcher matches characters ---
 
-/// A hide's `?` holds one character however many bytes it takes, and a short name besides (the safe side).
+/// A hide's `?` holds one character however many bytes it takes; on macOS it holds a short name besides (the safe side).
 #[test]
 fn a_question_mark_matches_a_multibyte_character() {
     let (_d, r) = root();
@@ -217,8 +217,13 @@ fn a_question_mark_matches_a_multibyte_character() {
     let (_f, out) = h.cat_all(&r, json!([entry("h1", "hide", r.join("?.txt"))]), &["é.txt", "a.txt", "ab.txt"]);
     assert!(!out.contains("C-E"), "é.txt was readable: {out}");
     assert!(!out.contains("C-A\n"), "a.txt was readable: {out}");
-    // A hide's `?` is one to four bytes (Seatbelt matches bytes), so it also holds a two-letter name: the stated over-hold.
-    assert!(!out.contains("C-AB"), "ab.txt is held by the documented over-hold: {out}");
+    if cfg!(target_os = "macos") {
+        // A hide's `?` is one to four bytes (Seatbelt matches bytes), so it also holds a two-letter name: the stated over-hold.
+        assert!(!out.contains("C-AB"), "ab.txt is held by the documented over-hold: {out}");
+    } else {
+        // The Linux masks come from the host's own matcher, which matches characters: `?` is one, so ab.txt is readable.
+        assert!(out.contains("C-AB"), "ab.txt must stay readable on Linux: {out}");
+    }
     h.close();
 }
 
@@ -250,7 +255,7 @@ fn a_negated_bracket_set_holds_a_multibyte_character() {
     h.close();
 }
 
-/// A `show` with `?` releases the ASCII default hold and errs toward releasing less on a multibyte name.
+/// A `show` with `?` releases the ASCII default hold; on macOS it errs toward releasing less on a multibyte name.
 #[test]
 fn a_show_question_mark_releases_ascii_and_keeps_a_multibyte_name_held() {
     let (_d, r) = root();
@@ -259,7 +264,13 @@ fn a_show_question_mark_releases_ascii_and_keeps_a_multibyte_name_held() {
     let Some(mut h) = sandboxed(&r) else { return };
     let (_f, out) = h.cat_all(&r, json!([entry("s1", "show", r.join(".env.?"))]), &[".env.a", ".env.é"]);
     assert!(out.contains("ENV-A"), ".env.a must be released: {out}");
-    assert!(!out.contains("ENV-E"), ".env.é must stay held: {out}");
+    if cfg!(target_os = "macos") {
+        // A show's `?` is one byte in Seatbelt's regex, so a two-byte character is not released.
+        assert!(!out.contains("ENV-E"), ".env.é must stay held: {out}");
+    } else {
+        // The host's own matcher decides on Linux, and its `?` is one character, so .env.é is released too.
+        assert!(out.contains("ENV-E"), ".env.é must be released on Linux: {out}");
+    }
     h.close();
 }
 
