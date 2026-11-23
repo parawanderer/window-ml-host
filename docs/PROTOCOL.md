@@ -255,8 +255,9 @@ readable what the person hid.
 - **An unsandboxed call** (`host-plain`) applies no entry, as it applies no default.
 - A file made after the spawn that matches a `hide`: on macOS it is held, since the rules match by pattern, and a
   call cannot create one (the write is denied). On Linux the hides are walked again at `start`, so a file made between
-  `spawn` and `start` is masked; a file the call itself makes is READABLE to that call and the processes it starts,
-  and is held from the next call's `start`.
+  `spawn` and `start` is masked; a file that appears AFTER `start`, whoever makes it (the call, or any other process
+  writing into the tree meanwhile), is READABLE to that call and the processes it starts until it ends, and is held
+  from the next call's `start`.
 - A link to a held file: a symlink, whoever made it, is held on both, since macOS matches the real path and a Linux
   mask lies on the path the link resolves to. A HARD link that already existed under a name the pattern does not match
   is READABLE on both (another name of the same inode, which neither sandbox sees; the default holds catch one only at
