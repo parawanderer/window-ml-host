@@ -20,6 +20,7 @@ use crate::framing::{self, FrameError, MAX_OUT};
 use crate::gitconfig;
 use crate::gitfacts::Git;
 use crate::glob;
+use crate::hide_list::{self, Effect};
 use crate::mounts::{self, Basis, Mount, Refusal, Stored};
 use crate::owners::{self, Entry, Ledger};
 use crate::procs;
@@ -143,6 +144,8 @@ struct Pending {
     config: Config,
     /// The repository the call acts in, which `start` snapshots (H13); `None` outside one.
     repo: Option<gitconfig::RepoConfig>,
+    /// The person's hiding rules, resolved at spawn (PROTOCOL.md, "The hide list"); empty unsandboxed.
+    hides: sandbox::Hides,
 }
 
 /// A call's first snapshot (H13), shared by a pipe's stages; `Err` is a null diff's reason.
@@ -480,6 +483,8 @@ impl Session {
             "mounts": matches!(self.host.transport, Transport::Native),
             // `spawn.files` maps `/files` to a mount's uploads folder (FILE_ATTACHMENTS.md H9): a mount is native-only.
             "filesArgv": matches!(self.host.transport, Transport::Native),
+            // `spawn.hideList`, the person's hiding rules (PROTOCOL.md, "The hide list").
+            "hideList": true,
             "owners": { "ledger": self.ledger.is_some(),
                         "register": !matches!(self.host.transport, Transport::Hub { .. }) },
             "cpu": { "metric": procs::CPU_METRIC },
@@ -636,7 +641,8 @@ impl Session {
         }
         // `/files` (window-ml FILE_ATTACHMENTS.md H9) becomes the uploads folder of the mount `files` names, in the
         // arguments the worker marks as paths and in the cwd, here for the same reason `~` is.
-        let files = self.map_files(a, &mut argv, &mut cwd_arg)?;
+        let (files, files_dir) = self.map_files(a, &mut argv, &mut cwd_arg)?;
+        let hide_list = hide_entries(a.get("hideList"), files_dir.as_deref())?;
         match a.get("mode").and_then(Value::as_str).unwrap_or("host") {
             "host" => {}
             "container" => return fail("Unsupported", "container mode has no runner in this version"),
@@ -692,7 +698,7 @@ impl Session {
             }
             Some(_) => return fail("BadRequest", "credential is {provider, manifest}"),
         };
-        let paths = self.path_facts(a.get("pathArgs"), &argv, &cwd, &config.roots)?;
+        let mut paths = self.path_facts(a.get("pathArgs"), &argv, &cwd, &config.roots)?;
         self.refuse_written_attached(a.get("pathArgs"), &paths, &files)?;
         let mut cwd_fact = json!({ "path": cwd, "inRoot": true });
         if opt_bool(a, "walkCwd")?.unwrap_or(false) {
@@ -715,11 +721,41 @@ impl Session {
             Some(_) => return fail("BadRequest", format!("owner is an object of at most {MAX_OWNER_BYTES} bytes")),
         };
         let sandboxed = config.sandbox && self.host.sandbox.available;
+        // A path the call names that a `hide` holds: the worker asks, naming the entry, and an approved call reads it.
+        // An unsandboxed call applies no entry, so it names none.
+        if sandboxed {
+            for p in paths.iter_mut() {
+                let by = ["path", "link"]
+                    .iter()
+                    .filter_map(|k| p.get(*k).and_then(Value::as_str))
+                    .find_map(|s| hide_list::decide(&hide_list, s).filter(|e| e.effect == Effect::Hide));
+                if let Some(e) = by {
+                    p["hiddenBy"] = json!(e.id);
+                }
+            }
+        }
         let named_secrets: Vec<PathBuf> = paths
             .iter()
-            .filter(|p| p["secret"] == true)
+            .filter(|p| p["secret"] == true || p.get("hiddenBy").is_some())
             .filter_map(|p| p["path"].as_str().map(PathBuf::from))
             .collect();
+        let hides = if sandboxed && !hide_list.is_empty() {
+            let strict = self.host.sandbox.kind == Some(sandbox::Kind::Bwrap);
+            sandbox::resolve_hides(hide_list, &config.roots, &named_secrets, strict)
+                .map_err(|(_, m)| Fail("SandboxFailed", m))?
+        } else {
+            sandbox::Hides::default()
+        };
+        let hidden_secrets: Vec<PathBuf> = if sandboxed {
+            let unheld: Vec<PathBuf> = named_secrets.iter().chain(&hides.shown).cloned().collect();
+            let mut v = sandbox::root_top_secrets(&config.roots, &unheld);
+            v.extend(hides.held.iter().cloned());
+            v.sort();
+            v.dedup();
+            v
+        } else {
+            vec![]
+        };
         let pins: Vec<(PathBuf, Option<String>)> = paths
             .iter()
             .filter(|p| p.get("sha256").is_some())
@@ -757,7 +793,7 @@ impl Session {
             "placement": if sandboxed { "host-sandbox" } else { "host-plain" },
             // The secret-looking files at the top of each root the sandbox will hold unreadable: so a loader's EPERM
             // can be explained (name the file, which asks, or run host-plain). Empty for an unsandboxed call.
-            "hiddenSecrets": if sandboxed { sandbox::root_top_secrets(&config.roots, &named_secrets) } else { vec![] },
+            "hiddenSecrets": hidden_secrets,
             "memoryBound": memory_bound,
             "onOwnerLoss": owner_loss.json(),
             "owner": owner,
@@ -782,6 +818,7 @@ impl Session {
                 credential,
                 config,
                 repo,
+                hides,
             },
         );
         Ok(facts)
@@ -796,8 +833,8 @@ impl Session {
         a: &Map<String, Value>,
         argv: &mut [String],
         cwd: &mut Option<String>,
-    ) -> Result<Vec<Value>, Fail> {
-        let Some(f) = a.get("files") else { return Ok(vec![]) };
+    ) -> Result<(Vec<Value>, Option<PathBuf>), Fail> {
+        let Some(f) = a.get("files") else { return Ok((vec![], None)) };
         let Value::Object(f) = f else { return fail("BadRequest", "files is {mount, session}") };
         let m = self.mount_of(f)?;
         let Some(dir) = m.uploads_dir()? else {
@@ -829,7 +866,7 @@ impl Session {
             out.push(json!({ "index": "cwd", "from": c.clone(), "to": to }));
             *c = to;
         }
-        Ok(out)
+        Ok((out, Some(dir)))
     }
 
     /// H9 (H6 for a process): a path the program WRITES (`role: "write"`, from the manifest's operand roles) that
@@ -1164,7 +1201,9 @@ impl Session {
                     "this sandbox cannot hold the requested envelope (Landlock is unavailable)".into(),
                 ));
             }
-            let Some((prog, args)) = sandbox::wrap(&self.host.sandbox, &plan, &p.program, &p.argv[1..], &p.cwd) else {
+            let Some((prog, args)) =
+                sandbox::wrap_with(&self.host.sandbox, &plan, &p.hides, &p.program, &p.argv[1..], &p.cwd)
+            else {
                 return failed(Fail("SandboxFailed", "the sandbox is not available".into()));
             };
             Prepared { program: prog, args, argv0: None, cwd: p.cwd.clone(), env: envmap, proxy: call_proxy }
@@ -2013,6 +2052,45 @@ fn files_to(given: &str, dir: &Path) -> Result<Option<String>, Fail> {
         to.push('/');
     }
     Ok(Some(to))
+}
+
+/// `spawn.hideList`: the person's hiding rules in ascending precedence, each `{ id, effect, pattern }` compiled as the
+/// extension does, a refused one `BadRequest` naming its id. A `/files/…` pattern names the uploads folder of the mount
+/// `files` names, and without `files` it holds nothing and is left out.
+fn hide_entries(v: Option<&Value>, files: Option<&Path>) -> Result<Vec<hide_list::Entry>, Fail> {
+    const SHAPE: &str = "hideList is an array of {id, effect, pattern}";
+    let Some(v) = v else { return Ok(vec![]) };
+    let Value::Array(xs) = v else { return fail("BadRequest", SHAPE) };
+    // A session's scope and the global one, each at most ENTRIES_MAX.
+    if xs.len() > 2 * hide_list::ENTRIES_MAX {
+        return fail("BadRequest", format!("hideList holds at most {} entries", 2 * hide_list::ENTRIES_MAX));
+    }
+    let mut out = Vec::with_capacity(xs.len());
+    for x in xs {
+        let Some(o) = x.as_object().filter(|o| o.len() == 3) else { return fail("BadRequest", SHAPE) };
+        let (Some(Value::String(id)), Some(Value::String(effect)), Some(Value::String(pattern))) =
+            (o.get("id"), o.get("effect"), o.get("pattern"))
+        else {
+            return fail("BadRequest", SHAPE);
+        };
+        if id.is_empty() || id.len() > 256 {
+            return fail("BadRequest", "hideList[].id is a string of 1..=256 bytes");
+        }
+        let effect = match effect.as_str() {
+            "hide" => Effect::Hide,
+            "show" => Effect::Show,
+            _ => return fail("BadRequest", format!("hideList entry {id:?}: effect is \"hide\" or \"show\"")),
+        };
+        let mut e = hide_list::Entry::new(id, effect, pattern)
+            .map_err(|why| Fail("BadRequest", format!("hideList entry {id:?}: {why}")))?;
+        match (e.pattern.rebase("files", Path::new("/")), files) {
+            (None, _) => {}
+            (Some(_), None) => continue,
+            (Some(_), Some(dir)) => e.pattern = e.pattern.rebase("files", dir).expect("it starts with /files"),
+        }
+        out.push(e);
+    }
+    Ok(out)
 }
 
 fn session_of(a: &Map<String, Value>) -> Result<&str, Fail> {

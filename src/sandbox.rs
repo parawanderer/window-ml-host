@@ -12,6 +12,8 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::hide_list::{self, Effect, Entry};
+
 /// Which sandbox this platform uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -265,15 +267,27 @@ pub fn wrap(
     args: &[String],
     cwd: &Path,
 ) -> Option<(PathBuf, Vec<OsString>)> {
+    wrap_with(av, plan, &Hides::default(), program, args, cwd)
+}
+
+/// [`wrap`] with the person's hiding rules for the call, as [`resolve_hides`] resolved them at spawn.
+pub fn wrap_with(
+    av: &Availability,
+    plan: &Plan,
+    hides: &Hides,
+    program: &Path,
+    args: &[String],
+    cwd: &Path,
+) -> Option<(PathBuf, Vec<OsString>)> {
     let sandbox = av.program.clone()?;
     match av.kind? {
         Kind::Seatbelt => {
-            let mut a: Vec<OsString> = vec!["-p".into(), seatbelt_profile(plan).into(), program.into()];
+            let mut a: Vec<OsString> = vec!["-p".into(), seatbelt_profile_with(plan, hides).into(), program.into()];
             a.extend(args.iter().map(OsString::from));
             Some((sandbox, a))
         }
         Kind::Bwrap => {
-            let mut a: Vec<OsString> = bwrap_args(plan, cwd);
+            let mut a: Vec<OsString> = bwrap_args_with(plan, cwd, hides);
             a.push("--".into());
             // An envelope narrower than today's floor rides an `exec-under` shim inside bwrap, which
             // applies the Landlock ruleset the host computed. An ABSENT envelope is today's floor and
@@ -662,6 +676,95 @@ pub fn root_top_secrets(roots: &[PathBuf], allow_read: &[PathBuf]) -> Vec<PathBu
     out
 }
 
+/// The most paths the `hide` entries of one call may match in all: past it a spawn fails, never masking some and
+/// leaving the rest readable (Linux masks each one by path).
+pub const HIDE_MATCHES_MAX: usize = 256;
+/// The most directory entries the walk for one `hide` looks at.
+pub const HIDE_WALK_CAP: usize = 100_000;
+
+/// The person's hiding rules for one call (window-ml's POLICIES.md, "Hiding files"; PROTOCOL.md, "The hide list"), as
+/// [`resolve_hides`] found them against the tree when the call was spawned.
+#[derive(Debug, Clone, Default)]
+pub struct Hides {
+    /// The entries, `/files` mapped, in ASCENDING precedence: macOS's rules, by pattern.
+    pub list: Vec<Entry>,
+    /// Each existing path a `hide` decides, as spelled: what the facts list in `hiddenSecrets`.
+    pub held: Vec<PathBuf>,
+    /// What Linux masks: each held path, a symlink's regular file or directory in its place.
+    pub masks: Vec<PathBuf>,
+    /// The realpath of a held path where it differs from the path (a symlink, or a path through a symlinked
+    /// directory). Seatbelt matches the real path, so macOS denies these by name besides the patterns.
+    pub targets: Vec<PathBuf>,
+    /// The default holds at a root's top ([`root_top_secrets`]) that a `show` decides: neither denied nor masked.
+    pub shown: Vec<PathBuf>,
+}
+
+/// Resolves `list` (ascending precedence) for one call against the tree now. Each `hide` is walked
+/// ([`hide_list::walk`]); a path it matches counts only when the list decides it as a hide ([`hide_list::decide`]) and
+/// the call does not name it (`named`, which the worker asked about). With `strict` (Linux, which can hold only what it
+/// finds) more than [`HIDE_MATCHES_MAX`] paths, or a walk that stopped early, is `Err((id, message))` naming the entry;
+/// without it (macOS, whose rules match by pattern whatever the walk saw) the walk only informs the facts.
+pub fn resolve_hides(
+    list: Vec<Entry>,
+    roots: &[PathBuf],
+    named: &[PathBuf],
+    strict: bool,
+) -> Result<Hides, (String, String)> {
+    let mut h = Hides::default();
+    for e in list.iter().filter(|e| e.effect == Effect::Hide) {
+        let (found, stopped) = hide_list::walk(&e.pattern, HIDE_MATCHES_MAX + 1, HIDE_WALK_CAP);
+        for m in found {
+            let decided = hide_list::decide(&list, &m.to_string_lossy()).is_some_and(|d| d.effect == Effect::Hide);
+            if !decided || named.contains(&m) || h.held.contains(&m) {
+                continue;
+            }
+            let real = std::fs::canonicalize(&m).ok();
+            let own = |p: &Path| p.starts_with("/proc") || p.starts_with("/dev");
+            match std::fs::symlink_metadata(&m) {
+                Ok(md) if md.file_type().is_symlink() => {
+                    // What opening the link reaches is its target: hold that too, wherever it is.
+                    if let Some(t) =
+                        real.as_ref().filter(|t| !own(t) && t.metadata().is_ok_and(|x| x.is_file() || x.is_dir()))
+                    {
+                        h.masks.push(t.clone());
+                    }
+                }
+                Ok(md) if md.is_file() || md.is_dir() => h.masks.push(m.clone()),
+                _ => {}
+            }
+            if let Some(t) = real.filter(|t| *t != m && !own(t)) {
+                h.targets.push(t);
+            }
+            h.held.push(m);
+        }
+        if strict && h.held.len() > HIDE_MATCHES_MAX {
+            return Err((
+                e.id.clone(),
+                format!(
+                    "the hiding rule {:?} and those before it match more than {HIDE_MATCHES_MAX} paths, more than this sandbox masks one by one: narrow it",
+                    e.id
+                ),
+            ));
+        }
+        if strict && stopped {
+            return Err((
+                e.id.clone(),
+                format!("the hiding rule {:?} names more of the tree than one spawn looks through: narrow it", e.id),
+            ));
+        }
+    }
+    h.shown = root_top_secrets(roots, named)
+        .into_iter()
+        .filter(|r| hide_list::decide(&list, &r.to_string_lossy()).is_some_and(|d| d.effect == Effect::Show))
+        .collect();
+    h.list = list;
+    for v in [&mut h.held, &mut h.masks, &mut h.targets] {
+        v.sort();
+        v.dedup();
+    }
+    Ok(h)
+}
+
 /// Regexes (POSIX ERE, case-insensitive by construction) for paths in a root that, written, run code later: every
 /// protected name ([`protected_rels`]), the same list bubblewrap re-binds on Linux, so the two OSes hold the same names.
 /// Matched anywhere in a path and as a whole subtree (`(/|$)`), so renaming a parent cannot carry one out from under its
@@ -711,6 +814,14 @@ fn re(r: &str) -> String {
 
 /// The profile for one call. Later rules win in SBPL, which the order below relies on.
 pub fn seatbelt_profile(plan: &Plan) -> String {
+    seatbelt_profile_with(plan, &Hides::default())
+}
+
+/// [`seatbelt_profile`] with the person's hiding rules. They come after the dotenv templates are reopened, in the
+/// list's order (so the entry with the most precedence is the last rule), and before what no `show` may release is
+/// denied again: a credential directory, the held output, a root's top secret that no `show` decided, and on the write
+/// side every protected name. A `show`'s write is allowed only inside the roots. What the call names is allowed last.
+pub fn seatbelt_profile_with(plan: &Plan, hides: &Hides) -> String {
     let mut p = vec![base_profile()];
     if let Some(port) = plan.proxy {
         // A credentialed call (src/credential.rs): its own proxy's port on localhost and nothing else, not even the
@@ -726,7 +837,8 @@ pub fn seatbelt_profile(plan: &Plan) -> String {
     let dirs: Vec<String> = DENY_READ_DIRS.iter().map(|d| re(&format!("/{}(/|$)", ci(d)))).collect();
     let mut held: Vec<String> = plan.hidden.iter().map(|h| format!("(subpath {})", lit(h))).collect();
     // A root's top hardlink to a dotenv file, by inode: no name rule sees it.
-    held.extend(root_top_secrets(&plan.roots, &plan.allow_read).iter().map(|h| format!("(literal {})", lit(h))));
+    let unheld: Vec<PathBuf> = plan.allow_read.iter().chain(&hides.shown).cloned().collect();
+    held.extend(root_top_secrets(&plan.roots, &unheld).iter().map(|h| format!("(literal {})", lit(h))));
     let mut deny_read = dirs.clone();
     deny_read.extend(DENY_READ_FILES.iter().map(|f| re(&format!("/{}$", ci(f)))));
     deny_read.extend(DENY_READ_PREFIXES.iter().map(|f| re(&format!("/{}[^/]*$", ci(f)))));
@@ -736,6 +848,20 @@ pub fn seatbelt_profile(plan: &Plan) -> String {
     // the hidden paths, and a hardlink (a template can be one).
     let templates: Vec<String> = DOTENV_TEMPLATES.iter().map(|f| re(&format!("/{}$", ci(f)))).collect();
     p.push(format!("(allow file-read* {})", templates.join(" ")));
+    if !hides.list.is_empty() {
+        p.push("; the person's hiding rules, in ascending precedence".into());
+        for e in &hides.list {
+            let r = re(&e.pattern.sbpl_regex(e.effect));
+            p.push(match e.effect {
+                Effect::Hide => format!("(deny file-read* {r})"),
+                Effect::Show => format!("(allow file-read* {r})"),
+            });
+        }
+        if !hides.targets.is_empty() {
+            let t: Vec<String> = hides.targets.iter().map(|t| format!("(subpath {})", lit(t))).collect();
+            p.push(format!("(deny file-read* {})", t.join(" ")));
+        }
+    }
     p.push(format!("(deny file-read* {})", [dirs, held].concat().join(" ")));
     if !plan.allow_read.is_empty() {
         let allow: Vec<String> = plan.allow_read.iter().map(|a| format!("(literal {})", lit(a))).collect();
@@ -770,6 +896,25 @@ pub fn seatbelt_profile(plan: &Plan) -> String {
     )];
     held_write.extend(root_top_secrets(&plan.roots, &[]).iter().map(|h| format!("(literal {})", lit(h))));
     p.push(format!("(deny file-write* {})", held_write.join(" ")));
+    if !hides.list.is_empty() {
+        let roots: Vec<String> = plan.roots.iter().map(|r| format!("(subpath {})", lit(r))).collect();
+        for e in &hides.list {
+            let r = re(&e.pattern.sbpl_regex(e.effect));
+            match e.effect {
+                Effect::Hide => p.push(format!("(deny file-write* {r})")),
+                Effect::Show if plan.write != WriteScope::None && !roots.is_empty() => {
+                    p.push(format!("(allow file-write* (require-all {r} (require-any {})))", roots.join(" ")))
+                }
+                Effect::Show => {}
+            }
+        }
+        if !hides.targets.is_empty() {
+            let t: Vec<String> = hides.targets.iter().map(|t| format!("(subpath {})", lit(t))).collect();
+            p.push(format!("(deny file-write* {})", t.join(" ")));
+        }
+        // A `show` releases a default hold, never a name that runs code later.
+        p.push(format!("(deny file-write* {})", deny_write.join(" ")));
+    }
     // Renaming `.git` itself is an unlink of that path; with this, a hook cannot be planted by moving the directory.
     p.push(format!("(deny file-write-unlink {})", re(&format!("/{}$", ci(".git")))));
     // Name-immutable top level under `write: "roots"`: the root inode is edit-only (WriteFile/Truncate),
@@ -817,6 +962,13 @@ fn bwrap_fixed_args() -> Vec<&'static str> {
 /// a root that would run code later re-bound read-only, credential stores and the held output masked. Unlike
 /// Seatbelt's regexes, these are paths that exist NOW at the top of each root; see LIMITS in docs/SANDBOX.md.
 pub fn bwrap_args(plan: &Plan, cwd: &Path) -> Vec<OsString> {
+    bwrap_args_with(plan, cwd, &Hides::default())
+}
+
+/// [`bwrap_args`] with the person's hiding rules: a root's top secret a `show` decided is not masked, and each path a
+/// `hide` decided ([`Hides::masks`]) is, after the default masks. A mask is never skipped for a path the call names
+/// under it: that path is bound back, read-only, over the mask. A `show` under a masked directory is not released.
+pub fn bwrap_args_with(plan: &Plan, cwd: &Path, hides: &Hides) -> Vec<OsString> {
     let mut a: Vec<OsString> = bwrap_fixed_args().into_iter().map(OsString::from).collect();
     if !plan.outlives_host {
         a.push("--die-with-parent".into());
@@ -841,7 +993,8 @@ pub fn bwrap_args(plan: &Plan, cwd: &Path) -> Vec<OsString> {
         masks.extend(DENY_READ_DIRS.iter().map(|d| home.join(d)));
         masks.extend(DENY_READ_FILES.iter().map(|f| home.join(f)));
     }
-    masks.extend(root_top_secrets(&plan.roots, &plan.allow_read));
+    let unheld: Vec<PathBuf> = plan.allow_read.iter().chain(&hides.shown).cloned().collect();
+    masks.extend(root_top_secrets(&plan.roots, &unheld));
     for m in masks {
         if plan.allow_read.iter().any(|a| a.starts_with(&m)) {
             continue;
@@ -850,6 +1003,21 @@ pub fn bwrap_args(plan: &Plan, cwd: &Path) -> Vec<OsString> {
             Ok(md) if md.is_dir() => push(&[&s("--tmpfs"), &m.into()]),
             Ok(md) if md.is_file() => push(&[&s("--ro-bind"), &s("/dev/null"), &m.into()]),
             _ => {}
+        }
+    }
+    // A mask under a directory already masked is a path in the tmpfs, so it is left out.
+    let hide_masks: Vec<&PathBuf> =
+        hides.masks.iter().filter(|m| !hides.masks.iter().any(|o| o != *m && m.starts_with(o) && o.is_dir())).collect();
+    for m in &hide_masks {
+        match std::fs::metadata(m) {
+            Ok(md) if md.is_dir() => push(&[&s("--tmpfs"), &(*m).clone().into()]),
+            Ok(md) if md.is_file() => push(&[&s("--ro-bind"), &s("/dev/null"), &(*m).clone().into()]),
+            _ => {}
+        }
+    }
+    for n in plan.allow_read.iter().filter(|n| hide_masks.iter().any(|m| n.starts_with(m))) {
+        if std::fs::metadata(n).is_ok_and(|md| md.is_file()) {
+            push(&[&s("--ro-bind"), &n.clone().into(), &n.clone().into()]);
         }
     }
     // A credentialed call's proxy socket: its own directory, bound after the masks (the session's socket directory is
@@ -935,6 +1103,157 @@ mod tests {
         assert_eq!(landlock_rules(&plan(), 6).forward, None);
         let json = serde_json::to_string(&landlock_rules(&plan(), 6)).unwrap();
         assert!(!json.contains("forward"), "an ordinary ruleset's wire shape is unchanged: {json}");
+    }
+
+    // --- the person's hiding rules ---
+
+    fn entry(id: &str, effect: Effect, src: &str) -> Entry {
+        Entry::new(id, effect, src).unwrap()
+    }
+
+    fn hides(list: Vec<Entry>) -> Hides {
+        Hides { list, ..Hides::default() }
+    }
+
+    /// The index of the first profile line holding `needle`.
+    fn line_of(p: &str, needle: &str) -> usize {
+        p.lines().position(|l| l.contains(needle)).unwrap_or_else(|| panic!("{needle:?} not in\n{p}"))
+    }
+
+    #[test]
+    fn seatbelt_hide_rules_follow_the_template_allow_in_list_order_and_precede_the_re_denies() {
+        let h = hides(vec![entry("h1", Effect::Hide, "/w/proj/notes"), entry("s1", Effect::Show, "/w/proj/.env")]);
+        let mut pl = plan();
+        pl.allow_read.push(PathBuf::from("/w/proj/notes/ok.txt"));
+        let p = seatbelt_profile_with(&pl, &h);
+        let lines: Vec<&str> = p.lines().collect();
+        let template = line_of(&p, "(allow file-read* (regex \"/\\\\.[eE][nN][vV]\\\\.[eE][xX]");
+        let hide = line_of(&p, "(deny file-read* (regex \"^/[wW]/[pP][rR][oO][jJ]/[nN][oO][tT][eE][sS](/|$)\"))");
+        let show = line_of(&p, "(allow file-read* (regex \"^/[wW]/[pP][rR][oO][jJ]/\\\\.[eE][nN][vV]$\"))");
+        assert!(template < hide && hide < show, "{p}");
+        // After the list: the credential directories and the held output denied again, the named path allowed last.
+        let re_deny = lines
+            .iter()
+            .rposition(|l| l.starts_with("(deny file-read*") && l.contains("(subpath \"/t/s/out\")"))
+            .unwrap();
+        assert!(show < re_deny, "{p}");
+        let named = line_of(&p, "(allow file-read* (literal \"/w/proj/notes/ok.txt\"))");
+        assert!(re_deny < named, "{p}");
+    }
+
+    #[test]
+    fn seatbelt_a_show_writes_only_inside_the_roots_and_never_a_protected_name() {
+        let h = hides(vec![entry("h1", Effect::Hide, "/w/proj/k"), entry("s1", Effect::Show, "/w/proj/.claude/x")]);
+        let p = seatbelt_profile_with(&plan(), &h);
+        let w = line_of(&p, "(allow file-write* (require-all (regex \"^/[wW]/[pP][rR][oO][jJ]/\\\\.[cC]");
+        assert!(p.lines().nth(w).unwrap().contains("(require-any (subpath \"/w/proj\"))"), "{p}");
+        let hide_w = line_of(&p, "(deny file-write* (regex \"^/[wW]/[pP][rR][oO][jJ]/[kK](/|$)\"))");
+        assert!(hide_w < w, "list order: {p}");
+        // Every protected name is denied again after the list.
+        let protect = p
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| l.contains("[cC][lL][aA][uU][dD][eE](/|$)") && l.starts_with("(deny file-write*"))
+            .map(|(i, _)| i)
+            .max()
+            .unwrap();
+        assert!(w < protect, "{p}");
+        // `write: "none"`: a show allows no write at all.
+        let none = seatbelt_profile_with(&Plan { write: WriteScope::None, ..plan() }, &h);
+        assert!(!none.contains("(allow file-write* (require-all"), "{none}");
+    }
+
+    #[test]
+    fn seatbelt_without_a_list_is_todays_profile() {
+        assert_eq!(seatbelt_profile_with(&plan(), &Hides::default()), seatbelt_profile(&plan()));
+        assert_eq!(
+            bwrap_args_with(&plan(), Path::new("/w/proj"), &Hides::default()),
+            bwrap_args(&plan(), Path::new("/w/proj"))
+        );
+    }
+
+    #[test]
+    fn resolve_hides_counts_what_the_list_decides_as_a_hide_and_the_call_does_not_name() {
+        let d = tempfile::tempdir().unwrap();
+        let r = d.path().canonicalize().unwrap();
+        for f in ["n/a.txt", "n/b.txt", "n/c.txt"] {
+            std::fs::create_dir_all(r.join(f).parent().unwrap()).unwrap();
+            std::fs::write(r.join(f), "x").unwrap();
+        }
+        std::fs::write(r.join(".env"), "S").unwrap();
+        let rs = r.display();
+        let list = vec![
+            entry("h1", Effect::Hide, &format!("{rs}/n/*")),
+            entry("s1", Effect::Show, &format!("{rs}/n/b.txt")),
+            entry("s2", Effect::Show, &format!("{rs}/.env")),
+        ];
+        let h = resolve_hides(list, std::slice::from_ref(&r), &[r.join("n/c.txt")], true).unwrap();
+        assert_eq!(h.held, vec![r.join("n/a.txt")], "b.txt is shown by a later entry, c.txt is named");
+        assert_eq!(h.masks, vec![r.join("n/a.txt")]);
+        assert_eq!(h.shown, vec![r.join(".env")]);
+        assert!(h.targets.is_empty());
+    }
+
+    #[test]
+    fn resolve_hides_holds_a_symlinks_target_and_denies_its_realpath() {
+        let d = tempfile::tempdir().unwrap();
+        let o = tempfile::tempdir().unwrap();
+        let (r, out) = (d.path().canonicalize().unwrap(), o.path().canonicalize().unwrap());
+        std::fs::write(out.join("secret"), "S").unwrap();
+        std::os::unix::fs::symlink(out.join("secret"), r.join("link")).unwrap();
+        let h = resolve_hides(
+            vec![entry("h1", Effect::Hide, &format!("{}/link", r.display()))],
+            std::slice::from_ref(&r),
+            &[],
+            true,
+        )
+        .unwrap();
+        assert_eq!(h.held, vec![r.join("link")]);
+        assert_eq!(h.masks, vec![out.join("secret")], "Linux masks the file the link reaches");
+        assert_eq!(h.targets, vec![out.join("secret")], "macOS denies the realpath by name");
+    }
+
+    #[test]
+    fn resolve_hides_past_the_match_limit_fails_on_linux_naming_the_entry_and_only_informs_on_macos() {
+        let d = tempfile::tempdir().unwrap();
+        let r = d.path().canonicalize().unwrap();
+        for i in 0..=HIDE_MATCHES_MAX {
+            std::fs::write(r.join(format!("f{i}")), "x").unwrap();
+        }
+        let list = vec![entry("many", Effect::Hide, &format!("{}/*", r.display()))];
+        let (id, msg) = resolve_hides(list.clone(), std::slice::from_ref(&r), &[], true).unwrap_err();
+        assert_eq!(id, "many");
+        assert!(msg.contains("\"many\"") && msg.contains("256"), "{msg}");
+        assert!(resolve_hides(list, &[r], &[], false).is_ok());
+    }
+
+    #[test]
+    fn bwrap_masks_each_hide_after_the_defaults_binds_a_named_file_back_and_leaves_a_shown_secret() {
+        let d = tempfile::tempdir().unwrap();
+        let r = d.path().canonicalize().unwrap();
+        std::fs::create_dir_all(r.join("priv/sub")).unwrap();
+        std::fs::write(r.join("priv/sub/ok.txt"), "x").unwrap();
+        std::fs::write(r.join("key.pem"), "x").unwrap();
+        std::fs::write(r.join(".env"), "S").unwrap();
+        let h = Hides {
+            masks: vec![r.join("key.pem"), r.join("priv"), r.join("priv/sub/ok.txt")],
+            shown: vec![r.join(".env")],
+            ..Hides::default()
+        };
+        let pl = Plan { roots: vec![r.clone()], allow_read: vec![r.join("priv/sub/ok.txt")], home: None, ..plan() };
+        let a: Vec<String> = bwrap_args_with(&pl, &r, &h).iter().map(|x| x.to_string_lossy().into_owned()).collect();
+        let s = |p: &str| r.join(p).to_string_lossy().into_owned();
+        let at = |w: &[&str]| a.windows(w.len()).position(|x| x == w).unwrap_or_else(|| panic!("{w:?} not in {a:?}"));
+        let tmpfs = at(&["--tmpfs", &s("priv")]);
+        at(&["--ro-bind", "/dev/null", &s("key.pem")]);
+        let back = at(&["--ro-bind", &s("priv/sub/ok.txt"), &s("priv/sub/ok.txt")]);
+        assert!(tmpfs < back, "the named file is bound back over the mask: {a:?}");
+        assert!(!a.contains(&s(".env")), "a shown secret is not masked: {a:?}");
+        assert_eq!(
+            a.iter().filter(|x| **x == s("priv/sub/ok.txt")).count(),
+            2,
+            "a mask under a masked directory is left out: {a:?}"
+        );
     }
 
     // --- the envelope: every accepted value is a SUBSET of today's Plan ---

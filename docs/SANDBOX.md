@@ -47,6 +47,28 @@ stores hidden, because under the sandbox no legitimate local call needs them (`g
 which is denied anyway), and a read of one is a disclosure no enforcer bounds; hooks and rc files read-only, because a
 write there runs code the NEXT time the person's own unsandboxed git or shell starts.
 
+## The person's hiding rules (`spawn.hideList`)
+
+The worker sends the person's `hide` and `show` rules with each spawn (PROTOCOL.md, "The hide list"; window-ml's
+POLICIES.md, "Hiding files"), one array in ascending precedence. `src/hide_list.rs` is the host's copy of the
+extension's matcher (`src/files-hide.ts`), not `src/glob.rs`, whose `*` skips a leading dot: a host that matched fewer
+paths than the extension would leave a file readable that the person hid. The entry that decides a path is the LAST
+one that names it, a `hide` by the path or an ancestor and a `show` by the path exactly (`hide_list::decide`).
+
+| | macOS (Seatbelt) | Linux (bubblewrap) |
+| --- | --- | --- |
+| `hide` | a read deny and a write deny by regex, one rule per entry in list order, after the dotenv templates are reopened; a held path whose realpath differs (a symlink, a path through a symlinked directory) is denied by `subpath` besides, since Seatbelt matches the real path | walked at spawn (`hide_list::walk`: no symlink entered, no name skipped), each match the list decides as a hide masked: a directory with a tmpfs, a file with `/dev/null`, a symlink's file or directory in its place; more than 256 matches in all, or a walk past 100,000 entries, is `SandboxFailed` naming the entry |
+| `show` | a read allow by regex, and a write allow by regex inside the roots only, in list order; then the credential directories, the held output and every root-top secret no `show` decided are denied again, and every protected name is write-denied again | a root-top secret a `show` decides is not masked; a `show` under a masked directory is not released |
+| A path the call names that a `hide` holds | `paths[].hiddenBy`; the worker asks, and the approved call reads it by `literal`, last | the same, bound back read-only over the mask |
+| `hiddenSecrets` | every held match, as spelled, with the root-top secrets | the same |
+
+Seatbelt's regexes match BYTES, and one non-ASCII character is two to four. So each side of the regex errs its own
+safe way (`Pattern::sbpl_regex`): for a `hide`, `?` is one to four bytes, a negated class is its ASCII members or two
+to four bytes, and a class with non-ASCII members is an alternation of its ASCII part and each member's bytes. For a
+`show`, `?` and a negated class are one byte, so a multibyte character is never released, and a class keeps the exact
+alternation. Past 256 non-ASCII members a hide's class is `?`'s form and a show's is its ASCII part. A non-ASCII
+letter is not case-folded; an ASCII one is, as every other rule here.
+
 ## What the tests show (tests/stdio.rs)
 
 Measured on macOS 26 (Seatbelt) and on GitHub's Ubuntu 24.04 runner (bubblewrap, with an AppArmor profile that grants
@@ -284,6 +306,12 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
     the scan is masked: a held-name link made or retargeted then reads its target, and so does the target by its path.
   - Naming a secret path in `pathArgs` unmasks it for the WHOLE call, every process in it, not only the program that
     was given the argument: the approval of the call that names it is the control.
+- **A hiding rule is a snapshot on Linux, and its walk does not enter a symlinked directory on either.** A file
+  that comes to match a `hide` after the spawn is masked from the next call's. A path reached THROUGH a symlinked
+  directory below the pattern's literal prefix is not found by the walk, and on macOS the regex is matched against the
+  real path, so `hide /r/*/key` does not hold `/r/link/key` when `link` points out of the tree. The host's own match
+  (for `hiddenBy` and `hiddenSecrets`) is case-sensitive while macOS's rules are not, so a path argument spelled in
+  another case than the pattern is held but not reported: the call fails with EPERM rather than reading it.
 - **A held-name link to a non-regular target is refused but listed nowhere.** A dangling `.env`, or one to a
   directory, a device or a file under `/proc` or `/dev`, is refused by the macOS name rule, and `hiddenSecrets` does
   not name it, so a loader's EPERM there is not explained by the list.

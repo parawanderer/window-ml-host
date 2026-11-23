@@ -47,6 +47,7 @@ the host answers each as it finishes, not in order. A message that is not an obj
   "put": { "max": 67108864 },                                       // this host answers `put`, `write` and `commit`; `max` is the most bytes one put may declare; `null` over the hub, where the three are refused; an older host has no such field
   "mounts": true,                                                   // this host answers the mount calls (see "Mounts"); false over the hub, where they are refused; an older host has no such field, and the worker never probes by calling
   "filesArgv": true,                                                // `spawn` takes `files` and maps `/files` to a mount's uploads folder (see "`/files` in an argv"); false over the hub; an older host has no such field and would ignore `files`
+  "hideList": true,                                                 // `spawn` takes `hideList` (see "The hide list"); an older host has no such field and would ignore it
   "owners": { "ledger": true, "register": true },                   // ledger false: the table is in memory only; register false over the hub (see "Owners")
   "memory": { "metric": "phys_footprint", "enforcer": "watchdog", "everyMs": 100 },
   "cpu": { "metric": "user+system, with reaped children" } }        // what `cpuMs` counts: measured, never bounded
@@ -107,7 +108,8 @@ args: { "argv": ["git", "diff", "--stat", "HEAD~1"],
         "memoryBound": 536870912,             // optional: this call's bound, clamped to [16 MiB, memoryMax]
         "onOwnerLoss": "orphan", "orphanTimeoutMs": 60000,    // optional: this call's owner-loss policy
         "credential": { "provider": "github", "manifest": "<sha256 hex>" },   // optional: see "A credentialed call"
-        "files": { "mount": "m3", "session": "…" } }   // optional: `/files` names this mount's uploads folder; see "`/files` in an argv"
+        "files": { "mount": "m3", "session": "…" },    // optional: `/files` names this mount's uploads folder; see "`/files` in an argv"
+        "hideList": [{ "id": "p_1", "effect": "hide", "pattern": "/Users/me/src/proj/notes/*" }] }   // optional: see "The hide list"
 ```
 
 The answer is the RESOLVED FACTS, everything a policy is given about the call (`SHELL.md`, "What it is given"):
@@ -130,7 +132,7 @@ The answer is the RESOLVED FACTS, everything a policy is given about the call (`
   "mode": "host",
   "sandboxed": true,
   "placement": "host-sandbox",                  // "host-sandbox" | "host-plain": the enforcer whose bound applies (EFFECTS.md)
-  "hiddenSecrets": ["/Users/me/proj/.env"],     // the files at a root's top the sandbox holds unreadable; [] unsandboxed
+  "hiddenSecrets": ["/Users/me/proj/.env"],     // the files the sandbox holds unreadable: a root's top, and each `hide` match; [] unsandboxed
   "memoryBound": 536870912,                     // the bound the call will run under, after clamping
   "onOwnerLoss": { "policy": "orphan", "timeoutMs": 60000 },
   "owner": { "session": "…", "run": "…", "step": 3 },        // as given; null when none was
@@ -220,6 +222,40 @@ Whether or not `files` is given, a `pathArgs` entry with `role: "write"` whose r
 `attached/` or lies beneath one, by its path or by the device and inode of an existing ancestor, refuses the call with
 `InAttached`. A copy OUT of `attached/` runs; a copy into it, a move out of it (`mv`'s source is written: it is
 removed) and an `rm` in it do not. The mount call `remove` asks there instead, since the person approves it. A written path the program also walks (`walk: true`: `rm -r`, `cp -R`, every `mv` operand) that HOLDS a held `attached/` beneath it is `InAttached` too, with a message that names the path as the call wrote it and the retry, which names paths only so it fits every program (`name the file instead, as in /files/notes.txt rather than /files/`), since the program can change `attached/` without naming it (`rm -r /files`, `cp -R x/attached /files/`, `mv notes.txt /files/`); a path beside `attached/` (`/files/notes.txt`) is not.
+
+#### The hide list
+
+`hideList` carries the person's hiding rules for this call (window-ml's POLICIES.md, "Hiding files"), resolved by the
+worker: the session's rules over the global ones, as one array in ASCENDING precedence, so a later entry decides over
+an earlier one on a path both match. Each entry is `{ id, effect, pattern }`: `effect` is `"hide"` or `"show"`, `id`
+is the worker's (named back in a refusal and in `paths[].hiddenBy`), and `pattern` is an absolute path or a glob with
+`*`, `?` and `[…]` inside one segment, at most 512 characters; at most 512 entries (256 per scope). A pattern whose
+first segment is literally `files` names the session's files and is mapped as a path argument is (above) when `files`
+is given, its folder's characters taken literally, and holds nothing when it is not; any other pattern names a path as
+it is spelled under a root. A refused pattern (`**`, a `.` or `..` segment, an empty
+segment, an unclosed `[`, not absolute, over the bound, or a `show` that could match a credential directory) fails the
+spawn with `BadRequest` naming the entry's `id`: the host matches the worker's rules exactly, so a list the worker
+accepted is never refused here.
+
+- **`hide`** holds what it matches, and everything under a directory it matches, for reading and writing, as a default
+  hold does. On macOS it is a read and write deny by pattern after the template allow; on Linux it is resolved against
+  the tree when the call is spawned (a walk that follows no symlink) and each match is masked, a directory with a
+  `tmpfs` and a file with `/dev/null`. More than 256 matches in all, or a walk past 100,000 directory entries, fails the
+  spawn with `SandboxFailed` naming the entry, never masking some and leaving the rest readable. Each match is listed
+  in `hiddenSecrets`. A matched symlink holds its target too. macOS's rules are case-insensitive, as every Seatbelt rule
+  here; the host's own match (for `hiddenBy` and `hiddenSecrets`) is case-sensitive, as the extension's is.
+- **`show`** releases a default hold on what it matches (a dotenv name, a credential file at a root's top, a held
+  link's target, a linked template), readable and writable, and it is not listed in `hiddenSecrets`. A credential
+  directory and the masks under `$HOME` are never released. On Linux a `show` under a directory a `hide` masks is not
+  released: the mask is the directory's, and the person removes or narrows the `hide`.
+- **A path argument** whose resolved path a `hide` holds has `"hiddenBy": "<id>"` in its `paths` entry and is
+  re-allowed for that call when the call is started, as a named secret is: the worker asks first and names the entry.
+- **An unsandboxed call** (`host-plain`) applies no entry, as it applies no default.
+- A file a call creates that matches a `hide` is held on macOS, whose rules match by pattern, and on Linux from the
+  next call's spawn.
+
+`hello.hideList` says the host takes the field. An older host ignores it, so a worker with a `hide` to apply refuses
+the call itself rather than send it there.
 
 #### A credentialed call
 
