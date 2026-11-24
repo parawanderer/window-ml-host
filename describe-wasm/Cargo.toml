@@ -1,0 +1,20 @@
+[package]
+name = "describe-wasm"
+version = "0.10.0"
+description = "window.ml's describer (wmlhost-describe) behind a raw wasm ABI, for the extension's service worker"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/parawanderer/window-ml-host"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wmlhost-describe = { path = "../describe" }
+serde_json = "1.0.154"
+
+[dev-dependencies]
+# The reply pin's digest (src/replies.rs); already locked for the host's own use.
+sha2 = "0.11.0"

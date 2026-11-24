@@ -81,6 +81,28 @@ jobs:
       - name: The default build has no wmlhub crate
         run: tools/check-no-hub.sh
 
+  # The describer compiled to wasm for the extension, and every shared vector replayed through the built module: a PR
+  # that breaks the wasm build or makes it diverge from the Rust describer is red here, before any tag.
+  describer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: describer
+      - name: Clippy, the wasm crate on its own target
+        run: cargo clippy -p describe-wasm --target wasm32-unknown-unknown --locked -- -D warnings
+      # The reply pin, native side: describe-wasm/src/replies.rs answers every pinned request identically. The wasm side
+      # of the same pin runs in the next step, once there is a wasm to run.
+      - name: The native describer answers the reply pin
+        run: cargo test -p describe-wasm --locked
+      - name: Build describe.wasm and replay the vectors and the reply pin through it
+        run: tools/build-describer.sh
+
   hub-feature:
     runs-on: ubuntu-latest
     steps:

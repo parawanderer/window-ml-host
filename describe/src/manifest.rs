@@ -573,7 +573,7 @@ pub struct Manifest {
     pub env: Vec<String>,
     /// The program shows other processes, so the extension gates it.
     pub reveals: Option<Reveals>,
-    /// A credential the host holds and injects, named by provider ([`crate::credential`]).
+    /// A credential the host holds and injects, named by provider (`credential`).
     pub credential: Option<ManifestCredential>,
     /// What the credentialed profile may connect to.
     pub network: Option<ManifestNetwork>,
@@ -587,7 +587,7 @@ pub struct Manifest {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestCredential {
-    /// A provider of [`crate::credential::PROVIDERS`].
+    /// A provider of `credential::PROVIDERS`.
     pub provider: String,
 }
 

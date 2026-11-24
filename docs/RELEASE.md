@@ -8,7 +8,8 @@ How a `wmlhost` release is cut, what it publishes, and the pin window-ml holds a
 1. Set `version` in `Cargo.toml` to the new version, in a PR, and merge it.
 2. Tag main's merge commit `v<version>` and push the tag (`git tag v0.7.0 <sha> && git push origin v0.7.0`).
 3. The workflow builds each target from the TAG, checks that the binary reports the tag's version, runs
-   `clients/node/smoke.mjs` against the unpacked binary, attests it, and publishes. A version that was not bumped fails
+   `clients/node/smoke.mjs` against the unpacked binary, attests it, builds the describer's wasm and replays every
+   shared vector through it, and publishes. A version that was not bumped fails
    the build before anything is published.
 
 `workflow_dispatch` with a `tag` input builds an existing tag. It cannot replace assets the tag already has. A PR that
@@ -23,10 +24,20 @@ without attesting or publishing.
 | `wmlhost-<tag>-<target>.tar.gz.sha256` | that archive's sha256, in `shasum -a 256` format |
 | `SHA256SUMS` | every archive's sha256, one `<sha256>  <file>` line each, sorted by file name |
 | `install.sh` | the installer with those hashes written in ([INSTALL.md](INSTALL.md)) |
+| `describe.wasm` | the describer (`describe/`) compiled to `wasm32-unknown-unknown` for window.ml's service worker, opt-level `z` (the `wasm` profile); its ABI is in `describe-wasm/src/lib.rs` |
+| `describe.wasm.sha256` | that file's sha256, in `shasum -a 256` format |
+| `describe.json` | `{"commit": <the tag's commit>, "vectorPin": <VECTOR_PIN of tests/manifest_vectors.rs>, "sha256": <describe.wasm's>}` |
 
 Targets: `x86_64-unknown-linux-gnu` (built on Ubuntu 24.04, so glibc 2.39 or newer), `aarch64-unknown-linux-gnu`
 (Ubuntu 24.04 arm), `aarch64-apple-darwin` (macOS 15), `x86_64-apple-darwin` (Intel Mac, macOS 15 on the Intel runner). Each is the default feature set: `native`, no `hub`. Linux needs
 bubblewrap installed at run time; it is not shipped.
+
+The wasm is built on Ubuntu 24.04 with the pinned toolchain by `tools/build-describer.sh`, which `ci.yml` runs on every PR
+too. The script replays every vector row through the built module (`tools/describe-replay.mjs`) and then the reply pin
+(`tools/describe-replies.mjs`: every hostile and malformed shape through the same ABI, with nothing imported and no
+request a trap) before it writes the assets, so a describer that diverges from the recorded vectors is never published. `describe.wasm` has a
+build-provenance attestation like the archives; window-ml pins its sha256 beside the binary's, at the same tag, and
+`vectorPin` tells it which vectors the build was held to.
 
 The binaries are not code-signed. Each archive has a build-provenance attestation: `gh attestation verify
 <archive> --repo parawanderer/window-ml-host` checks that this workflow built it at that tag. That is provenance. What
