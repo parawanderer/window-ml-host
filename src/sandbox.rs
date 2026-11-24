@@ -1211,6 +1211,41 @@ mod tests {
     }
 
     #[test]
+    fn bwrap_a_named_file_under_a_credential_dir_keeps_the_mask_and_is_bound_back_read_only() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path();
+        std::fs::create_dir(h.join(".ssh")).unwrap();
+        std::fs::write(h.join(".ssh/id_x.pub"), "").unwrap();
+        let mut pl = plan();
+        pl.roots = vec![];
+        pl.home = Some(h.to_path_buf());
+        pl.allow_read.push(h.join(".ssh/id_x.pub"));
+        let a: Vec<String> = bwrap_args(&pl, h).iter().map(|s| s.to_string_lossy().into_owned()).collect();
+        let ssh = h.join(".ssh").display().to_string();
+        let named = h.join(".ssh/id_x.pub").display().to_string();
+        let tmpfs = a.windows(2).position(|w| w[0] == "--tmpfs" && w[1] == ssh);
+        let back = a.windows(3).position(|w| w[0] == "--ro-bind" && w[1] == named && w[2] == named);
+        assert!(tmpfs.is_some(), "naming a file under ~/.ssh unmasked the directory: {a:?}");
+        assert!(back.is_some_and(|b| b > tmpfs.unwrap()), "the named file is bound back over the mask: {a:?}");
+    }
+
+    #[test]
+    fn bwrap_a_named_root_top_secret_is_bound_read_only() {
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path();
+        std::fs::write(r.join(".env"), "").unwrap();
+        let mut pl = plan();
+        pl.roots = vec![r.to_path_buf()];
+        pl.home = None;
+        pl.allow_read.push(r.join(".env"));
+        let a: Vec<String> = bwrap_args(&pl, r).iter().map(|s| s.to_string_lossy().into_owned()).collect();
+        let env = r.join(".env").display().to_string();
+        let rw = a.windows(3).rposition(|w| w[0] == "--bind" && env.starts_with(&w[1]));
+        let ro = a.windows(3).position(|w| w[0] == "--ro-bind" && w[1] == env && w[2] == env);
+        assert!(ro.is_some_and(|ro| rw.is_none_or(|rw| ro > rw)), "a named .env is left in the writable root: {a:?}");
+    }
+
+    #[test]
     fn bwrap_masks_existing_credential_dirs_and_binds_the_roots() {
         let home = tempfile::tempdir().unwrap();
         std::fs::create_dir(home.path().join(".ssh")).unwrap();
