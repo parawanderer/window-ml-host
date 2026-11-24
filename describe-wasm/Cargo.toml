@@ -1,6 +1,6 @@
 [package]
 name = "describe-wasm"
-version = "0.10.0"
+version = "0.11.0"
 description = "window.ml's describer (wmlhost-describe) behind a raw wasm ABI, for the extension's service worker"
 edition = "2024"
 rust-version = "1.85"

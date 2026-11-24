@@ -5,7 +5,7 @@ inside it (`tools/render-install.sh`, from `tools/install.sh.in`). window.ml's S
 with the version and the extension's own id filled in:
 
 ```sh
-curl -fsSL https://github.com/parawanderer/window-ml-host/releases/download/v0.10.0/install.sh | sh -s -- --extension-id <32 letters a-p>
+curl -fsSL https://github.com/parawanderer/window-ml-host/releases/download/v0.11.0/install.sh | sh -s -- --extension-id <32 letters a-p>
 ```
 
 The version is in the URL, so the line names the bytes it runs; a release never changes after publication (RELEASE.md).

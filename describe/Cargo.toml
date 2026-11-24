@@ -1,6 +1,6 @@
 [package]
 name = "wmlhost-describe"
-version = "0.10.0"
+version = "0.11.0"
 description = "window.ml's describer: what an argv does, read from a program manifest, with no I/O (the process host and the extension's wasm both build it)"
 edition = "2024"
 rust-version = "1.85"
