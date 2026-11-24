@@ -901,6 +901,87 @@ fn the_sandbox_hides_credential_stores_unless_the_call_names_one() {
     h.close();
 }
 
+/// Naming one file in a credential directory opens that file, never the directory: the private key beside a named public
+/// one stays unreadable. Linux used to skip the directory's whole mask for a named path under it.
+#[test]
+fn naming_a_file_in_a_credential_directory_opens_only_that_file() {
+    let home = tempfile::tempdir().unwrap();
+    let home_r = home.path().canonicalize().unwrap();
+    std::fs::create_dir(home_r.join(".ssh")).unwrap();
+    std::fs::write(home_r.join(".ssh/id_test"), "PRIVATE").unwrap();
+    std::fs::write(home_r.join(".ssh/id_test.pub"), "PUBLIC").unwrap();
+    let (_d, r) = root();
+    let mut h = Host::start_with_env(&[("HOME", home_r.to_str().unwrap())]);
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let (key, public) = (home_r.join(".ssh/id_test"), home_r.join(".ssh/id_test.pub"));
+    let script = format!("cat \"$1\"; echo; cat {}; ls {}", key.display(), home_r.join(".ssh").display());
+    let (f, d) = h.run(json!({ "argv": ["sh", "-c", script, "sh", public], "cwd": r, "pathArgs": [{ "arg": 4 }] }));
+    assert_eq!(f["paths"][0]["secret"], true, "{f}");
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(out.contains("PUBLIC"), "the named file is readable: {out}");
+    assert!(!out.contains("PRIVATE"), "naming the public key opened the private one: {out}");
+    assert!(!out.contains("id_test\n"), "naming one file listed the directory: {out}");
+    h.close();
+}
+
+/// A named path that is a symlink into a credential directory is resolved to the file it names, which alone is opened:
+/// the link reads the file, and its siblings stay held.
+#[test]
+fn a_named_symlink_into_a_credential_directory_opens_only_its_target() {
+    let home = tempfile::tempdir().unwrap();
+    let home_r = home.path().canonicalize().unwrap();
+    std::fs::create_dir(home_r.join(".ssh")).unwrap();
+    std::fs::write(home_r.join(".ssh/id_test"), "PRIVATE").unwrap();
+    std::fs::write(home_r.join(".ssh/id_test.pub"), "PUBLIC").unwrap();
+    let (_d, r) = root();
+    std::os::unix::fs::symlink(home_r.join(".ssh/id_test.pub"), r.join("pubkey")).unwrap();
+    let mut h = Host::start_with_env(&[("HOME", home_r.to_str().unwrap())]);
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let script = format!("cat \"$1\"; echo; cat {}", home_r.join(".ssh/id_test").display());
+    let (f, d) = h.run(json!({ "argv": ["sh", "-c", script, "sh", "pubkey"], "cwd": r, "pathArgs": [{ "arg": 4 }] }));
+    assert_eq!(f["paths"][0]["secret"], true, "{f}");
+    let out = text(&h.read_all(&d["stdout"]));
+    assert!(out.contains("PUBLIC"), "the link reads the named file: {out}");
+    assert!(!out.contains("PRIVATE"), "naming a link into ~/.ssh opened a sibling: {out}");
+    h.close();
+}
+
+/// Naming a held root-top secret re-allows its READ only: the call reads it, and a write, an append, a truncation, a
+/// rename or a removal of it fails, under the absent envelope and under `write: "roots"`. Linux used to leave a named
+/// file unmasked inside the root's writable bind.
+#[test]
+fn a_named_root_top_dotenv_file_is_readable_and_not_writable() {
+    let (_d, r) = root();
+    std::fs::write(r.join(".env"), "DOTENV-SECRET\n").unwrap();
+    let mut h = Host::start();
+    if !h.sandbox_available() {
+        return h.close();
+    }
+    h.ok("configure", json!({ "roots": [r] }));
+    let roots_envelope = !cfg!(target_os = "linux") || landlock_abi(&mut h).is_some();
+    for cmd in ["echo X >> \"$1\"", "echo X > \"$1\"", ": > \"$1\"", "mv \"$1\" moved.txt", "rm \"$1\""] {
+        let args = json!({ "argv": ["sh", "-c", format!("cat \"$1\" && {cmd}"), "sh", ".env"], "cwd": r, "pathArgs": [{ "arg": 4 }] });
+        let mut runs = vec![h.run(args.clone())];
+        if roots_envelope {
+            runs.push(run_envelope(&mut h, args, json!({ "write": "roots", "exec": "any" })));
+        }
+        for (f, d) in runs {
+            assert_eq!(f["paths"][0]["secret"], true, "{f}");
+            assert_eq!(text(&h.read_all(&d["stdout"])), "DOTENV-SECRET\n", "{cmd}: the named file is readable");
+            assert_ne!(d["code"], 0, "{cmd} on a named .env succeeded: {d}");
+            assert_eq!(std::fs::read(r.join(".env")).unwrap(), b"DOTENV-SECRET\n", "{cmd}");
+            assert!(!r.join("moved.txt").exists(), "{cmd}");
+        }
+    }
+    h.close();
+}
+
 #[test]
 fn a_dotenv_file_is_unreadable_unless_named_and_the_facts_say_so() {
     let (_d, r) = root();

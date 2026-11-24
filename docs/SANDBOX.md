@@ -37,7 +37,7 @@ malformed is `BadRequest`, never a silent fallback. `done` always reports the sc
 | Processes (`exec: "any"`, the floor) | start any program, all inheriting the profile | the same, in a fresh PID namespace |
 | Processes (`exec: "program-only"`) | only the resolved set, by `literal`; `sh -c 'ls'` cannot exec `ls` | the same, by Landlock EXECUTE grants |
 | Credential stores (`.ssh`, `.gnupg`, `.aws`, `.azure`, `.kube`, `.docker`, `.password-store`, `~/Library/Keychains`, `.config/gh`, `.config/gcloud`, `.netrc`, `.git-credentials`, `.pgpass`, `.env`, `.env.*`) | unreadable at ANY depth, matched by regex, case-insensitively | masked under `$HOME` only (an empty tmpfs or `/dev/null` bound over each that exists), and `.env` / `.env.*` / `.netrc` / `.git-credentials` / `.pgpass` also at the TOP of each root, with a hardlink there to one, and a symlink there with one of those names together with the regular file it resolves to, inside the roots or not (a dangling one, or one to a directory, a device or `/proc`, is not held); a deeper one is readable (the gap below); the `.env.example`, `.env.sample` and `.env.template` templates are readable on both |
-| …unless the call NAMES one | a marked path argument flagged `secret` is re-allowed by a `literal` rule: the person approved this exact path | the same, by not masking it |
+| …unless the call NAMES one | a marked path argument flagged `secret` is re-allowed by a `literal` rule: the person approved this exact path; a named directory reopens its own listing, not its entries | a named FILE is bound back read-only over its mask, after every writable bind, with the other links to its inode at a root's top; a named credential DIRECTORY is not masked, so its contents are open; a path named INSIDE a masked directory releases nothing, so the call reaches none of it (macOS lists it) |
 | Files that run code later (`.git/hooks/`, `.git/config`, `.gitmodules`, `.vscode/`, `.idea/`, `.claude/`, `.gitconfig`, `.mcp.json`, `.envrc`, shell rc files) | unwritable at any depth (regex), and `.git` cannot be renamed away | absent envelope: re-bound read-only where they exist at the TOP of each root when the call starts (the gap stays); `write: "roots"`: never writable, the name-immutable top level covers the ones that do not exist yet |
 | The session's held output | neither readable nor writable | masked (empty tmpfs) |
 
@@ -263,9 +263,12 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
     above), and on each root-top hardlink to one.
     On Linux a root-top held file is a bind mount of `/dev/null`: a rename or unlink fails with EBUSY and a write with
     EROFS. A deeper dotenv file on Linux is readable anyway (the gap above). Naming a file re-allows its READ only,
-    never a write. On macOS a sandboxed call can rename the directory that holds a deeper dotenv file, but not read the
-    file at its new path: the read deny matches the file's own name at any depth, and a parent's rename leaves that name
-    unchanged.
+    never a write: on Linux the named file, and a root-top secret the naming opens with it (a hardlink to its inode, a
+    held-name link's target), is bound back read-only over the root's writable bind, so a write fails with EROFS.
+    FIXED 2026-11-24: before, Linux left a named root-top secret unmasked inside the writable bind, and a call that
+    named `.env` could also write it. On macOS a sandboxed call can rename the directory that holds a deeper dotenv
+    file, but not read the file at its new path: the read deny matches the file's own name at any depth, and a parent's
+    rename leaves that name unchanged.
   - A symlink at a root's top with a held name is what a loader opens, so it is listed and the regular file it
     resolves to is held with it, by literal on macOS and by a mask on Linux, wherever that file is. Holding the target
     is what holds the value on both: on macOS the link's own name is refused (EPERM) but the target read under its own
@@ -283,7 +286,11 @@ Cost is the envelope's own. A manifest claiming `write(fs(p))` at the top level 
     FRESH name: a link retargeted after the scan, read through the new target's own path. On Linux nothing made after
     the scan is masked: a held-name link made or retargeted then reads its target, and so does the target by its path.
   - Naming a secret path in `pathArgs` unmasks it for the WHOLE call, every process in it, not only the program that
-    was given the argument: the approval of the call that names it is the control.
+    was given the argument: the approval of the call that names it is the control. It unmasks that path alone: a
+    named file under a masked credential directory is bound back read-only over the directory's mask, which stays, so
+    `~/.ssh/id_x.pub` named leaves `~/.ssh/id_x` unreadable, and a named link into the directory opens only the file
+    it resolves to. FIXED 2026-11-24: before, Linux dropped the whole directory's mask for a named path under it, and
+    naming a public key opened the private key beside it. macOS allowed the literal path alone on both counts.
 - **A held-name link to a non-regular target is refused but listed nowhere.** A dangling `.env`, or one to a
   directory, a device or a file under `/proc` or `/dev`, is refused by the macOS name rule, and `hiddenSecrets` does
   not name it, so a loader's EPERM there is not explained by the list.
