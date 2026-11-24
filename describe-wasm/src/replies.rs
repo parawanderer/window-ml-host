@@ -330,7 +330,9 @@ fn a_call_describes_identically_natively_and_in_the_pin_the_wasm_is_replayed_aga
         }
         std::fs::create_dir_all(path.parent().expect("tests/")).expect("tests/");
         let pin = json!({ "note": NOTE, "whole": whole, "digest": hashed });
-        std::fs::write(&path, format!("{pin}\n")).expect("write the pin");
+        // Pretty, one value per line: a blessed change shows in the diff as the replies it changed.
+        let text = serde_json::to_string_pretty(&pin).expect("the pin serialises");
+        std::fs::write(&path, format!("{text}\n")).expect("write the pin");
         panic!("the pin was rewritten ({BLESS}): read the diff, then run again without it");
     }
     let pin = read(&path);
