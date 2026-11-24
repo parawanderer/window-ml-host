@@ -842,14 +842,26 @@ pub fn bwrap_args(plan: &Plan, cwd: &Path) -> Vec<OsString> {
         masks.extend(DENY_READ_FILES.iter().map(|f| home.join(f)));
     }
     masks.extend(root_top_secrets(&plan.roots, &plan.allow_read));
-    for m in masks {
-        if plan.allow_read.iter().any(|a| a.starts_with(&m)) {
-            continue;
-        }
-        match std::fs::symlink_metadata(&m) {
-            Ok(md) if md.is_dir() => push(&[&s("--tmpfs"), &m.into()]),
-            Ok(md) if md.is_file() => push(&[&s("--ro-bind"), &s("/dev/null"), &m.into()]),
+    // Naming a path re-allows its READ, and only its own: a mask over a directory stays when a call names a file
+    // under it, and a named path is never masked itself.
+    for m in masks.iter().filter(|m| !plan.allow_read.contains(m)) {
+        match std::fs::symlink_metadata(m) {
+            Ok(md) if md.is_dir() => push(&[&s("--tmpfs"), &m.clone().into()]),
+            Ok(md) if md.is_file() => push(&[&s("--ro-bind"), &s("/dev/null"), &m.clone().into()]),
             _ => {}
+        }
+    }
+    // What naming released is bound back read-only over the masks and the roots' writable binds: a named file under a
+    // masked directory, a named held file, and a root-top secret the naming opened (a hardlink to the named inode, a
+    // held-name link's target). A bind lands on the file, so a link through to it reads it too.
+    let mut opened: Vec<PathBuf> =
+        plan.allow_read.iter().filter(|n| masks.iter().any(|m| n.starts_with(m))).cloned().collect();
+    opened.extend(root_top_secrets(&plan.roots, &[]).into_iter().filter(|p| !masks.contains(p)));
+    opened.sort();
+    opened.dedup();
+    for n in opened {
+        if std::fs::symlink_metadata(&n).is_ok_and(|md| md.is_file()) {
+            push(&[&s("--ro-bind"), &n.clone().into(), &n.into()]);
         }
     }
     // A credentialed call's proxy socket: its own directory, bound after the masks (the session's socket directory is
@@ -1211,7 +1223,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "temporary: lets CI reach the stdio rows before the fix"]
     fn bwrap_a_named_file_under_a_credential_dir_keeps_the_mask_and_is_bound_back_read_only() {
         let home = tempfile::tempdir().unwrap();
         let h = home.path();
@@ -1231,7 +1242,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "temporary: lets CI reach the stdio rows before the fix"]
     fn bwrap_a_named_root_top_secret_is_bound_read_only() {
         let root = tempfile::tempdir().unwrap();
         let r = root.path();
