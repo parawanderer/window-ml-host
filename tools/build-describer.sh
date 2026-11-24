@@ -13,6 +13,9 @@ built=target/wasm32-unknown-unknown/wasm/describe_wasm.wasm
 
 # A divergence from the recorded vectors stops here, before anything is written.
 node tools/describe-replay.mjs "$built"
+# And from the reply pin the native describer is held to: every hostile and malformed shape, through the same ABI, plus
+# the two properties only the artifact shows (nothing imported, no request a trap).
+node tools/describe-replies.mjs "$built"
 
 mkdir -p "$out"
 cp "$built" "$out/describe.wasm"

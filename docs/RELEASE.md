@@ -33,8 +33,9 @@ Targets: `x86_64-unknown-linux-gnu` (built on Ubuntu 24.04, so glibc 2.39 or new
 bubblewrap installed at run time; it is not shipped.
 
 The wasm is built on Ubuntu 24.04 with the pinned toolchain by `tools/build-describer.sh`, which `ci.yml` runs on every PR
-too. The script replays every vector row through the built module (`tools/describe-replay.mjs`) before it writes the
-assets, so a describer that diverges from the recorded vectors is never published. `describe.wasm` has a
+too. The script replays every vector row through the built module (`tools/describe-replay.mjs`) and then the reply pin
+(`tools/describe-replies.mjs`: every hostile and malformed shape through the same ABI, with nothing imported and no
+request a trap) before it writes the assets, so a describer that diverges from the recorded vectors is never published. `describe.wasm` has a
 build-provenance attestation like the archives; window-ml pins its sha256 beside the binary's, at the same tag, and
 `vectorPin` tells it which vectors the build was held to.
 

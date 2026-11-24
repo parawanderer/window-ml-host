@@ -14,3 +14,7 @@ crate-type = ["cdylib"]
 [dependencies]
 wmlhost-describe = { path = "../describe" }
 serde_json = "1.0.154"
+
+[dev-dependencies]
+# The reply pin's digest (src/replies.rs); already locked for the host's own use.
+sha2 = "0.11.0"

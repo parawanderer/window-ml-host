@@ -108,3 +108,6 @@ pub unsafe extern "C" fn describe(ptr: *const u8, len: usize) -> *mut u8 {
     std::mem::forget(b);
     p
 }
+
+#[cfg(test)]
+mod replies;
