@@ -11,6 +11,7 @@ pub mod fsx;
 pub mod gitconfig;
 pub mod gitfacts;
 pub mod glob;
+pub mod hide_list;
 #[cfg(feature = "hub")]
 pub mod hub;
 pub mod install;
