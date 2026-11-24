@@ -49,6 +49,12 @@
 //!      the target's fresh name is the window, with the next call's scan holding the link and the target; a dotenv-named
 //!      link to a DIRECTORY or a device holds nothing, and what the directory holds is judged by its own name; and every
 //!      path the facts list is one the sandbox really holds, on both platforms.
+//!   L. a NAMED path inside what is masked (host#59, fixed at 3fc0004): on Linux the mask over the directory stays and
+//!      the named file is bound back read-only AFTER the root's writable bind and its mask; a named path that is itself
+//!      a credential file is not masked and is read-only; naming a credential DIRECTORY itself is the whole release on
+//!      Linux while macOS reopens only its own inode; a named directory inside a masked one is not bound back, so Linux
+//!      releases nothing (the defect at 3fc0004's parent released the whole mask) while macOS lists the literal; and
+//!      naming a dotenv file binds its root-top links, and the same inode's link at another root's top, read-only too.
 //!
 //! THE ONE THAT MATTERS MOST: D. A hardlink is the inode under another name, and no name rule sees it; the build now
 //! judges each root's TOP by (dev, ino), so the shape is closed there and stays open below it, by name and by inode alike.
@@ -88,6 +94,18 @@
 //!    `root_top_secrets`, so an extra entry reaches the masks and the deny line together. Adding `notes.txt` to the
 //!    output reds section E, A and J on the unexpected mask, and K5 stays green because both halves moved together —
 //!    which is the property K5 exists to state, not a gap in it.)
+//!
+//! MUTATION PER ROW, MEASURED AT 3fc0004 (section L: the whole parent — the mask filter's `starts_with` and no `opened`
+//! loop — put back with `git show 3fc0004a^:src/sandbox.rs > src/sandbox.rs`, this file run, restored with
+//! `git checkout -- src/`):
+//!   L1  the `opened` loop absent, as the parent has it → L1 red at "the named file is bound back read-only over the mask
+//!      and the root's writable bind": nothing is bound back, so a named secret in a writable root stays writable.
+//!   L3  the mask filter `plan.allow_read.iter().any(|a| a.starts_with(&m))` → L3 red at "naming a directory inside
+//!      ~/.ssh dropped the whole mask": the named INNER directory released every sibling.
+//!   L4  the `opened` loop absent → L4 red at its first name (`.env` itself), and would red on both links: what naming
+//!      opens is left inside the writable roots.
+//!   L2  GREEN under the parent, which is what it is for: it pins behaviour the fix did NOT change (naming the directory
+//!      itself is the whole release on Linux; macOS reopens the literal only), as a limit with its divergence named.
 //! WHAT THIS FILE CANNOT ROW (named so the next reader does not look for it):
 //!   - The case variant on a case-insensitive volume: `.ENV` and `.env` are one inode there, so a real read cannot tell
 //!     the rule from the filesystem. B pins the pattern's case class instead; a case-SENSITIVE volume is not available
@@ -107,6 +125,10 @@
 //!   - The LINUX half of J as a real command: there is no Linux host in this session, so a rename or unlink inside the
 //!     namespace cannot be run here. E asserts the mask list the rename would hit (each root's top names and each
 //!     root-top hardlink, by bind mount), and the lane's tests/stdio.rs row asserts the refusal on Linux CI.
+//!   - The LINUX half of L as a real command, for the same reason: naming a FILE under a mask is run end to end by
+//!     tests/stdio.rs on Linux CI, but naming a DIRECTORY (the credential directory itself, or one inside it) is not,
+//!     so L asserts the bind list, which is the whole decision there. The macOS halves ARE a real listing and a real
+//!     read, which is what makes the two platforms' divergence a measured fact rather than an expectation.
 //!   - A rename made OUTSIDE the sandbox between the scan and the spawn: no rule can see it, which is the same window G
 //!     pins from the read side and docs/SANDBOX.md documents. J closes the move the CALL can make, not the person's own.
 //!   - K3's window is not closable at the path level, for G's reason: the profile is built from ONE scan. What the row
@@ -237,15 +259,26 @@ impl Tree {
     fn temp(&self) -> PathBuf {
         self._d.path().canonicalize().unwrap()
     }
-    /// What `sandbox-exec` with `profile` makes of a read of `path`: whether it succeeded, and its output (either the
-    /// bytes or the refusal).
+    /// What `sandbox-exec` with `profile` makes of `program path`: whether it succeeded, and its output (either the
+    /// answer or the refusal). `program` is an absolute path, since the profile allows the exec of what it names.
     #[cfg(target_os = "macos")]
-    fn read_under(&self, profile: &str, path: &Path) -> (bool, String) {
-        let out = Command::new("/usr/bin/sandbox-exec").args(["-p", profile, "/bin/cat"]).arg(path).output().unwrap();
+    fn run_under(&self, profile: &str, program: &str, path: &Path) -> (bool, String) {
+        let out = Command::new("/usr/bin/sandbox-exec").args(["-p", profile, program]).arg(path).output().unwrap();
         (
             out.status.success(),
             format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)),
         )
+    }
+    /// A read of `path` through the profile: whether it succeeded, and its bytes or the refusal.
+    #[cfg(target_os = "macos")]
+    fn read_under(&self, profile: &str, path: &Path) -> (bool, String) {
+        self.run_under(profile, "/bin/cat", path)
+    }
+    /// A directory LISTING through the profile. `cat` cannot ask that question (it fails on a directory whatever the
+    /// profile says), and a named directory's own inode is exactly what a name rule about a directory has to answer.
+    #[cfg(target_os = "macos")]
+    fn list_under(&self, profile: &str, path: &Path) -> (bool, String) {
+        self.run_under(profile, "/bin/ls", path)
     }
     fn masked_by(&self, p: &Plan) -> Vec<String> {
         let a: Vec<String> = bwrap_args(p, &self.root).iter().map(|s| s.to_string_lossy().into_owned()).collect();
@@ -1083,5 +1116,175 @@ fn every_path_the_facts_list_is_one_the_sandbox_holds_on_both_platforms() {
             let (ok, out) = t.read_under(&profile, p);
             assert!(!ok, "listed as held but readable: {} ({out})", p.display());
         }
+    }
+}
+
+// --- L: a NAMED path inside what is masked (host#59, fixed at 3fc0004) ---
+//
+// Naming a path re-allows its READ and only its own. On Linux that is: the mask over the directory the named file sits
+// in STAYS, and the named file is bound back read-only AFTER the root's writable bind and after that mask; a named path
+// that is itself a credential file is not masked and is read-only the same way; and a named path that is a DIRECTORY is
+// not bound back at all, so naming a directory inside a masked one releases nothing there. macOS is the other half of
+// each: the named path gets a `literal`, so it reopens that one inode — a named file's contents, a named directory's own
+// listing — and never a name inside it.
+//
+// The lane's two unit rows (src/sandbox.rs) pin the mask-and-re-bind shape against a home that is not a root, and
+// tests/stdio.rs runs a named file under ~/.ssh end to end on Linux CI. These rows add what those do not: the ORDER
+// over the root's rw bind, a named file that is itself the mask, a directory named under a mask (a FAILING-FIRST row:
+// before 3fc0004 naming it dropped the whole mask), and what naming a dotenv file opens with it.
+
+/// The bubblewrap arguments as strings, in order. A row that is about WHERE a bind lands reads the list itself.
+fn bwrap(p: &Plan, cwd: &Path) -> Vec<String> {
+    bwrap_args(p, cwd).iter().map(|s| s.to_string_lossy().into_owned()).collect()
+}
+
+#[test]
+fn a_named_file_under_a_credential_dir_is_bound_back_read_only_over_the_root_and_after_its_mask() {
+    let t = Tree::new();
+    std::fs::create_dir_all(t.at(".ssh")).unwrap();
+    std::fs::write(t.at(".ssh/id_x.pub"), "PUBLIC\n").unwrap();
+    std::fs::write(t.at(".ssh/id_private"), "PRIVATE\n").unwrap();
+    std::fs::write(t.at(".netrc"), "machine example.invalid\n").unwrap();
+    // $HOME is the root, which is the case the ordering is for: the root is `--bind`ed writable, so a named secret in
+    // it stays writable unless the read-only bind lands after that bind, and the mask it sits under lands before it.
+    let mut pl = plan(vec![t.root.clone()]);
+    pl.home = Some(t.root.clone());
+    pl.allow_read = vec![t.at(".ssh/id_x.pub"), t.at(".netrc")];
+    let a = bwrap(&pl, &t.root);
+    let root = t.root.display().to_string();
+    let ssh = t.at(".ssh").display().to_string();
+    let id = t.at(".ssh/id_x.pub").display().to_string();
+    let private = t.at(".ssh/id_private").display().to_string();
+    let netrc = t.at(".netrc").display().to_string();
+    let tmpfs = a.windows(2).position(|w| w[0] == "--tmpfs" && w[1] == ssh);
+    assert!(tmpfs.is_some(), "naming a file under ~/.ssh unmasked the directory: {a:?}");
+    let rw = a.windows(3).rposition(|w| w[0] == "--bind" && w[1] == root && w[2] == root);
+    assert!(rw.is_some(), "the root is not bound at all: {a:?}");
+    let back = a.windows(3).position(|w| w[0] == "--ro-bind" && w[1] == id && w[2] == id);
+    assert!(
+        back.is_some_and(|b| b > tmpfs.unwrap() && b > rw.unwrap()),
+        "the named file is bound back read-only over the mask and the root's writable bind: {a:?}"
+    );
+    // Naming one file does not open the sibling beside it: the tmpfs is what the sibling is behind.
+    assert!(
+        !a.windows(3).any(|w| w[0] == "--ro-bind" && (w[1] == private || w[2] == private)),
+        "a sibling the call did not name was opened: {a:?}"
+    );
+    // A named file that is ITSELF the mask: no /dev/null over it (naming is the release), and the same read-only bind
+    // after the root's writable one.
+    assert!(
+        !a.windows(3).any(|w| w[0] == "--ro-bind" && w[1] == "/dev/null" && w[2] == netrc),
+        "a named .netrc is still masked: {a:?}"
+    );
+    let netrc_back = a.windows(3).position(|w| w[0] == "--ro-bind" && w[1] == netrc && w[2] == netrc);
+    assert!(netrc_back.is_some_and(|b| b > rw.unwrap()), "a named .netrc is left writable in the root: {a:?}");
+}
+
+#[test]
+fn naming_a_credential_directory_itself_drops_its_linux_mask_and_macos_reopens_only_its_literal() {
+    let t = Tree::new();
+    std::fs::create_dir_all(t.at(".ssh")).unwrap();
+    std::fs::write(t.at(".ssh/id_x"), "PRIVATE\n").unwrap();
+    std::fs::create_dir_all(t.at(".gnupg")).unwrap();
+    let mut pl = plan(vec![t.root.clone()]);
+    pl.home = Some(t.root.clone());
+    pl.allow_read = vec![t.at(".ssh")];
+    let a = bwrap(&pl, &t.root);
+    let ssh = t.at(".ssh").display().to_string();
+    let gnupg = t.at(".gnupg").display().to_string();
+    // Linux: naming the directory is the whole release — it is not masked, and nothing is bound back (a directory is
+    // not what the re-bind binds), so its contents are as open as the root it sits under.
+    assert!(
+        !a.windows(2).any(|w| w[0] == "--tmpfs" && w[1] == ssh),
+        "naming the directory itself must drop its mask: {a:?}"
+    );
+    assert!(
+        !a.windows(3).any(|w| w[0] == "--ro-bind" && (w[1] == ssh || w[1].starts_with(&format!("{ssh}/")))),
+        "nothing is bound back for a named directory: {a:?}"
+    );
+    // …and the release is the ONE name: another credential directory under the same home keeps its mask.
+    assert!(a.windows(2).any(|w| w[0] == "--tmpfs" && w[1] == gnupg), "naming .ssh released ~/.gnupg too: {a:?}");
+    // macOS, a real listing and a real read: the `literal` the named path gets reopens the directory's OWN inode (its
+    // listing), while the credential regex still holds what it contains. Pinned as the divergence it is — the two
+    // platforms disagree once a directory itself is named; update docs/SANDBOX.md if either side moves.
+    #[cfg(target_os = "macos")]
+    {
+        let profile = seatbelt_profile(&pl);
+        let (ok, out) = t.list_under(&profile, &t.at(".ssh"));
+        assert!(ok && out.contains("id_x"), "the named directory's own listing is its literal: {out}");
+        let (ok, out) = t.read_under(&profile, &t.at(".ssh/id_x"));
+        assert!(
+            !ok && !out.contains("PRIVATE"),
+            "a file inside the named directory is still the credential regex's: {out}"
+        );
+    }
+}
+
+#[test]
+fn a_named_directory_inside_a_masked_directory_releases_nothing_on_linux_and_lists_on_macos() {
+    let t = Tree::new();
+    std::fs::create_dir_all(t.at(".ssh/keys")).unwrap();
+    std::fs::write(t.at(".ssh/keys/id_x"), "PRIVATE\n").unwrap();
+    let mut pl = plan(vec![t.root.clone()]);
+    pl.home = Some(t.root.clone());
+    pl.allow_read = vec![t.at(".ssh/keys")];
+    let a = bwrap(&pl, &t.root);
+    let ssh = t.at(".ssh").display().to_string();
+    let keys = t.at(".ssh/keys").display().to_string();
+    let id = t.at(".ssh/keys/id_x").display().to_string();
+    // FAILING-FIRST, for 3fc0004's parent: naming a path under a mask dropped the mask when the named path started
+    // with it, so naming `~/.ssh/keys` released all of `~/.ssh`. Now the mask is the DIRECTORY's decision.
+    assert!(
+        a.windows(2).any(|w| w[0] == "--tmpfs" && w[1] == ssh),
+        "naming a directory inside ~/.ssh dropped the whole mask: {a:?}"
+    );
+    // A directory cannot be bound back, and its file was not named, so on Linux the release reaches nothing at all.
+    assert!(
+        !a.windows(3).any(|w| w[0] == "--ro-bind" && (w[1] == keys || w[1] == id)),
+        "the named directory, or a file under it, is bound back inside the mask: {a:?}"
+    );
+    // macOS: the literal covers the named directory's own inode, so its listing succeeds — while the file inside it,
+    // which nothing named, is still the credential regex's. The same pin as above, one level down.
+    #[cfg(target_os = "macos")]
+    {
+        let profile = seatbelt_profile(&pl);
+        let (ok, out) = t.list_under(&profile, &t.at(".ssh/keys"));
+        assert!(ok && out.contains("id_x"), "the named directory's own listing is its literal: {out}");
+        let (ok, out) = t.read_under(&profile, &t.at(".ssh/keys/id_x"));
+        assert!(!ok && !out.contains("PRIVATE"), "an unnamed file inside the named directory is readable: {out}");
+    }
+}
+
+#[test]
+fn naming_a_dotenv_file_binds_what_its_inode_is_reachable_by_back_read_only() {
+    let t = Tree::new();
+    let other = t.temp().join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    std::fs::write(other.join(".env"), "SECOND\n").unwrap();
+    std::fs::hard_link(t.at(".env"), other.join("cross.txt")).unwrap();
+    let mut pl = plan(vec![t.root.clone(), other.clone()]);
+    pl.allow_read = vec![t.at(".env")];
+    let a = bwrap(&pl, &t.root);
+    // Naming `.env` opens its READ, and the inode it names is reachable as the root-top hardlink beside it and as the
+    // other root's link it was hardlinked into. Both are where naming released them — inside a writable root — so both
+    // are bound back read-only, after every writable bind.
+    let last_bind = a.windows(3).rposition(|w| w[0] == "--bind").expect("a root is writable");
+    for p in [t.at(".env"), t.at(ROOT_TOP_LINK), other.join("cross.txt")] {
+        let s = p.display().to_string();
+        let ro = a.windows(3).position(|w| w[0] == "--ro-bind" && w[1] == s && w[2] == s);
+        assert!(
+            ro.is_some_and(|ro| ro > last_bind),
+            "what naming .env opened is read-only over the writable roots: {} ({a:?})",
+            p.display()
+        );
+    }
+    // The release is that INODE's names: a sibling held name, and another root's own .env, are still masked.
+    for p in [t.at(".env.local"), other.join(".env")] {
+        let s = p.display().to_string();
+        assert!(
+            a.windows(3).any(|w| w[0] == "--ro-bind" && w[1] == "/dev/null" && w[2] == s),
+            "naming .env released a name of another inode: {} ({a:?})",
+            p.display()
+        );
     }
 }
