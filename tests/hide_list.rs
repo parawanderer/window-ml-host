@@ -204,6 +204,68 @@ fn a_hide_of_a_directory_holds_its_subtree_and_not_a_prefix_sibling() {
     h.close();
 }
 
+// --- what a hide leaves visible: the parent's listing, and a stat ---
+
+/// A hide of a FILE reads it and writes it, but cannot take its name out of its parent's listing: `ls` names it on both
+/// platforms. Its metadata is where they part: Seatbelt's read deny covers `file-read-metadata`, so `test -e` fails; on
+/// Linux the mask is a bind of `/dev/null`, so the path exists and is a character device (the stated limit).
+#[test]
+fn a_hidden_file_is_named_by_its_parent_and_its_stat_is_a_platform_difference() {
+    let (_d, r) = root();
+    std::fs::write(r.join("secret.txt"), "SECRET\n").unwrap();
+    let Some(mut h) = sandboxed(&r) else { return };
+    let hide = json!([entry("h1", "hide", r.join("secret.txt"))]);
+    let script = "ls; echo ---LISTED; cat secret.txt 2>/dev/null; echo ---CAT; \
+                  if [ -e secret.txt ]; then echo EXISTS; else echo ABSENT; fi; \
+                  if [ -c secret.txt ]; then echo CHARDEV; fi";
+    let (_f, d) = h.run(json!({ "argv": ["sh", "-c", script], "cwd": r, "hideList": hide }));
+    let out = text(&h.read_all(&d["stdout"]));
+    let listed = out.split("---LISTED").next().unwrap();
+    assert!(
+        listed.lines().any(|l| l == "secret.txt"),
+        "a hide of a file cannot drop its name from the parent's listing: {out}"
+    );
+    let cat = out.split("---LISTED").nth(1).unwrap().split("---CAT").next().unwrap();
+    assert!(!cat.contains("SECRET"), "the hidden file was read: {out}");
+    if cfg!(target_os = "macos") {
+        assert!(out.contains("ABSENT"), "Seatbelt's read deny covers metadata: stat must fail: {out}");
+        assert!(!out.contains("CHARDEV"), "{out}");
+    } else {
+        assert!(
+            out.contains("EXISTS"),
+            "the stated Linux limit changed (a hidden file still stats): update PROTOCOL.md: {out}"
+        );
+        assert!(out.contains("CHARDEV"), "{out}");
+    }
+    h.close();
+}
+
+/// A hide of a DIRECTORY lists nothing of it — on macOS reading it is denied, on Linux it is an empty tmpfs — while its
+/// own name stays in the parent. `test -e` on the directory itself follows the same split as a hidden file's.
+#[test]
+fn a_hidden_directory_has_no_listing_and_is_still_named_by_its_parent() {
+    let (_d, r) = root();
+    std::fs::create_dir(r.join("d")).unwrap();
+    std::fs::write(r.join("d/a.txt"), "D-A\n").unwrap();
+    std::fs::write(r.join("d/b.txt"), "D-B\n").unwrap();
+    let Some(mut h) = sandboxed(&r) else { return };
+    let hide = json!([entry("h1", "hide", r.join("d"))]);
+    let script = "ls; echo ---PARENT; ls d 2>/dev/null; echo ---INNER; \
+                  if [ -e d ]; then echo EXISTS; else echo ABSENT; fi";
+    let (_f, d) = h.run(json!({ "argv": ["sh", "-c", script], "cwd": r, "hideList": hide }));
+    let out = text(&h.read_all(&d["stdout"]));
+    let parent = out.split("---PARENT").next().unwrap();
+    assert!(parent.lines().any(|l| l == "d"), "a hide of a directory cannot drop its name from the parent: {out}");
+    let inner = out.split("---PARENT").nth(1).unwrap().split("---INNER").next().unwrap();
+    assert!(!inner.contains("a.txt") && !inner.contains("b.txt"), "a hidden directory was listed: {out}");
+    if cfg!(target_os = "macos") {
+        assert!(out.contains("ABSENT"), "Seatbelt's read deny covers metadata: stat of the directory must fail: {out}");
+    } else {
+        assert!(out.contains("EXISTS"), "the stated Linux limit changed (an empty tmpfs: the path exists): {out}");
+    }
+    h.close();
+}
+
 // --- multibyte names: Seatbelt matches bytes, the host's matcher matches characters ---
 
 /// A hide's `?` holds one character however many bytes it takes; on macOS it holds a short name besides (the safe side).
